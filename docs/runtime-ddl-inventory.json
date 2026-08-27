@@ -22,6 +22,11 @@
   ],
   "migration_modules": [
     {
+      "file": "app/customer_registry_migrations.py",
+      "sha256": "0eb41026ccafa7ad3e9f0fdefccbcf1026707e43495e35a3b472ec7a5a27e741",
+      "owner": "customer-registry"
+    },
+    {
       "file": "app/catalog_migration_steps.py",
       "sha256": "0bf15d149e6c8ee8248f50d5e691d15d1e77b80a0ffc85af354c6f0931e558bf",
       "owner": "catalog-migrations"

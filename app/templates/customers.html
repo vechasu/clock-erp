@@ -27,7 +27,7 @@
                     <button class="customer-button" type="submit">Найти</button>
                     {% if query %}<a class="customer-reset" href="{{ url_for('customers_page') }}">Очистить</a>{% endif %}
                 </div>
-                <strong class="customer-found">Найдено: {{ customers_total }} клиентов</strong>
+                <strong class="customer-found">{{ 'Найдено' if query else 'Всего' }}: {{ customers_total }} клиентов</strong>
             </form>
 
             {% if data_error %}
@@ -35,7 +35,7 @@
             {% elif customers %}
                 <div class="customer-table-wrap">
                     <table class="customer-table">
-                        <thead><tr><th>Клиент</th><th>Телефон</th><th>Email</th><th>Город</th><th>Заказов</th><th>Последний заказ</th></tr></thead>
+                        <thead><tr><th>Клиент</th><th>Телефон</th><th>Email</th><th>Город</th><th>Источники</th><th>Операций</th><th>Последняя операция</th></tr></thead>
                         <tbody>
                         {% for customer in customers %}
                             <tr data-href="{{ url_for('customer_detail_page', customer_id=customer.id) }}">
@@ -43,8 +43,9 @@
                                 <td>{{ customer.phone or '—' }}</td>
                                 <td>{% if customer.email %}<a href="mailto:{{ customer.email }}">{{ customer.email }}</a>{% else %}—{% endif %}</td>
                                 <td>{{ customer.city or '—' }}</td>
-                                <td>{{ customer.orders_count }}</td>
-                                <td>{{ customer.last_order_at[:10] if customer.last_order_at else '—' }}</td>
+                                <td>{{ customer.sources or '—' }}</td>
+                                <td>{{ customer.operations_count }}</td>
+                                <td>{{ customer.last_operation_at[:10] if customer.last_operation_at else '—' }}</td>
                             </tr>
                         {% endfor %}
                         </tbody>
