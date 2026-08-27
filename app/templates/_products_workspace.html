@@ -5,7 +5,6 @@
         <p>Каталог и складские остатки</p>
     </div>
     <div class="erp-workspace-actions products-workspace-actions">
-        <a class="products-workspace-button" href="{{ url_for('warehouse_inventory_page') }}">Инвентаризация</a>
         {% if add_button %}
             <button id="openWarehouseAddModal" class="products-workspace-button is-primary" type="button" onclick="toggleWarehouseAddCard()">+ Добавить товар</button>
         {% else %}
