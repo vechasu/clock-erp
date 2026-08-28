@@ -20,7 +20,7 @@
         page: Math.max(1, Number(initial.get("page")) || 1),
         rows: [], pages: 1, total: 0, requestToken: 0, task: null, links: [],
         returnFocus: null, restoreTaskFocusId: null, filtersOpen: initial.get("filters") === "1", drawerHistoryPushed: false,
-        pendingCompletions: new Set(), calendarRows: [], undatedRows: [], calendarRange: null,
+        pendingCompletions: new Set(), calendarRows: [], undatedRows: [], calendarRange: null, countsToken: 0,
     };
     const list = q("#taskList"), status = q("#taskStatus"), drawer = q("#taskModal"), backdrop = q("#taskBackdrop");
     const form = q("#taskForm"), errorBox = q("#taskFormError"), save = q("#saveTask");
@@ -29,6 +29,7 @@
     const filterSummary = q("#filterSummary"), filterChips = q("#filterChips"), reset = q("#resetFilters");
     const listMode = q("#listMode"), calendarMode = q("#calendarMode"), calendarGrid = q("#calendarGrid");
     const calendarStatus = q("#calendarStatus"), calendarCompleted = q("#calendarCompleted");
+    const sectionStats = q("#taskSectionStats");
     const filterDefs = [
         { node: q("#assigneeFilter"), param: "assignee_id", label: "Ответственный" },
         { node: q("#priorityFilter"), param: "priority", label: "Приоритет" },
@@ -384,7 +385,11 @@
         const last = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0, 12));
         const start = addDays(isoDate(first), -((first.getUTCDay() + 6) % 7));
         const end = addDays(isoDate(last), 6 - ((last.getUTCDay() + 6) % 7));
-        return { start, end };
+        const today = localDate();
+        const todayCursor = dateFromIso(today);
+        const todayWeekStart = addDays(today, -((todayCursor.getUTCDay() + 6) % 7));
+        const currentMonth = isoDate(cursor).slice(0, 7) === today.slice(0, 7);
+        return { start, end: currentMonth && end === addDays(todayWeekStart, 6) ? addDays(end, 7) : end };
     }
 
     function updateMode() {
@@ -544,14 +549,38 @@
 
     function renderMonth(range) {
         calendarGrid.className = "calendar-grid calendar-month";
+        const weekdayRow = document.createElement("div");
+        weekdayRow.className = "calendar-weekdays";
+        weekdayRow.setAttribute("aria-hidden", "true");
         const weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
         weekdays.forEach((label) => {
-            const head = document.createElement("div"); head.className = "calendar-weekday"; head.textContent = label; calendarGrid.append(head);
+            const head = document.createElement("div"); head.className = "calendar-weekday"; head.textContent = label; weekdayRow.append(head);
         });
+        const scroll = document.createElement("div");
+        scroll.className = "calendar-month-scroll";
+        scroll.tabIndex = 0;
+        scroll.setAttribute("aria-label", "Недели календаря; предыдущие недели доступны прокруткой вверх");
         const month = (state.calendarDate || localDate()).slice(0, 7);
-        for (let date = range.start; date <= range.end; date = addDays(date, 1)) {
-            calendarGrid.append(monthCell(date, month, state.calendarRows.filter((task) => task.calendar_date === date)));
+        for (let weekStart = range.start; weekStart <= range.end; weekStart = addDays(weekStart, 7)) {
+            const week = document.createElement("div");
+            week.className = "calendar-month-week";
+            week.dataset.weekStart = weekStart;
+            for (let offset = 0; offset < 7; offset += 1) {
+                const date = addDays(weekStart, offset);
+                week.append(monthCell(date, month, state.calendarRows.filter((task) => task.calendar_date === date)));
+            }
+            scroll.append(week);
         }
+        calendarGrid.append(weekdayRow, scroll);
+        const currentMonth = month === localDate().slice(0, 7);
+        const todayCursor = dateFromIso(localDate());
+        const todayWeekStart = addDays(localDate(), -((todayCursor.getUTCDay() + 6) % 7));
+        const currentWeek = scroll.querySelector(`[data-week-start="${todayWeekStart}"]`);
+        const positionWeek = () => {
+            scroll.scrollTop = currentMonth && currentWeek ? currentWeek.offsetTop - scroll.offsetTop : 0;
+        };
+        positionWeek();
+        window.requestAnimationFrame(() => { if (document.contains(scroll)) positionWeek(); });
     }
 
     function renderWeek(range) {
@@ -625,6 +654,7 @@
                 calendarGrid.classList.remove("loading");
                 calendarGrid.setAttribute("aria-busy", "false");
                 updateFilters();
+                loadCounts();
             }
         }
     }
@@ -665,12 +695,25 @@
     }
 
     async function loadCounts() {
+        const token = ++state.countsToken;
+        const params = new URLSearchParams({ scope: state.scope, view: state.view });
+        if (search.value.trim()) params.set("q", search.value.trim());
+        filterDefs.forEach(({ node, param }) => { if (node.value) params.set(param, node.value); });
+        if (mine.checked) params.set("only_mine", "1");
         try {
-            const payload = await api("/api/v1/tasks/counts");
+            const payload = await api(`/api/v1/tasks/counts?${params}`);
+            if (token !== state.countsToken) return;
+            const statistics = payload.data.statistics;
             Object.entries(payload.data).forEach(([key, value]) => {
                 const node = q(`[data-view-count="${key}"]`);
-                if (node) node.textContent = value || "";
+                if (!node || key === "logbook" || typeof value !== "number") return;
+                node.textContent = value > 999 ? "999+" : value ? String(value) : "";
+                node.hidden = !value;
+                if (value) node.setAttribute("aria-label", `${value} незавершённые задачи`);
+                else node.removeAttribute("aria-label");
             });
+            sectionStats.hidden = state.view === "logbook" || !statistics;
+            sectionStats.textContent = sectionStats.hidden ? "" : `${statistics.remaining} осталось · ${statistics.completed} выполнено из ${statistics.total}`;
         } catch (_) { /* Counts are supplementary. */ }
     }
 

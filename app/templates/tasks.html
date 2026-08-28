@@ -5,7 +5,7 @@
     <title>Vechasu ERP — Задачи</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css', v='4') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css', v='5') }}">
 </head>
 <body class="tasks-page"><div class="app">{% include "_sidebar.html" %}
 <main class="tasks-main" id="main-content" tabindex="-1">
@@ -14,11 +14,11 @@
     <div class="tasks-layout">
         <nav class="tasks-views" aria-label="Представления задач">
         {% for value,label in [("inbox","Входящие"),("overdue","Просрочено"),("today","Сегодня"),("plans","Планы"),("waiting","Ожидаю"),("anytime","В любое время"),("someday","Когда-нибудь"),("logbook","Журнал")] %}
-            <button type="button" data-view="{{ value }}"{% if value == 'today' %} class="active" aria-current="page"{% endif %}>{{ label }}<span data-view-count="{{ value }}"></span></button>
+            <button type="button" data-view="{{ value }}"{% if value == 'today' %} class="active" aria-current="page"{% endif %}>{{ label }}{% if value != 'logbook' %}<span data-view-count="{{ value }}" hidden></span>{% endif %}</button>
         {% endfor %}
         </nav>
         <section class="tasks-workspace" aria-label="Список задач">
-            <div class="tasks-mode-switch" role="group" aria-label="Режим отображения"><button type="button" data-mode="list"{% if request.args.get('mode') != 'calendar' %} class="active" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>Список</button><button type="button" data-mode="calendar"{% if request.args.get('mode') == 'calendar' %} class="active" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>Календарь</button></div>
+            <div class="tasks-workspace-summary"><div class="tasks-mode-switch" role="group" aria-label="Режим отображения"><button type="button" data-mode="list"{% if request.args.get('mode') != 'calendar' %} class="active" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>Список</button><button type="button" data-mode="calendar"{% if request.args.get('mode') == 'calendar' %} class="active" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>Календарь</button></div><p id="taskSectionStats" class="tasks-section-stats" aria-live="polite"></p></div>
             <div class="tasks-toolbar">
                 <div class="tasks-search-wrap">
                     <span class="tasks-search-icon" aria-hidden="true"></span>
@@ -82,5 +82,5 @@
     <footer><div class="task-actions" id="taskActions"><button type="button" data-action="start">Начать</button><button type="button" data-action="waiting">Ожидаю</button><button type="button" data-action="complete">Выполнить</button><button type="button" data-action="cancel">Отменить</button><button type="button" data-action="restore">Восстановить</button></div><span></span><button type="button" id="cancelTask" class="tasks-secondary">Закрыть</button><button type="submit" id="saveTask" class="tasks-primary">Сохранить</button></footer>
 </form></aside>
 <script>window.TASKS_BOOTSTRAP={csrf:{{ csrf|tojson }},currentUserId:{{ (current_user.id if current_user else 0)|tojson }},prefillType:{{ request.args.get('entity_type','')|tojson }},prefillId:{{ request.args.get('entity_id','')|tojson }},prefillTitle:{{ request.args.get('title','')|tojson }},prefillContext:{{ request.args.get('context','')|tojson }}};</script>
-<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/notifications.js') }}"></script><script src="{{ url_for('static', filename='js/tasks.js', v='4') }}"></script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/notifications.js') }}"></script><script src="{{ url_for('static', filename='js/tasks.js', v='5') }}"></script>
 </body></html>
