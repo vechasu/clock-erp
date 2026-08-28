@@ -156,6 +156,7 @@ class DeployAvailabilityTest(unittest.TestCase):
             self.assertIn(stage, smoke)
         self.assertIn('connection.execute("DELETE FROM services', smoke)
         self.assertIn("secrets.token_urlsafe", smoke)
+        self.assertIn("app.config.update(TESTING=True, AUTH_TESTING=True)", smoke)
 
     def test_customer_backfill_does_not_expand_an_empty_array_on_bash_42(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
