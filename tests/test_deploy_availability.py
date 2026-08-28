@@ -100,6 +100,13 @@ class DeployAvailabilityTest(unittest.TestCase):
         self.assertIn('"$PYTHON_BIN" -m compileall -q app scripts', script)
         self.assertNotIn('"$PYTHON_BIN" -m compileall -q app scripts tests', script)
 
+    def test_services_smoke_uses_a_production_available_utf8_locale(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'LC_ALL=en_US.utf8 LANG=en_US.utf8 $PYTHON_BIN',
+            script,
+        )
+
     def test_customer_backfill_does_not_expand_an_empty_array_on_bash_42(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn('customer_rebuild_argument[@]', script)

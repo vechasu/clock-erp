@@ -682,7 +682,7 @@ fi
 if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_services_vault.py verify --database instance/services.db
 fi
-SERVICES_HTTP_STATUS="$($PYTHON_BIN - <<'PYTHON_SMOKE'
+SERVICES_HTTP_STATUS="$(LC_ALL=en_US.utf8 LANG=en_US.utf8 $PYTHON_BIN - <<'PYTHON_SMOKE'
 from app.web import app
 from app.auth import get_auth_store
 app.config.update(TESTING=True, AUTH_TESTING=True)
