@@ -106,6 +106,25 @@ class PurchasesTest(unittest.TestCase):
         page = self.store.list_requests({"per_page": 20, "page": 99, "sort": "oldest"})
         self.assertEqual((page["page"], page["pages"]), (1, 1))
 
+    def test_responsible_filter_is_applied_before_pagination(self):
+        identifiers = [self.create(customer_comment="Запрос {}".format(index))["id"]
+                       for index in range(25)]
+        assigned = set(identifiers[:22])
+
+        first = self.store.list_requests(
+            {"per_page": 20, "page": 1}, request_ids=assigned
+        )
+        second = self.store.list_requests(
+            {"per_page": 20, "page": 2}, request_ids=assigned
+        )
+
+        self.assertEqual((first["total"], first["pages"]), (22, 2))
+        self.assertEqual((len(first["rows"]), len(second["rows"])), (20, 2))
+        self.assertTrue(all(row["id"] in assigned for row in first["rows"] + second["rows"]))
+        self.assertEqual(
+            self.store.list_requests({}, request_ids=set())["total"], 0
+        )
+
     def test_anonymous_request_with_existing_product(self):
         item = self.create(customer_id=None)
         self.assertIsNone(item["customer_id"])

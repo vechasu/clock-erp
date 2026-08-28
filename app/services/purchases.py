@@ -500,7 +500,7 @@ class PurchaseStore:
             connection.commit()
         return self.get_supplier_order(item["order_id"])
 
-    def list_requests(self, filters=None, customer_ids=None):
+    def list_requests(self, filters=None, customer_ids=None, request_ids=None):
         filters = filters or {}
         clauses, params = [], []
         query = folded(filters.get("q"))
@@ -525,7 +525,6 @@ class PurchaseStore:
             clauses.append("requested_at<?"); params.append(parse_date(filters["date_to"], "date_to") + "T23:59:59")
         if str(filters.get("active_only", "")).lower() in ("1", "true", "on"):
             clauses.append("archived=0 AND status NOT IN ('sold','closed') AND (valid_until IS NULL OR valid_until>=date('now'))")
-        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         try:
             per_page = int(filters.get("per_page", 20)); page = max(1, int(filters.get("page", 1)))
         except (TypeError, ValueError):
@@ -535,6 +534,20 @@ class PurchaseStore:
         sort = filters.get("sort")
         order = {"oldest": "requested_at ASC,id ASC", "valid_until": "COALESCE(valid_until,'9999') ASC,id DESC", "quantity": "quantity DESC,id DESC"}.get(sort, "requested_at DESC,id DESC")
         with self.connect() as connection:
+            if request_ids is not None:
+                connection.execute(
+                    "CREATE TEMP TABLE IF NOT EXISTS allowed_purchase_requests "
+                    "(id INTEGER PRIMARY KEY)"
+                )
+                connection.execute("DELETE FROM allowed_purchase_requests")
+                connection.executemany(
+                    "INSERT OR IGNORE INTO allowed_purchase_requests(id) VALUES(?)",
+                    [(int(value),) for value in request_ids],
+                )
+                clauses.append(
+                    "id IN (SELECT id FROM temp.allowed_purchase_requests)"
+                )
+            where = " WHERE " + " AND ".join(clauses) if clauses else ""
             total = int(connection.execute("SELECT COUNT(*) FROM purchase_requests" + where, params).fetchone()[0])
             pages = max(1, int(math.ceil(float(total) / per_page))); page = min(page, pages)
             rows = connection.execute("SELECT * FROM purchase_requests" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?", params + [per_page, (page - 1) * per_page]).fetchall()

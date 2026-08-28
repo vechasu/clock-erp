@@ -1170,14 +1170,16 @@ def overview_page():
 @app.route("/orders")
 @app.route("/app/orders")
 def orders_page():
+    assigned = None
+    if request.args.get("mine") == "1":
+        assigned = _collaboration_store().assigned_entity_ids(
+            "order", current_auth_user()["id"]
+        )
     orders, list_state = current_orders_list_state(
-        request.args, force=request.args.get("retry") == "1"
+        request.args, force=request.args.get("retry") == "1",
+        allowed_order_ids=assigned,
     )
     orders_page_rows = list_state["rows"]
-    if request.args.get("mine") == "1":
-        assigned = _collaboration_store().assigned_entity_ids("order", current_auth_user()["id"])
-        orders_page_rows = [row for row in orders_page_rows if str(row.get("id") or row.get("ID") or "") in assigned]
-        list_state["rows"], list_state["total"], list_state["page_count"] = orders_page_rows, len(orders_page_rows), 1
     selected_order = orders_page_rows[0] if orders_page_rows else None
     return render_orders_page(
         orders=orders,
@@ -1190,11 +1192,14 @@ def orders_page():
 
 @app.get("/api/orders")
 def orders_list_api():
-    _orders, list_state = current_orders_list_state(request.args)
+    assigned = None
     if request.args.get("mine") == "1":
-        assigned = _collaboration_store().assigned_entity_ids("order", current_auth_user()["id"])
-        list_state["rows"] = [row for row in list_state["rows"] if str(row.get("id") or row.get("ID") or "") in assigned]
-        list_state["total"], list_state["page_count"] = len(list_state["rows"]), 1
+        assigned = _collaboration_store().assigned_entity_ids(
+            "order", current_auth_user()["id"]
+        )
+    _orders, list_state = current_orders_list_state(
+        request.args, allowed_order_ids=assigned
+    )
     selected_id = str(request.args.get("selected_id") or "").strip()
     selected_order = next((
         order for order in list_state["rows"]
@@ -1470,10 +1475,10 @@ def enrich_orders_list_rows(rows, database=None):
     return prepared
 
 
-def current_orders_list_state(args, force=False):
+def current_orders_list_state(args, force=False, allowed_order_ids=None):
     orders = get_orders(force=force)
     if app.testing and not app.config.get("ORDERS_SNAPSHOT_TESTING"):
-        state = prepare_orders_list(orders, args)
+        state = prepare_orders_list(orders, args, allowed_order_ids=allowed_order_ids)
         state["page_size"] = 20
         state["physical_total"] = len(orders)
         state["rows"] = enrich_orders_list_rows(state["rows"])
@@ -1487,12 +1492,12 @@ def current_orders_list_state(args, force=False):
     store = OrdersSnapshotStore()
     store.ensure(orders, loaded_at)
     schedule_order_item_unit_backfill(store)
-    state = store.query(args)
+    state = store.query(args, allowed_order_ids=allowed_order_ids)
     state["rows"] = enrich_orders_list_rows(state["rows"])
     return state["rows"], state
 
 
-def prepare_orders_list(orders, args):
+def prepare_orders_list(orders, args, allowed_order_ids=None):
     """Build the read-only list view without changing order data or APIs."""
     query = str(args.get("q") or "").strip().casefold()
     status_filter = str(args.get("status") or "all").strip().upper()
@@ -1501,6 +1506,10 @@ def prepare_orders_list(orders, args):
     filtered_orders = []
     now = datetime.now()
     for order in orders:
+        if allowed_order_ids is not None and str(
+            order.get("id") or order.get("ID") or ""
+        ) not in allowed_order_ids:
+            continue
         order_source = str(order.get("source") or "tictactoy").casefold()
         if source_filter in {"tictactoy", "wildberries"} and order_source != source_filter:
             continue
@@ -16254,11 +16263,14 @@ def purchases_page():
         filters = {key: request.args.get(key) for key in (
             "q", "status", "brand", "channel", "date_from", "date_to", "active_only", "sort", "page", "per_page"
         )}
-        listing = purchase_store().list_requests(filters, customer_ids=customer_ids)
+        assigned = None
         if request.args.get("mine") == "1":
-            assigned = _collaboration_store().assigned_entity_ids("purchase", current_auth_user()["id"])
-            listing["rows"] = [row for row in listing["rows"] if str(row.get("id")) in assigned]
-            listing["total"], listing["pages"] = len(listing["rows"]), 1
+            assigned = _collaboration_store().assigned_entity_ids(
+                "purchase", current_auth_user()["id"]
+            )
+        listing = purchase_store().list_requests(
+            filters, customer_ids=customer_ids, request_ids=assigned
+        )
         requests_list = [_purchase_enrich_request(item) for item in listing["rows"]]
         plan = purchase_store().list_plan(_purchase_stock)
         for item in plan:

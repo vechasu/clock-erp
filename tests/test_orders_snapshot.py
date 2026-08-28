@@ -81,6 +81,27 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
                 )
         self.assertEqual(self.query(page=999, page_size=50)["page"], 10)
 
+    def test_responsible_filter_is_applied_before_pagination(self):
+        assigned = {row["id"] for row in self.orders[25:75]}
+        first = self.store.query(
+            {"page": 1, "page_size": 20},
+            now=datetime(2026, 8, 23, 15, 0),
+            allowed_order_ids=assigned,
+        )
+        third = self.store.query(
+            {"page": 3, "page_size": 20},
+            now=datetime(2026, 8, 23, 15, 0),
+            allowed_order_ids=assigned,
+        )
+
+        self.assertEqual((first["total"], first["page_count"]), (50, 3))
+        self.assertEqual(len(first["rows"]), 20)
+        self.assertEqual(len(third["rows"]), 10)
+        self.assertTrue(all(row["id"] in assigned for row in first["rows"] + third["rows"]))
+
+        empty = self.store.query({}, allowed_order_ids=set())
+        self.assertEqual((empty["total"], empty["rows"]), (0, []))
+
     def test_searches_all_required_fields(self):
         target = self.orders[123]
         cases = (
