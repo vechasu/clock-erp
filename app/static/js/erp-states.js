@@ -19,11 +19,12 @@
     }
 
     function label(button) {
-        if (!button) return "Операция выполняется…";
+        if (!button) return "Отправляем форму…";
+        const idle = String(button.textContent || button.value || "").replace(/…+$/, "").trim();
         return String(
             button.dataset.pendingLabel
             || button.form?.dataset.pendingLabel
-            || "Операция выполняется…"
+            || (idle ? idle + "…" : "Отправляем форму…")
         ).trim();
     }
 
