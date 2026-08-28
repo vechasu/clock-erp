@@ -29,6 +29,7 @@ CREATE TABLE erp_migration_ledger (
 """
 
 AUTH_MIGRATION_ID = "2026-08-26-auth-baseline-v1"
+AUTH_PREFERENCES_MIGRATION_ID = "2026-08-28-user-navigation-preferences-v1"
 ORDERS_MIGRATION_ID = "2026-08-26-orders-customers-baseline-v1"
 TASKS_MIGRATION_ID = "2026-08-27-internal-tasks-v1"
 TASKS_V2_MIGRATION_ID = "2026-08-27-tasks-center-v2"
@@ -112,6 +113,16 @@ AUTH_INDEX_STATEMENTS = (
     "CREATE INDEX auth_tokens_user_type ON auth_tokens(user_id, token_type, created_at)",
     "CREATE INDEX auth_sessions_expiry ON auth_sessions(expires_at)",
     "CREATE INDEX auth_sessions_user ON auth_sessions(user_id)",
+)
+
+AUTH_PREFERENCES_TABLE_STATEMENTS = (
+    """CREATE TABLE user_navigation_preferences (
+        user_id INTEGER PRIMARY KEY,
+        ordered_keys TEXT NOT NULL,
+        hidden_keys TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
 )
 
 AUTH_LEGACY_USER_COLUMNS = (
@@ -393,6 +404,14 @@ AUTH_MIGRATION = {
         + AUTH_TABLE_STATEMENTS + AUTH_INDEX_STATEMENTS + AUTH_UPGRADE_STATEMENTS
     ),
 }
+AUTH_PREFERENCES_MIGRATION = {
+    "id": AUTH_PREFERENCES_MIGRATION_ID,
+    "name": "Per-user navigation preferences",
+    "checksum": _digest(
+        (AUTH_PREFERENCES_MIGRATION_ID, "user-navigation-preferences-v1")
+        + AUTH_PREFERENCES_TABLE_STATEMENTS
+    ),
+}
 ORDERS_MIGRATION = {
     "id": ORDERS_MIGRATION_ID,
     "name": "Verified orders and customers schema baseline",
@@ -427,13 +446,13 @@ TASKS_V3_MIGRATION = {
     ),
 }
 DOMAIN_MIGRATIONS = {
-    "auth": AUTH_MIGRATION,
+    "auth": AUTH_PREFERENCES_MIGRATION,
     "orders": ORDERS_MIGRATION,
     "tasks": TASKS_V3_MIGRATION,
 }
 
 
-AUTH_EXPECTED_COLUMNS = {
+AUTH_V1_EXPECTED_COLUMNS = {
     "users": AUTH_LEGACY_USER_COLUMNS + (
         ("email_verified_at", "INTEGER", 0, None, 0),
         ("updated_at", "INTEGER", 0, None, 0),
@@ -465,6 +484,13 @@ AUTH_EXPECTED_COLUMNS = {
         ("updated_at", "INTEGER", 1, None, 0),
     ),
 }
+AUTH_EXPECTED_COLUMNS = dict(AUTH_V1_EXPECTED_COLUMNS)
+AUTH_EXPECTED_COLUMNS["user_navigation_preferences"] = (
+    ("user_id", "INTEGER", 0, None, 1),
+    ("ordered_keys", "TEXT", 1, None, 0),
+    ("hidden_keys", "TEXT", 1, None, 0),
+    ("updated_at", "INTEGER", 1, None, 0),
+)
 
 ORDERS_EXPECTED_COLUMNS = {
     "orders_snapshot": ORDERS_LEGACY_COLUMNS + (
@@ -684,6 +710,52 @@ def _verify_ledger(connection, migration):
         )
 
 
+def _verify_auth_ledger(connection, require_latest=True):
+    if LEDGER_TABLE not in _tables(connection):
+        raise MigrationRequiredError(
+            "migration required: {} ledger is missing".format(
+                AUTH_PREFERENCES_MIGRATION_ID
+            )
+        )
+    rows = connection.execute(
+        "SELECT migration_id, name, checksum, state FROM "
+        + LEDGER_TABLE
+        + " ORDER BY migration_id"
+    ).fetchall()
+    expected = {
+        migration["id"]: migration
+        for migration in (AUTH_MIGRATION, AUTH_PREFERENCES_MIGRATION)
+    }
+    for row in rows:
+        migration = expected.get(str(row[0]))
+        if migration is None:
+            raise DomainMigrationError(
+                "unknown migration in auth ledger: {}".format(row[0])
+            )
+        if str(row[1]) != migration["name"]:
+            raise DomainMigrationError(
+                "auth migration ledger mismatch: {}".format(row[0])
+            )
+        if str(row[2]) != migration["checksum"]:
+            raise DomainMigrationError(
+                "migration checksum mismatch: {}".format(row[0])
+            )
+        if str(row[3]) != "applied":
+            raise DomainMigrationError(
+                "auth migration is not fully applied: {}".format(row[0])
+            )
+    ids = {str(row[0]) for row in rows}
+    if AUTH_MIGRATION_ID not in ids:
+        raise MigrationRequiredError("migration required: auth baseline is missing")
+    if require_latest and AUTH_PREFERENCES_MIGRATION_ID not in ids:
+        raise MigrationRequiredError(
+            "migration required: user navigation preferences"
+        )
+    expected_length = 2 if require_latest else 1
+    if len(rows) != expected_length:
+        raise DomainMigrationError("unexpected auth migration ledger length")
+
+
 def _require_integrity(connection, label):
     quick = [str(row[0]) for row in connection.execute("PRAGMA quick_check").fetchall()]
     if quick != ["ok"]:
@@ -712,21 +784,24 @@ def _verify_indexes(connection, expected, table_by_prefix):
         raise DomainMigrationError("schema contract mismatch: named indexes differ")
 
 
-def verify_auth_schema(connection, require_ledger=True):
-    expected_tables = set(AUTH_EXPECTED_COLUMNS)
+def verify_auth_schema(connection, require_ledger=True, include_preferences=True):
+    expected_columns = (
+        AUTH_EXPECTED_COLUMNS if include_preferences else AUTH_V1_EXPECTED_COLUMNS
+    )
+    expected_tables = set(expected_columns)
     if require_ledger:
         expected_tables.add(LEDGER_TABLE)
     if _tables(connection) != expected_tables:
         raise DomainMigrationError("auth schema contract: unexpected table set")
     if require_ledger:
         _verify_ledger_columns(connection)
-    _verify_columns(connection, AUTH_EXPECTED_COLUMNS)
-    _verify_indexes(connection, AUTH_INDEXES, AUTH_EXPECTED_COLUMNS)
+    _verify_columns(connection, expected_columns)
+    _verify_indexes(connection, AUTH_INDEXES, expected_columns)
     foreign_keys = {
         table: sorted(tuple(str(value) for value in row[2:8]) for row in connection.execute(
             "PRAGMA foreign_key_list({})".format(table)
         ).fetchall())
-        for table in AUTH_EXPECTED_COLUMNS
+        for table in expected_columns
     }
     expected_foreign_keys = {
         "users": [],
@@ -742,6 +817,10 @@ def verify_auth_schema(connection, require_ledger=True):
             ("users", "user_id", "id", "NO ACTION", "NO ACTION", "NONE")
         ],
     }
+    if include_preferences:
+        expected_foreign_keys["user_navigation_preferences"] = [
+            ("users", "user_id", "id", "NO ACTION", "CASCADE", "NONE")
+        ]
     if foreign_keys != expected_foreign_keys:
         raise DomainMigrationError("auth schema contract: foreign keys differ")
     expected_unique = {
@@ -972,6 +1051,99 @@ def _apply_tasks_v2_migrations(path, app_commit, observer):
             connection.close()
 
 
+def _insert_applied_migration(connection, migration, app_commit, source_state):
+    connection.execute(
+        "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+        "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
+        (
+            migration["id"],
+            migration["name"],
+            migration["checksum"],
+            _utc_now(),
+            str(app_commit or "") or None,
+            json.dumps(
+                {"source_state": source_state, "transactional": True},
+                sort_keys=True,
+            ),
+        ),
+    )
+
+
+def _apply_auth_preferences_migration(path, app_commit, observer):
+    with DomainMigrationLock(path, "auth"):
+        connection = sqlite3.connect(str(path), timeout=30, isolation_level=None)
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 30000")
+            tables = _tables(connection)
+            if LEDGER_TABLE in tables:
+                ledger_ids = {
+                    str(row[0])
+                    for row in connection.execute(
+                        "SELECT migration_id FROM " + LEDGER_TABLE
+                    ).fetchall()
+                }
+                if AUTH_PREFERENCES_MIGRATION_ID in ledger_ids:
+                    _verify_auth_ledger(connection)
+                    verify_auth_schema(connection)
+                    _require_integrity(connection, "auth")
+                    return migration_report(connection, "auth")
+
+                _verify_auth_ledger(connection, require_latest=False)
+                verify_auth_schema(connection, include_preferences=False)
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    for statement in AUTH_PREFERENCES_TABLE_STATEMENTS:
+                        _execute(connection, statement, observer)
+                    _insert_applied_migration(
+                        connection,
+                        AUTH_PREFERENCES_MIGRATION,
+                        app_commit,
+                        "auth-v1",
+                    )
+                    verify_auth_schema(connection)
+                    _verify_auth_ledger(connection)
+                    _require_integrity(connection, "auth-preferences-migration")
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+                return migration_report(connection, "auth")
+
+            state = _legacy_state(connection, "auth")
+            if state == "current":
+                verify_auth_schema(
+                    connection,
+                    require_ledger=False,
+                    include_preferences=False,
+                )
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                _execute(connection, LEDGER_SQL, observer)
+                _apply_auth(connection, state, observer)
+                _insert_applied_migration(
+                    connection, AUTH_MIGRATION, app_commit, state
+                )
+                for statement in AUTH_PREFERENCES_TABLE_STATEMENTS:
+                    _execute(connection, statement, observer)
+                _insert_applied_migration(
+                    connection,
+                    AUTH_PREFERENCES_MIGRATION,
+                    app_commit,
+                    state,
+                )
+                verify_auth_schema(connection)
+                _verify_auth_ledger(connection)
+                _require_integrity(connection, "auth-preferences-migration")
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            return migration_report(connection, "auth")
+        finally:
+            connection.close()
+
+
 def _legacy_state(connection, kind):
     tables = _tables(connection) - {LEDGER_TABLE}
     if not tables:
@@ -1019,7 +1191,7 @@ def _apply_auth(connection, state, observer):
         for statement in AUTH_TABLE_STATEMENTS[1:] + AUTH_INDEX_STATEMENTS:
             _execute(connection, statement, observer)
         return
-    verify_auth_schema(connection)
+    verify_auth_schema(connection, include_preferences=False)
 
 
 def _apply_orders(connection, state, observer):
@@ -1049,6 +1221,10 @@ def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
         raise DomainMigrationError("unknown domain database: {}".format(kind))
     path = Path(database_path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
+    if kind == "auth":
+        return _apply_auth_preferences_migration(
+            path, app_commit, observer
+        )
     if kind == "tasks":
         return _apply_tasks_v2_migrations(path, app_commit, observer)
     migration = DOMAIN_MIGRATIONS[kind]
@@ -1130,7 +1306,7 @@ def _runtime_connection(database_path):
 def validate_auth_database(database_path):
     connection = _runtime_connection(database_path)
     try:
-        _verify_ledger(connection, AUTH_MIGRATION)
+        _verify_auth_ledger(connection)
         verify_auth_schema(connection)
     finally:
         connection.close()
@@ -1181,7 +1357,13 @@ def migration_report(connection, kind):
     payload = json.dumps(
         _semantic_schema(connection, tables), sort_keys=True, separators=(",", ":")
     )
-    count_tables = ("tasks",) if kind == "tasks" else sorted(tables)
+    count_tables = (
+        ("tasks",)
+        if kind == "tasks"
+        else sorted(AUTH_V1_EXPECTED_COLUMNS)
+        if kind == "auth"
+        else sorted(tables)
+    )
     counts = {
         table: int(connection.execute("SELECT COUNT(*) FROM {}".format(table)).fetchone()[0])
         for table in count_tables
@@ -1198,6 +1380,32 @@ def migration_report(connection, kind):
 def domain_snapshot(database_path, kind):
     connection = _runtime_connection(database_path)
     try:
+        if kind == "auth":
+            table_names = _tables(connection)
+            if "user_navigation_preferences" not in table_names:
+                _verify_auth_ledger(connection, require_latest=False)
+                verify_auth_schema(
+                    connection, include_preferences=False
+                )
+                payload = json.dumps(
+                    _semantic_schema(connection, AUTH_V1_EXPECTED_COLUMNS),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                return {
+                    "kind": "auth",
+                    "latest_migration": AUTH_MIGRATION["id"],
+                    "checksum": AUTH_MIGRATION["checksum"],
+                    "schema_fingerprint": hashlib.sha256(
+                        payload.encode("utf-8")
+                    ).hexdigest(),
+                    "business_counts": {
+                        table: int(connection.execute(
+                            "SELECT COUNT(*) FROM {}".format(table)
+                        ).fetchone()[0])
+                        for table in sorted(AUTH_V1_EXPECTED_COLUMNS)
+                    },
+                }
         if kind == "tasks" and _tables(connection) == {LEDGER_TABLE, "tasks"}:
             payload = json.dumps(
                 _semantic_schema(connection, TASKS_V1_EXPECTED_COLUMNS),

@@ -161,6 +161,7 @@ from app.services.tasks import (
     TaskNotFoundError,
     TaskStore,
     TaskConflictError,
+    TaskPermissionError,
     TaskValidationError,
     moscow_today,
 )
@@ -17311,8 +17312,114 @@ def get_active_navigation_key(current_path):
     return ""
 
 
+class NavigationPreferencesValidationError(ValueError):
+    pass
+
+
+def get_available_navigation_definitions(user=None):
+    user = current_auth_user() if user is None else user
+    role = str((user or {}).get("role") or "")
+    definitions = []
+    for definition in NAVIGATION_DEFINITIONS:
+        if not bool(definition.get("enabled", True)):
+            continue
+        allowed_roles = set(
+            definition.get("roles", ("employee", "admin"))
+        )
+        if auth_is_enabled() and role not in allowed_roles:
+            continue
+        definitions.append(definition)
+    return definitions
+
+
+def _merge_navigation_order(system_keys, preferred_keys):
+    result = [key for key in preferred_keys if key in system_keys]
+    system_positions = {
+        key: position for position, key in enumerate(system_keys)
+    }
+    for key in system_keys:
+        if key in result:
+            continue
+        key_position = system_positions[key]
+        preceding = [
+            candidate
+            for candidate in result
+            if system_positions[candidate] < key_position
+        ]
+        if preceding:
+            closest = max(
+                preceding, key=lambda candidate: system_positions[candidate]
+            )
+            result.insert(result.index(closest) + 1, key)
+        else:
+            following = [
+                candidate
+                for candidate in result
+                if system_positions[candidate] > key_position
+            ]
+            if following:
+                closest = min(
+                    following,
+                    key=lambda candidate: system_positions[candidate],
+                )
+                result.insert(result.index(closest), key)
+            else:
+                result.append(key)
+    return result
+
+
+def _validated_stored_navigation_preferences(preferences, allowed_keys, user_id):
+    if preferences is None:
+        return None
+    ordered_keys = preferences.get("ordered_keys")
+    hidden_keys = preferences.get("hidden_keys")
+    valid = (
+        isinstance(ordered_keys, list)
+        and isinstance(hidden_keys, list)
+        and all(isinstance(key, str) for key in ordered_keys + hidden_keys)
+        and len(ordered_keys) == len(set(ordered_keys))
+        and len(hidden_keys) == len(set(hidden_keys))
+        and set(ordered_keys).issubset(set(allowed_keys))
+        and set(hidden_keys).issubset(set(allowed_keys))
+        and "settings" not in hidden_keys
+    )
+    if not valid:
+        app.logger.warning(
+            "Invalid navigation preferences ignored for user_id=%s", user_id
+        )
+        return None
+    return {
+        "ordered_keys": ordered_keys,
+        "hidden_keys": hidden_keys,
+    }
+
+
+def get_current_navigation_preferences(definitions=None):
+    definitions = (
+        get_available_navigation_definitions()
+        if definitions is None
+        else definitions
+    )
+    system_keys = [definition["key"] for definition in definitions]
+    user = current_auth_user() or {}
+    if not auth_is_enabled() or not user.get("id"):
+        return {"ordered_keys": system_keys, "hidden_keys": []}
+    stored = _validated_stored_navigation_preferences(
+        get_auth_store().get_navigation_preferences(user["id"]),
+        system_keys,
+        user["id"],
+    )
+    if stored is None:
+        return {"ordered_keys": system_keys, "hidden_keys": []}
+    return {
+        "ordered_keys": _merge_navigation_order(
+            system_keys, stored["ordered_keys"]
+        ),
+        "hidden_keys": list(stored["hidden_keys"]),
+    }
+
+
 def get_navigation_items(include_disabled=False):
-    del include_disabled
     active_key = get_active_navigation_key(request.path)
     task_badge = 0
     inbox_badge = 0
@@ -17325,12 +17432,99 @@ def get_navigation_items(include_disabled=False):
             inbox_badge = _collaboration_store().unread_count(user["id"])
     except (MigrationRequiredError, sqlite3.Error):
         task_badge = 0
+    definitions = get_available_navigation_definitions()
+    preferences = get_current_navigation_preferences(definitions)
+    definitions_by_key = {
+        definition["key"]: definition for definition in definitions
+    }
+    hidden_keys = set(preferences["hidden_keys"])
+    items = []
+    for key in preferences["ordered_keys"]:
+        if key in hidden_keys and not include_disabled:
+            continue
+        definition = definitions_by_key[key]
+        items.append({
+            **definition,
+            "enabled": key not in hidden_keys,
+            "active": key == active_key,
+            "badge": (
+                task_badge if key == "tasks"
+                else inbox_badge if key == "inbox"
+                else 0
+            ),
+        })
+    return items
+
+
+def serialize_navigation_preferences():
     return [
-        {**definition, "enabled": True, "active": definition["key"] == active_key,
-         "badge": task_badge if definition["key"] == "tasks" else
-                  inbox_badge if definition["key"] == "inbox" else 0}
-        for definition in NAVIGATION_DEFINITIONS
+        {
+            "key": item["key"],
+            "label": item["label"],
+            "visible": bool(item["enabled"]),
+            "required": bool(item.get("required")),
+        }
+        for item in get_navigation_items(include_disabled=True)
     ]
+
+
+@app.route("/api/v1/navigation-preferences", methods=["GET", "PUT", "DELETE"])
+def api_navigation_preferences():
+    user = current_auth_user() or {}
+    if not user.get("id"):
+        return api_error(
+            "AUTH_REQUIRED", "Требуется авторизация.", 401
+        )
+    if request.method == "GET":
+        return api_success(serialize_navigation_preferences())
+
+    require_csrf_when_authenticated()
+    if request.method == "DELETE":
+        get_auth_store().reset_navigation_preferences(user["id"])
+        return api_success(serialize_navigation_preferences())
+
+    try:
+        payload = api_json_payload()
+        if set(payload) != {"order", "hidden"}:
+            raise NavigationPreferencesValidationError(
+                "Переданы неизвестные настройки вкладок."
+            )
+        ordered_keys = payload.get("order")
+        hidden_keys = payload.get("hidden")
+        if not isinstance(ordered_keys, list) or not isinstance(hidden_keys, list):
+            raise NavigationPreferencesValidationError(
+                "Порядок и скрытые вкладки должны быть списками."
+            )
+        if not all(
+            isinstance(key, str) for key in ordered_keys + hidden_keys
+        ):
+            raise NavigationPreferencesValidationError(
+                "Ключи вкладок должны быть строками."
+            )
+        if len(ordered_keys) != len(set(ordered_keys)) or len(hidden_keys) != len(set(hidden_keys)):
+            raise NavigationPreferencesValidationError(
+                "Ключи вкладок не должны повторяться."
+            )
+        allowed_keys = [
+            definition["key"]
+            for definition in get_available_navigation_definitions()
+        ]
+        if set(ordered_keys) != set(allowed_keys) or not set(hidden_keys).issubset(set(allowed_keys)):
+            raise NavigationPreferencesValidationError(
+                "Передана недоступная или неизвестная вкладка."
+            )
+        if "settings" in hidden_keys:
+            raise NavigationPreferencesValidationError(
+                "Вкладку «Настройки» нельзя скрыть."
+            )
+    except (ValueError, NavigationPreferencesValidationError) as error:
+        return api_error(
+            "NAVIGATION_PREFERENCES_INVALID", str(error), 422
+        )
+    get_auth_store().save_navigation_preferences(
+        user["id"], ordered_keys, hidden_keys
+    )
+    return api_success(serialize_navigation_preferences())
 
 
 @app.context_processor
@@ -17343,6 +17537,9 @@ def inject_sidebar_navigation():
             team = []
     return {
         "sidebar_navigation_items": get_navigation_items(),
+        "navigation_preference_items": get_navigation_items(
+            include_disabled=True
+        ),
         "collaboration_users": _task_users(),
         "sidebar_brand": {
             "title": "TTT",
@@ -21918,6 +22115,8 @@ def _task_api_error(error):
         return api_error("TASK_NOT_FOUND", str(error), 404)
     if isinstance(error, TaskConflictError):
         return api_error("TASK_VERSION_CONFLICT", str(error), 409)
+    if isinstance(error, TaskPermissionError):
+        return api_error("TASK_PERMISSION_DENIED", str(error), 403)
     raise error
 
 
@@ -21960,6 +22159,51 @@ def api_tasks_collection_get():
         return _task_api_error(error)
     listing["rows"] = _serialize_tasks(listing["rows"])
     return api_success(listing)
+
+
+@app.get("/api/v1/tasks/calendar")
+def api_tasks_calendar_get():
+    user = current_auth_user() or {}
+    try:
+        listing = _tasks_store().calendar(
+            start=request.args.get("start"), end=request.args.get("end"),
+            query=request.args.get("q", ""),
+            assignee_id=request.args.get("assignee_id") or None,
+            priority=request.args.get("priority", ""),
+            entity_type=request.args.get("entity_type", ""),
+            status=request.args.get("status", ""), due=request.args.get("due", ""),
+            only_mine=user.get("id") if request.args.get("only_mine") == "1" else None,
+            scope=request.args.get("scope", "all"), current_user_id=user.get("id"),
+            include_completed=request.args.get("include_completed") == "1",
+        )
+    except TaskValidationError as error:
+        return _task_api_error(error)
+    for key in ("rows", "undated"):
+        listing[key] = _serialize_tasks(listing[key])
+        for task in listing[key]:
+            task["can_edit"] = bool(
+                user.get("role") == "admin" or int(user.get("id") or 0) in {
+                    int(task["author_id"]), int(task["assignee_id"])
+                }
+            )
+    return api_success(listing)
+
+
+@app.post("/api/v1/tasks/<int:task_id>/calendar-reschedule")
+def api_task_calendar_reschedule(task_id):
+    user = current_auth_user() or {}
+    try:
+        payload = api_json_payload()
+        task = _tasks_store().calendar_reschedule(
+            task_id, payload.get("due_date"), payload.get("due_time"), user.get("id"),
+            actor_role=user.get("role", "employee"), section=payload.get("section", "inbox"),
+            expected_version=payload.get("version"),
+        )
+    except (TaskValidationError, TaskPermissionError, TaskNotFoundError,
+            TaskConflictError) as error:
+        return _task_api_error(error)
+    _record_task_audit(task)
+    return api_success(_serialize_tasks([task])[0])
 
 
 @app.post("/api/v1/tasks")
