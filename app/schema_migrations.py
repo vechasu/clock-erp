@@ -157,7 +157,7 @@ AUDIT_IDENTITY_MIGRATION_ID = "2026-08-28-audit-identity-v1"
 AUDIT_IDENTITY_MIGRATION_NAME = "Audit identity and business entity coverage"
 AUDIT_IDENTITY_MIGRATION_CHECKSUM = hashlib.sha256(
     (AUDIT_IDENTITY_MIGRATION_ID + "\n" + AUDIT_IDENTITY_MIGRATION_NAME + "\n" +
-     "order,customer,task,purchase,settings,user").encode("utf-8")
+     "order,customer,task,purchase,settings,user;constraint-detection-v2").encode("utf-8")
 ).hexdigest()
 
 MIGRATIONS = (

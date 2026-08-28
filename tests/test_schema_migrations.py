@@ -9,7 +9,10 @@ from pathlib import Path
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
-from app.catalog_migration_steps import apply_fresh_catalog_schema
+from app.catalog_migration_steps import (
+    apply_audit_identity_constraints,
+    apply_fresh_catalog_schema,
+)
 from app.schema_migrations import (
     BASELINE_CHECKSUM,
     BASELINE_ID,
@@ -92,6 +95,38 @@ class SchemaMigrationTest(unittest.TestCase):
         before_hash = self._comment_hash()
         apply_migrations(self.database_path, app_commit="upgrade")
         self.assertEqual(self._comment_hash(), before_hash)
+
+    def test_audit_constraint_upgrade_does_not_confuse_actor_user_value(self):
+        connection = sqlite3.connect(str(self.database_path))
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute(
+                "CREATE TABLE erp_audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "entity_type TEXT NOT NULL CHECK (entity_type IN ('product','repair')) ,"
+                "entity_id TEXT NOT NULL,action TEXT NOT NULL,actor_id TEXT,"
+                "actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN "
+                "('user','system','external')),actor_display_name_snapshot TEXT NOT NULL,"
+                "occurred_at TEXT NOT NULL,object_label_snapshot TEXT NOT NULL,"
+                "object_secondary_snapshot TEXT NOT NULL DEFAULT '',"
+                "changes_json TEXT NOT NULL DEFAULT '{}',metadata_json TEXT NOT NULL DEFAULT '{}',"
+                "search_text TEXT NOT NULL DEFAULT '',status_snapshot TEXT NOT NULL DEFAULT '',"
+                "source_snapshot TEXT NOT NULL DEFAULT '')"
+            )
+            connection.execute(
+                "INSERT INTO erp_audit_events(entity_type,entity_id,action,actor_id,"
+                "actor_display_name_snapshot,occurred_at,object_label_snapshot) "
+                "VALUES('product','1','updated','7','Максим','2026-08-28T00:00:00Z','Товар')"
+            )
+            apply_audit_identity_constraints(connection)
+            table_sql = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='erp_audit_events'"
+            ).fetchone()[0]
+            self.assertIn("'settings'", table_sql)
+            self.assertEqual(
+                connection.execute("SELECT actor_id FROM erp_audit_events").fetchone()[0], "7"
+            )
+        finally:
+            connection.close()
 
     def _comment_hash(self):
         with sqlite3.connect(str(self.database_path)) as connection:
