@@ -81,6 +81,23 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
                 )
         self.assertEqual(self.query(page=999, page_size=50)["page"], 10)
 
+        all_rows = self.query(page_size="all")
+        self.assertEqual(all_rows["page_size"], "all")
+        self.assertEqual(len(all_rows["rows"]), 455)
+        self.assertEqual(all_rows["page_count"], 1)
+
+    def test_search_includes_product_model_article_and_source(self):
+        detailed = dict(self.orders[0])
+        detailed.update(source="tictactoy", source_name="Сайт")
+        detailed["products"] = [{
+            "name": "Часы Север", "model": "Polar 7", "article": "ART-778",
+            "quantity": 1,
+        }]
+        self.store.replace([detailed] + self.orders[1:], 1001)
+        for query in ("Часы Север", "Polar 7", "ART-778", "Сайт"):
+            with self.subTest(query=query):
+                self.assertEqual(self.query(q=query)["total"], 1)
+
     def test_responsible_filter_is_applied_before_pagination(self):
         assigned = {row["id"] for row in self.orders[25:75]}
         first = self.store.query(
@@ -256,6 +273,35 @@ class OrdersListIntegrationTest(unittest.TestCase):
         self.assertIn("Страница 2 из 2", payload["html"])
         self.assertNotIn("2 / 2", payload["html"])
 
+    def test_compact_header_has_live_search_filters_and_no_legacy_scope_or_kpis(self):
+        with (
+            mock.patch.object(web, "get_orders", return_value=[]),
+            mock.patch.object(web, "bulk_conducted_order_sales", return_value={}),
+            mock.patch.dict(web.ORDERS_CACHE, {"items": [], "loaded_at": 0, "error": ""}, clear=True),
+        ):
+            response = self.client.get("/app/orders?mine=1")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        for expected in (
+            'class="orders-command-bar"', 'id="orderSearch"',
+            'data-status-filter="all"', 'data-status-filter="N"',
+            'data-status-filter="A"', 'data-status-filter="D"',
+            "Обновить WB", "Список", "Разделение", "Карточка",
+        ):
+            self.assertIn(expected, html)
+        self.assertNotIn("Управление заказами интернет-магазина", html)
+        self.assertNotIn("orders-kpis", html)
+        self.assertNotIn(">Мои<", html)
+
+    def test_legacy_mine_parameter_does_not_limit_api_results(self):
+        with (
+            mock.patch.object(web, "get_orders", return_value=self.orders),
+            mock.patch.object(web, "bulk_conducted_order_sales", return_value={}),
+        ):
+            response = self.client.get("/api/orders?mine=1&page_size=20")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["total_available"], 75)
+
     def test_row_has_customer_phone_amount_datetime_units_status_and_sale_badge(self):
         row = dict(
             order_row(1), item_units=5,
@@ -276,7 +322,7 @@ class OrdersListIntegrationTest(unittest.TestCase):
         for expected in (
             row["number"], row["customer"], row["phone"],
             'data-amount="10001"', 'data-date="2026-08-02 13:30:00"',
-            "5 товаров", "Подтверждён", "✓ Продажа проведена",
+            "×2", "×3", "Подтверждён", "Продажа проведена",
         ):
             self.assertIn(expected, html)
 
@@ -317,6 +363,37 @@ class OrdersListIntegrationTest(unittest.TestCase):
         self.assertFalse(enriched[1]["sale_completed"])
         self.assertFalse(enriched[2]["sale_completed"])
         self.assertFalse(enriched[3]["sale_completed"])
+
+    def test_list_metadata_is_loaded_in_bulk_without_n_plus_one(self):
+        statements = []
+
+        class TracedCatalog(CatalogDatabase):
+            def connect(inner_self):
+                connection = super(TracedCatalog, inner_self).connect()
+                connection.set_trace_callback(statements.append)
+                return connection
+
+        catalog = TracedCatalog(Path(self.temporary.name) / "metadata-catalog.db")
+        catalog.initialize()
+        order_ids = [row["id"] for row in self.orders[:50]]
+        with catalog.transaction() as connection:
+            for index, order_id in enumerate(order_ids[:2]):
+                connection.execute(
+                    "INSERT INTO erp_order_comments (order_id,text,author_name,created_at,source) "
+                    "VALUES (?,?,?,?, 'erp')",
+                    (order_id, "Внутренний {}".format(index), "Сотрудник", "2026-08-28T10:00:00"),
+                )
+                connection.execute(
+                    "INSERT INTO erp_order_status_events (external_order_id,old_status,new_status,actor,source,sync_result,created_at) "
+                    "VALUES (?,?,? ,?,'erp','synced',?)",
+                    (order_id, "N", "A", "Сотрудник", "2026-08-28T11:00:00"),
+                )
+        statements.clear()
+        enriched = web.enrich_orders_list_rows(self.orders[:50], database=catalog)
+        selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+        self.assertLessEqual(len(selects), 3)
+        self.assertEqual(enriched[0]["internal_comment"]["text"], "Внутренний 0")
+        self.assertEqual(enriched[0]["status_event"]["actor"], "Сотрудник")
 
 
 if __name__ == "__main__":
