@@ -175,3 +175,72 @@ test('calendar remains readable and keyboard reachable on mobile', async ({ page
   }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
 });
+
+test('month calendar positions the current week inside its own scroll area', async ({ page }) => {
+  await page.goto('/app/tasks?mode=calendar&calendar=month', { waitUntil: 'domcontentloaded' });
+  const scroll = page.locator('.calendar-month-scroll');
+  const currentWeek = page.locator('.calendar-month-week:has(.calendar-day.is-today)');
+  await expect(currentWeek).toHaveCount(1);
+  await expect(currentWeek.locator('.calendar-day.is-today')).toHaveCount(1);
+  await expect(currentWeek.locator('xpath=following-sibling::*[1]')).toHaveCount(1);
+  const position = await scroll.evaluate((node) => {
+    const week = node.querySelector(
+      '.calendar-month-week:has(.calendar-day.is-today)',
+    ) as HTMLElement;
+    return {
+      scrollTop: node.scrollTop,
+      targetTop: week.offsetTop - (node as HTMLElement).offsetTop,
+      pageY: window.scrollY,
+    };
+  });
+  expect(Math.abs(position.scrollTop - position.targetTop)).toBeLessThanOrEqual(2);
+  expect(position.pageY).toBe(0);
+  await expect(page.locator('.calendar-toolbar')).toBeInViewport();
+  await expect(page.locator('.calendar-weekdays')).toBeInViewport();
+
+  await page.locator('#calendarNext').click();
+  await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
+  await page.locator('#calendarToday').click();
+  await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+
+  await scroll.focus();
+  await expect(scroll).toBeFocused();
+  await page.getByRole('button', { name: 'Неделя' }).click();
+  await expect(page.locator('.calendar-month-scroll')).toHaveCount(0);
+  await expect(page.locator('.calendar-week-day')).toHaveCount(7);
+});
+
+test('month calendar keeps four, five and six-row months and crosses a year boundary', async ({
+  page,
+}) => {
+  for (const [date, rows] of [
+    ['2027-02-15', 4],
+    ['2026-02-15', 5],
+    ['2026-11-15', 6],
+  ] as const) {
+    await page.goto(`/app/tasks?mode=calendar&calendar=month&date=${date}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await expect(page.locator('.calendar-month-week')).toHaveCount(rows);
+    await expect(page.locator('.calendar-month-scroll')).toHaveJSProperty('scrollTop', 0);
+  }
+  await page.goto('/app/tasks?mode=calendar&calendar=month&date=2027-01-15', {
+    waitUntil: 'domcontentloaded',
+  });
+  await page.locator('#calendarPrev').click();
+  await expect(page.locator('#calendarTitle')).toContainText('декабрь 2026');
+});
+
+test('queue badges omit zeroes and journal while exposing accessible labels', async ({ page }) => {
+  await page.goto('/app/tasks?view=today&scope=mine', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('[data-view="today"] [data-view-count]')).toHaveAttribute(
+    'aria-label',
+    /незавершённые задачи/,
+  );
+  await expect(page.locator('[data-view="someday"] [data-view-count]')).toBeHidden();
+  await expect(page.locator('[data-view="logbook"] [data-view-count]')).toHaveCount(0);
+  await expect(page.locator('#taskSectionStats')).toContainText(/осталось · \d+ выполнено из \d+/);
+  const before = await page.locator('[data-view="today"] [data-view-count]').textContent();
+  await page.locator('#taskSearch').fill('Подтвердить');
+  await expect(page.locator('[data-view="today"] [data-view-count]')).toHaveText(before || '');
+});

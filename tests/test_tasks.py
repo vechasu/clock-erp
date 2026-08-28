@@ -119,6 +119,51 @@ class TaskStoreTest(unittest.TestCase):
         self.assertFalse(duplicate_created)
         self.assertEqual(first["id"], second["id"])
 
+    def test_queue_counts_use_active_tasks_scopes_filters_and_selected_statistics(self):
+        inbox = self.create(title="Входящие мои", section="inbox", priority="urgent", assignee_id=1)
+        self.create(title="Входящие чужие", section="inbox", assignee_id=2)
+        overdue = self.create(title="Просрочено", due_date="2026-08-26", assignee_id=1)
+        today = self.create(title="Сегодня", due_date="2026-08-27", assignee_id=1)
+        self.create(title="Планы", due_date="2026-08-28", assignee_id=2)
+        self.create(title="Ожидаю", status="waiting", waiting_for="Ответ", check_date="2026-08-27")
+        self.create(title="В любое время", section="anytime")
+        completed = self.create(title="Входящие выполнено", section="inbox", priority="urgent")
+        cancelled = self.create(title="Входящие отменено", section="inbox")
+        self.store.set_status(completed["id"], "completed", 1)
+        self.store.set_status(cancelled["id"], "cancelled", 1)
+
+        counts = self.store.counts("2026-08-27", selected_view="inbox")
+        self.assertEqual(
+            {key: counts[key] for key in ("inbox", "overdue", "today", "plans", "waiting", "anytime", "someday")},
+            {"inbox": 3, "overdue": 1, "today": 2, "plans": 1, "waiting": 1, "anytime": 1, "someday": 0},
+        )
+        self.assertEqual(counts["statistics"], {"remaining": 3, "completed": 1, "total": 4})
+
+        mine = self.store.counts("2026-08-27", scope="mine", current_user_id=1, selected_view="inbox")
+        created = self.store.counts("2026-08-27", scope="created", current_user_id=2)
+        only_mine = self.store.counts("2026-08-27", only_mine=1, scope="all")
+        urgent = self.store.counts("2026-08-27", priority="urgent", selected_view="inbox")
+        self.assertEqual((mine["inbox"], created["inbox"], only_mine["inbox"], urgent["inbox"]), (2, 0, 2, 1))
+
+        self.store.set_status(inbox["id"], "completed", 1)
+        self.assertEqual(self.store.counts("2026-08-27")["inbox"], 2)
+        self.store.set_status(inbox["id"], "new", 1)
+        self.assertEqual(self.store.counts("2026-08-27")["inbox"], 3)
+        self.store.move(inbox["id"], "someday", 1)
+        moved = self.store.counts("2026-08-27")
+        self.assertEqual((moved["inbox"], moved["someday"]), (2, 1))
+        self.assertNotIn(cancelled["id"], [row["id"] for row in self.store.list("inbox")["rows"]])
+        self.assertEqual(self.store.get(overdue["id"])["status"], "new")
+        self.assertEqual(self.store.get(today["id"])["status"], "new")
+
+    def test_search_changes_selected_statistics_but_not_queue_counts(self):
+        self.create(title="Найти меня", section="inbox")
+        self.create(title="Другая задача", section="inbox")
+        baseline = self.store.counts("2026-08-27", selected_view="inbox")
+        searched = self.store.counts("2026-08-27", selected_view="inbox", query="найти")
+        self.assertEqual(searched["inbox"], baseline["inbox"])
+        self.assertEqual(searched["statistics"], {"remaining": 1, "completed": 0, "total": 1})
+
     def test_validation_rejects_bad_user_enum_time_and_relation(self):
         for payload in (
             {"title": "", "assignee_id": 1},

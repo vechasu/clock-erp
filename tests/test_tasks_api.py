@@ -139,8 +139,8 @@ class TasksApiTest(unittest.TestCase):
         self.assertIn("Ожидаю", page)
         self.assertIn("Название, описание, клиент, заказ или товар", page)
         self.assertIn('aria-controls="advancedFilters"', page)
-        self.assertIn("tasks.css?v=4", page)
-        self.assertIn("tasks.js?v=4", page)
+        self.assertIn("tasks.css?v=5", page)
+        self.assertIn("tasks.js?v=5", page)
         self.assertIn("Календарь", page)
         self.assertNotIn("<script>alert(1)</script>", page)
 
@@ -213,6 +213,21 @@ class TasksApiTest(unittest.TestCase):
             self.assertEqual(row["deleted_by"], self.admin_id)
             self.assertTrue(row["created_at"])
             self.assertTrue(row["deleted_at"])
+
+    def test_counts_api_honors_scope_filters_and_keeps_search_out_of_badges(self):
+        self.login()
+        headers = {"X-CSRF-Token": "tasks-csrf"}
+        for title, values in (
+            ("Нужная", {"section": "inbox", "priority": "urgent", "assignee_id": self.user_id}),
+            ("Другая", {"section": "inbox", "priority": "other", "assignee_id": self.user_id}),
+        ):
+            response = self.client.post("/api/v1/tasks", json=dict({"title": title}, **values), headers=headers)
+            self.assertEqual(response.status_code, 201)
+        baseline = self.client.get("/api/v1/tasks/counts?view=inbox&scope=mine").get_json()["data"]
+        searched = self.client.get("/api/v1/tasks/counts?view=inbox&scope=mine&q=Нужная").get_json()["data"]
+        filtered = self.client.get("/api/v1/tasks/counts?view=inbox&scope=mine&priority=urgent").get_json()["data"]
+        self.assertEqual((baseline["inbox"], searched["inbox"], filtered["inbox"]), (2, 2, 1))
+        self.assertEqual(searched["statistics"], {"remaining": 1, "completed": 0, "total": 1})
 
 
 if __name__ == "__main__":

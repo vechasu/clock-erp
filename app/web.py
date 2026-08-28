@@ -22671,10 +22671,20 @@ def api_task_reschedule(task_id):
 @app.get("/api/v1/tasks/counts")
 def api_task_counts():
     user = current_auth_user() or {}
-    store = _tasks_store()
-    if user.get("id"):
-        store.generate_notifications(user.get("id"))
-    return api_success(store.counts(assignee_id=user.get("id")))
+    try:
+        counts = _tasks_store().counts(
+            assignee_id=request.args.get("assignee_id") or None,
+            priority=request.args.get("priority", ""),
+            entity_type=request.args.get("entity_type", ""),
+            status=request.args.get("status", ""), due=request.args.get("due", ""),
+            only_mine=user.get("id") if request.args.get("only_mine") == "1" else None,
+            scope=request.args.get("scope", "all"), current_user_id=user.get("id"),
+            selected_view=request.args.get("view") or None,
+            query=request.args.get("q", ""),
+        )
+    except TaskValidationError as error:
+        return _task_api_error(error)
+    return api_success(counts)
 
 
 @app.get("/api/v1/tasks/notifications")
