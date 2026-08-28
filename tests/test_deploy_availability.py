@@ -116,24 +116,46 @@ class DeployAvailabilityTest(unittest.TestCase):
     def test_services_smoke_uses_a_production_available_utf8_locale(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
-            'LC_ALL=en_US.utf8 LANG=en_US.utf8 $PYTHON_BIN',
+            'LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN"',
             script,
         )
 
     def test_services_vault_preflight_is_fail_closed_before_code_update(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
-        preflight = script.index("SERVICES VAULT PREFLIGHT: protected key")
+        backup = script.index('create-temporary "pre-services-vault-')
+        vault_preflight = script.index("SERVICES VAULT PREFLIGHT: protected key")
         application_update = script.index("APPLICATION UPDATE: fast-forward")
-        smoke = script.index("SERVICES_HTTP_STATUS=")
-        self.assertLess(preflight, application_update)
+        smoke = script.index("scripts/services_production_smoke.py")
+        self.assertLess(backup, vault_preflight)
+        self.assertLess(vault_preflight, application_update)
         self.assertLess(application_update, smoke)
         self.assertIn("scripts/service_vault_preflight.py", script)
         self.assertIn('systemctl show "$SERVICE_NAME" -p EnvironmentFiles', script)
-        self.assertIn('services-before.db', script)
-        self.assertIn('clock-erp.env-before', script)
+        self.assertIn("services-before.db", script)
+        self.assertIn("clock-erp.env-before", script)
         self.assertIn("SERVICE_VAULT_PROCESS_KEY_OK", script)
         self.assertNotIn("os.urandom", script)
         self.assertNotIn("SERVICE_VAULT_KEY_CREATED", script)
+        self.assertNotIn("printf '%s' \"$SERVICE_VAULT_KEY\"", script)
+
+    def test_services_smoke_covers_credentials_cleanup_and_data_guard(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("scripts/services_production_smoke.py", script)
+        self.assertIn("ERP_PRODUCTION_SERVICES_SMOKE=confirmed", script)
+        self.assertIn("DATA_BEFORE=", script)
+        self.assertIn("DATA_AFTER=", script)
+        self.assertIn("POST-SMOKE DATA SAFETY", script)
+        smoke = (PROJECT_ROOT / "scripts" / "services_production_smoke.py").read_text(
+            encoding="utf-8"
+        )
+        for stage in (
+            'stage = "page"', 'stage = "create"',
+            'stage = "masked-list"', 'stage = "reveal"',
+            'stage = "update"', 'stage = "archive"', 'stage = "log-security"',
+        ):
+            self.assertIn(stage, smoke)
+        self.assertIn('connection.execute("DELETE FROM services', smoke)
+        self.assertIn("secrets.token_urlsafe", smoke)
 
     def test_customer_backfill_does_not_expand_an_empty_array_on_bash_42(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")

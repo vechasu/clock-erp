@@ -101,6 +101,8 @@ DEPLOY_SAFETY_DIR=""
 MAIL_ROLLBACK_BACKUP=""
 MAIL_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
+DATA_SNAPSHOT_AFTER=""
+PYTHON_BIN=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
 BITRIX_COMMENT_ENDPOINT_BACKUP=""
@@ -253,6 +255,11 @@ check_backup_disk_usage() {
         || { printf 'BACKUP_ERROR: disk usage is %s%%\n' "$usage" >&2; return 1; }
 }
 
+stable_data_snapshot() {
+    "$PYTHON_BIN" scripts/data_safety_snapshot.py --instance-dir instance |
+        "$PYTHON_BIN" -c 'import json,sys; data=json.load(sys.stdin); data.get("catalog",{}).pop("audit_events",None); data.get("auth",{}).pop("sessions",None); print(json.dumps(data,sort_keys=True,separators=(",",":")))'
+}
+
 printf 'PRECHECK: repository, service, disk, active operations\n'
 cd "$PROJECT_DIR"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1
@@ -353,17 +360,28 @@ else
     python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" \
         --project-root "$PROJECT_DIR" --create-daily --apply
 fi
+if [[ -x venv/bin/python ]]; then
+    PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
+else
+    PYTHON_BIN="python3"
+fi
+if [[ -x "$RETENTION_TOOL" ]]; then
+    "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" \
+        --project-root "$PROJECT_DIR" \
+        --create-temporary "pre-services-vault-${FETCHED_COMMIT:0:12}" --apply
+else
+    python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" \
+        --project-root "$PROJECT_DIR" \
+        --create-temporary "pre-services-vault-${FETCHED_COMMIT:0:12}" --apply
+fi
+DATA_SNAPSHOT_BEFORE="$(stable_data_snapshot)"
+printf 'DATA_BEFORE=%s\n' "$DATA_SNAPSHOT_BEFORE"
 
 printf 'MIGRATION PREFLIGHT: stage release and rehearse exact runtime\n'
 FAILURE_STAGE="MIGRATION PREFLIGHT"
 RELEASE_DIR="$(mktemp -d "$BACKUP_DIR/temporary/release-XXXXXX")"
 chmod 700 "$RELEASE_DIR"
 git archive "$FETCHED_COMMIT" | tar -x -C "$RELEASE_DIR"
-if [[ -x venv/bin/python ]]; then
-    PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
-else
-    PYTHON_BIN="python3"
-fi
 PRODUCTION_SQLITE_VERSION="$(
     "$PYTHON_BIN" -c 'import sqlite3; print(sqlite3.sqlite_version)'
 )"
@@ -382,7 +400,6 @@ for path in sorted(Path('app/templates').glob('*.html')):
     environment.parse(path.read_text(encoding='utf-8'))
 PYTHON_CHECK
 )
-
 printf 'SERVICES VAULT PREFLIGHT: protected key, database copy and systemd wiring\n'
 FAILURE_STAGE="SERVICES VAULT PREFLIGHT"
 [[ -f "$SERVICE_ENV_FILE" ]] \
@@ -412,7 +429,6 @@ sys.stdout.write(load_key(sys.argv[1]))
 PYTHON_KEY
 )"
 export SERVICE_VAULT_KEY
-
 PREFLIGHT_REPORT="$(mktemp "$REHEARSAL_ROOT/preflight-report-XXXXXX.json")"
 chmod 600 "$PREFLIGHT_REPORT"
 if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
@@ -546,7 +562,6 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         printf 'Service did not stop before production migration\n' >&2
         false
     fi
-    DATA_SNAPSHOT_BEFORE="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     rollback_directory="$(mktemp -d "$BACKUP_DIR/production-migration-XXXXXX")"
     chmod 700 "$rollback_directory"
     if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
@@ -666,7 +681,7 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py apply --database instance/mail.db
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
     fi
-    DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
+    DATA_SNAPSHOT_AFTER="$(stable_data_snapshot)"
     if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
         printf 'POST-DEPLOY DATA SAFETY: business aggregate mismatch\n' >&2
         false
@@ -754,25 +769,15 @@ fi
 if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_services_vault.py verify --database instance/services.db
 fi
-SERVICES_HTTP_STATUS="$(LC_ALL=en_US.utf8 LANG=en_US.utf8 $PYTHON_BIN - <<'PYTHON_SMOKE'
-from app.web import app
-from app.auth import get_auth_store
-app.config.update(TESTING=True, AUTH_TESTING=True)
-with app.app_context():
-    users = get_auth_store().list_team_presence()
-owner = next((user for user in users if user.get('role') == 'owner'), None)
-if not owner:
-    raise SystemExit('services smoke owner is missing')
-with app.test_client() as client:
-    with client.session_transaction() as session:
-        session['user_id'] = owner['id']
-    response = client.get('/app/services')
-    if response.status_code != 200 or 'Рабочие сервисы'.encode('utf-8') not in response.data:
-        raise SystemExit('services smoke failed: {}'.format(response.status_code))
-    print(response.status_code)
-PYTHON_SMOKE
-)"
-printf 'SERVICES_HTTP=%s\n' "$SERVICES_HTTP_STATUS"
+PYTHONPATH="$PROJECT_DIR" ERP_PRODUCTION_SERVICES_SMOKE=confirmed \
+    LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN" \
+    scripts/services_production_smoke.py
+DATA_SNAPSHOT_AFTER="$(stable_data_snapshot)"
+if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
+    printf 'POST-SMOKE DATA SAFETY: stable business aggregate mismatch\n' >&2
+    false
+fi
+printf 'DATA_AFTER=%s\n' "$DATA_SNAPSHOT_AFTER"
 if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
 fi

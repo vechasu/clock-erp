@@ -70,6 +70,9 @@ def preflight(environment_file, database, expected_uid=0):
             raise VaultPreflightError("Services database copy failed quick_check")
         values_before = encrypted_values(connection)
         cipher = Fernet(key.encode("ascii"))
+        roundtrip_plaintext = b"services-vault-preflight"
+        if cipher.decrypt(cipher.encrypt(roundtrip_plaintext)) != roundtrip_plaintext:
+            raise VaultPreflightError("Services key encrypt/decrypt roundtrip failed")
         for value in values_before:
             try:
                 plaintext = cipher.decrypt(value).decode("utf-8")
@@ -108,8 +111,8 @@ def main():
         report_path = Path(args.report)
         report_path.write_text(json.dumps(report, sort_keys=True) + "\n", encoding="utf-8")
         os.chmod(str(report_path), 0o600)
-    print("SERVICE_VAULT_PREFLIGHT_OK fields={} key_fp={}".format(
-        report["encrypted_fields"], report["key_fingerprint"]
+    print("SERVICE_VAULT_PREFLIGHT_OK fields={} roundtrip=ok".format(
+        report["encrypted_fields"]
     ))
 
 
