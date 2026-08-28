@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Vechasu ERP — Почта</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mail.css', v='1') }}">
+</head>
+<body class="mail-page"><div class="app">{% include "_sidebar.html" %}
+<main class="mail-main" id="main-content" tabindex="-1">
+    <header class="erp-workspace-header mail-header">
+        <div class="erp-workspace-heading"><h1>Почта</h1><p>Общий рабочий ящик и переписка с клиентами</p></div>
+        <div class="erp-workspace-actions"><button class="mail-secondary" id="syncMail" type="button">Синхронизировать</button><button class="mail-primary" id="composeMail" type="button">+ Написать</button></div>
+    </header>
+    {% if migration_error %}<div class="mail-state error" role="alert">{{ migration_error }}</div>{% endif %}
+    <div class="mail-connection" id="connectionState"{% if account and account.enabled %} hidden{% endif %}>
+        <div><h2>Почта не подключена</h2><p>Подключите общий ящик через IMAP и SMTP. До подключения ERP работает как обычно.</p>{% if not can_manage %}<small>Подключение доступно владельцу ERP.</small>{% endif %}</div>
+        {% if can_manage %}<button class="mail-primary" type="button" id="openSettings">Подключить почту</button>{% endif %}
+    </div>
+    <div class="mail-sync-status" id="syncStatus" role="status" aria-live="polite">{% if account and account.last_sync_at %}Последняя синхронизация: {{ account.last_sync_at }}{% endif %}</div>
+    <div class="mail-layout" id="mailWorkspace"{% if not account or not account.enabled %} hidden{% endif %}>
+        <nav class="mail-folders" aria-label="Разделы почты">
+            {% for value,label in [("all","Все письма"),("inbox","Входящие"),("needs_reply","Требуют ответа"),("mine","Назначенные мне"),("sent","Отправленные"),("drafts","Черновики"),("archive","Архив")] %}<button type="button" data-mail-view="{{ value }}"{% if value == 'all' %} class="active" aria-current="page"{% endif %}>{{ label }}{% if value == 'needs_reply' %}<span id="attentionCount"></span>{% endif %}</button>{% endfor %}
+        </nav>
+        <section class="mail-workspace" aria-label="Переписка">
+            <form class="mail-toolbar" id="mailFilters">
+                <input id="mailSearch" type="search" placeholder="Поиск по теме, адресу и тексту" aria-label="Поиск писем">
+                <select id="mailAssignee" aria-label="Ответственный"><option value="">Все ответственные</option>{% for user in users %}<option value="{{ user.id }}">{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select>
+                <select id="mailStatus" aria-label="Статус"><option value="">Все статусы</option><option value="new">Новое</option><option value="in_progress">В работе</option><option value="waiting_customer">Ждём клиента</option><option value="answered">Отвечено</option><option value="closed">Закрыто</option></select>
+                <input id="mailDate" type="date" aria-label="Письма с даты"><button type="submit">Найти</button>
+            </form>
+            <div class="mail-list" id="mailList" aria-live="polite" aria-busy="false"></div>
+            <nav class="mail-pagination" id="mailPagination" hidden><button type="button" data-page="prev">Назад</button><span></span><button type="button" data-page="next">Далее</button></nav>
+        </section>
+    </div>
+</main></div>
+
+<div class="mail-backdrop" id="mailBackdrop" hidden></div>
+<aside class="mail-drawer" id="threadDrawer" role="dialog" aria-modal="true" aria-labelledby="threadTitle" hidden>
+    <header><div><small>Переписка</small><h2 id="threadTitle"></h2></div><button type="button" data-close aria-label="Закрыть">×</button></header>
+    <div class="thread-controls"><label>Ответственный<select id="threadAssignee"><option value="">Не назначен</option>{% for user in users %}<option value="{{ user.id }}">{{ (user.first_name ~ ' ' ~ user.last_name)|trim or user.email }}</option>{% endfor %}</select></label><label>Статус<select id="threadStatus"><option value="new">Новое</option><option value="in_progress">В работе</option><option value="waiting_customer">Ждём клиента</option><option value="answered">Отвечено</option><option value="closed">Закрыто</option></select></label><label>Срок ответа<input id="threadDue" type="datetime-local"></label></div>
+    <div class="thread-links" id="threadLinks"></div><div class="thread-link-actions"><button type="button" class="mail-secondary" id="addThreadLink">+ Связать с ERP</button></div>
+    <div class="thread-messages" id="threadMessages"></div>
+    <footer><button type="button" class="mail-secondary" id="threadTask">Создать задачу</button><button type="button" class="mail-secondary" id="threadArchive">В архив</button><span></span><button type="button" class="mail-secondary" id="forwardMail">Переслать</button><button type="button" class="mail-secondary" id="replyAll">Ответить всем</button><button type="button" class="mail-primary" id="replyMail">Ответить</button></footer>
+</aside>
+
+<aside class="mail-drawer compose" id="composeDrawer" role="dialog" aria-modal="true" aria-labelledby="composeTitle" hidden>
+<form id="composeForm"><header><div><small>Исходящее письмо</small><h2 id="composeTitle">Новое письмо</h2></div><button type="button" data-close aria-label="Закрыть">×</button></header>
+    <div class="compose-body">
+        <label>Кому *<input name="to" required autocomplete="off"></label><div class="mail-customer-results" id="customerResults" hidden></div>
+        <div class="compose-row"><label>Копия<input name="cc"></label><label>Скрытая копия<input name="bcc"></label></div>
+        <label>Тема *<input name="subject" maxlength="1000" required></label>
+        <label>Текст *<textarea name="text_body" rows="14" maxlength="1000000" required></textarea></label>
+        <label>Вложения<input type="file" name="attachments" multiple><small>До 15 МБ на файл и 25 МБ на письмо.</small></label>
+        <div class="compose-error" id="composeError" role="alert" hidden></div><input type="hidden" name="thread_id"><input type="hidden" name="in_reply_to">
+    </div>
+    <footer><button type="button" class="mail-secondary" data-close>Отмена</button><span></span><button type="button" class="mail-secondary" id="saveDraft">Сохранить черновик</button><button type="submit" class="mail-primary" id="sendMail">Отправить</button></footer>
+</form></aside>
+
+{% if can_manage %}<aside class="mail-drawer settings" id="settingsDrawer" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden><form id="mailSettingsForm"><header><div><small>Только для владельца</small><h2 id="settingsTitle">Подключение почты</h2></div><button type="button" data-close aria-label="Закрыть">×</button></header><div class="compose-body">
+    <div class="compose-row"><label>Название ящика *<input name="mailbox_name" value="{{ account.mailbox_name if account else '' }}" required></label><label>Имя отправителя<input name="sender_name" value="{{ account.sender_name if account else '' }}"></label></div>
+    <label>Email *<input type="email" name="email" value="{{ account.email if account else '' }}" required></label>
+    <div class="compose-row"><label>IMAP-сервер *<input name="imap_host" value="{{ account.imap_host if account else '' }}" required></label><label>IMAP-порт *<input type="number" name="imap_port" value="{{ account.imap_port if account else 993 }}" required></label></div>
+    <div class="compose-row"><label>SMTP-сервер *<input name="smtp_host" value="{{ account.smtp_host if account else '' }}" required></label><label>SMTP-порт *<input type="number" name="smtp_port" value="{{ account.smtp_port if account else 465 }}" required></label></div>
+    <div class="compose-row"><label>Защищённое соединение<select name="security"><option value="ssl"{% if not account or account.security == 'ssl' %} selected{% endif %}>SSL/TLS</option><option value="starttls"{% if account and account.security == 'starttls' %} selected{% endif %}>STARTTLS</option></select></label><label>Логин *<input name="login" value="{{ account.login if account else '' }}" required></label></div>
+    <label>Пароль приложения<input type="password" name="password" autocomplete="new-password" placeholder="{{ 'Оставьте пустым, чтобы не менять' if account else '' }}"></label><p class="mail-security-note">Пароль шифруется серверным ключом ERP_MAIL_SECRET_KEY. Он не отображается после сохранения.</p><div class="compose-error" id="settingsError" role="alert" hidden></div>
+</div><footer>{% if account %}<button type="button" class="mail-danger" id="disableMail">Отключить синхронизацию</button>{% endif %}<span></span><button type="button" class="mail-secondary" id="testMail">Проверить подключение</button><button type="submit" class="mail-primary">Подключить почту</button></footer></form></aside>{% endif %}
+
+<script>window.MAIL_BOOTSTRAP={csrf:{{ csrf|tojson }},currentUserId:{{ (current_user.id if current_user else 0)|tojson }},account:{{ account|tojson }},canManage:{{ can_manage|tojson }}};</script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/notifications.js') }}"></script><script src="{{ url_for('static', filename='js/mail.js', v='1') }}"></script>
+</body></html>
