@@ -51,6 +51,18 @@ ALLOWED_ROLES = {
     "employee": "Сотрудник",
     "admin": "Администратор",
 }
+TEAM_ROLES = {
+    "owner": "Владелец",
+    "admin": "Администратор",
+    "manager": "Менеджер",
+    "warehouse": "Склад",
+    "viewer": "Наблюдатель",
+}
+LEGACY_TEAM_ROLES = {
+    "admin": "owner",
+    "employee": "manager",
+}
+PRESENCE_TIMEOUT_SECONDS = 5 * 60
 COMMON_PASSWORDS = {
     "12345678",
     "password",
@@ -174,6 +186,67 @@ class AuthStore:
                 (user_id,),
             ).fetchone()
         return self._row_dict(row)
+
+    def list_team_presence(self, now=None, timeout_seconds=PRESENCE_TIMEOUT_SECONDS):
+        """Return every account and its newest persistent server-side session."""
+        now = int(now if now is not None else time.time())
+        cutoff = now - int(timeout_seconds)
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT users.id, users.first_name, users.last_name, users.email,
+                       users.role, users.active, users.created_at,
+                       users.last_login_at, auth_sessions.updated_at AS activity_at,
+                       auth_sessions.data AS session_data
+                FROM users
+                LEFT JOIN auth_sessions ON auth_sessions.user_id = users.id
+                ORDER BY users.id, auth_sessions.updated_at DESC
+                """
+            ).fetchall()
+        users = []
+        by_id = {}
+        for row in rows:
+            user_id = int(row["id"])
+            item = by_id.get(user_id)
+            if item is None:
+                display_name = " ".join(
+                    value for value in (
+                        str(row["first_name"] or "").strip(),
+                        str(row["last_name"] or "").strip(),
+                    ) if value
+                ) or str(row["email"] or "").split("@", 1)[0]
+                canonical_role = LEGACY_TEAM_ROLES.get(
+                    str(row["role"] or ""), str(row["role"] or "viewer")
+                )
+                item = {
+                    "id": user_id,
+                    "login": str(row["email"] or ""),
+                    "display_name": display_name,
+                    "role": canonical_role,
+                    "role_label": TEAM_ROLES.get(canonical_role, canonical_role),
+                    "status": "active" if int(row["active"] or 0) else "inactive",
+                    "active": bool(row["active"]),
+                    "created_at": row["created_at"],
+                    "last_login_at": row["last_login_at"],
+                    "last_activity_at": None,
+                    "current_section": "",
+                    "online": False,
+                }
+                by_id[user_id] = item
+                users.append(item)
+            activity_at = row["activity_at"]
+            if activity_at is None or item["last_activity_at"] is not None:
+                continue
+            item["last_activity_at"] = int(activity_at)
+            item["online"] = bool(item["active"] and int(activity_at) >= cutoff)
+            try:
+                session_data = json.loads(row["session_data"] or "{}")
+            except (TypeError, ValueError):
+                session_data = {}
+            item["current_section"] = str(
+                session_data.get("current_section") or ""
+            )[:80]
+        return users
 
     def authenticate(self, email, password):
         with self.connect() as connection:
@@ -1325,6 +1398,12 @@ def login():
             session["session_version"] = user["session_version"]
             session.permanent = True
             csrf_token()
+            audit_login = current_app.extensions.get("audit_login")
+            if audit_login is not None:
+                try:
+                    audit_login(user)
+                except Exception:
+                    LOGGER.exception("Не удалось записать вход пользователя в журнал")
             return redirect(next_url)
 
     return render_template(
