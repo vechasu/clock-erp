@@ -24,6 +24,9 @@ os.environ["ERP_TASKS_DATABASE"] = str(PREVIEW_ROOT / "tasks.db")
 os.environ["ERP_PURCHASES_DATABASE"] = str(PREVIEW_ROOT / "purchases.db")
 os.environ["CUSTOMERS_DATABASE_PATH"] = str(PREVIEW_ROOT / "customers.db")
 os.environ["ERP_SMS_DATABASE"] = str(PREVIEW_ROOT / "sms.db")
+os.environ["ERP_MAIL_DATABASE"] = str(PREVIEW_ROOT / "mail.db")
+os.environ["ERP_MAIL_ATTACHMENT_ROOT"] = str(PREVIEW_ROOT / "mail-attachments")
+os.environ["ERP_MAIL_SECRET_KEY"] = base64.urlsafe_b64encode(b"m" * 32).decode("ascii")
 os.environ["ERP_SERVICES_DATABASE"] = str(PREVIEW_ROOT / "services.db")
 os.environ["SERVICE_VAULT_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
@@ -32,6 +35,7 @@ from app.domain_schema_migrations import apply_domain_migrations  # noqa: E402
 from app.purchases_migrations import migrate_database as migrate_purchases  # noqa: E402
 from app.customer_registry_migrations import migrate_database as migrate_customers  # noqa: E402
 from app.sms_migrations import migrate_database as migrate_sms  # noqa: E402
+from app.mail_migrations import migrate_database as migrate_mail  # noqa: E402
 from scripts.migrate_services_vault import apply as migrate_services  # noqa: E402
 
 apply_migrations(PREVIEW_ROOT / "catalog.db", app_commit="stage2-preview")
@@ -41,6 +45,7 @@ apply_domain_migrations(PREVIEW_ROOT / "tasks.db", "tasks", "stage2-preview")
 migrate_purchases(PREVIEW_ROOT / "purchases.db")
 migrate_customers(PREVIEW_ROOT / "customers.db")
 migrate_sms(PREVIEW_ROOT / "sms.db")
+migrate_mail(PREVIEW_ROOT / "mail.db")
 migrate_services(PREVIEW_ROOT / "services.db")
 
 from app import web  # noqa: E402
