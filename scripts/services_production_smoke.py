@@ -191,9 +191,10 @@ def main():
         if any(value.encode("utf-8") in database_bytes for value in secret_values):
             raise RuntimeError("plaintext in database")
 
+        stage = "audit-storage"
         with sqlite3.connect("instance/catalog.db") as connection:
             audit_rows = connection.execute(
-                "SELECT object_label,object_secondary,metadata_json "
+                "SELECT object_label_snapshot,object_secondary_snapshot,metadata_json "
                 "FROM erp_audit_events WHERE entity_type='service' AND entity_id=?",
                 (str(service_id),),
             ).fetchall()
