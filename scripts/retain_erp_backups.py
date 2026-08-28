@@ -292,7 +292,9 @@ def _runtime_copy_ignore(instance):
             return []
         return [
             name for name in names
-            if name == "backups" or RUNTIME_DATABASE_BACKUP.match(name)
+            if name == "backups"
+            or RUNTIME_DATABASE_BACKUP.match(name)
+            or name.endswith((".db-journal", ".db-wal", ".db-shm"))
         ]
     return ignore
 
