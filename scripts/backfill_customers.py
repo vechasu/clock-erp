@@ -117,7 +117,19 @@ def read_sales(path):
     connection.row_factory = sqlite3.Row
     try:
         rows = connection.execute(
-            "SELECT id,source,status,created_at,metadata_json,external_order_id,cancelled_at,deleted_at FROM erp_sales ORDER BY id"
+            "SELECT s.id,s.source,s.status,s.created_at,s.metadata_json,"
+            "s.external_order_id,s.cancelled_at,s.deleted_at,"
+            "COUNT(i.id) AS item_count,"
+            "SUM(CASE WHEN i.quantity>COALESCE(i.returned_quantity,0) "
+            "THEN 1 ELSE 0 END) AS active_item_count,"
+            "SUM(CASE WHEN i.quantity>COALESCE(i.returned_quantity,0) "
+            "AND i.unit_price IS NULL THEN 1 ELSE 0 END) AS unknown_price_count,"
+            "SUM(CASE WHEN i.quantity>COALESCE(i.returned_quantity,0) "
+            "THEN (i.quantity-COALESCE(i.returned_quantity,0))*i.unit_price "
+            "ELSE 0 END) AS confirmed_amount "
+            "FROM erp_sales s LEFT JOIN erp_sale_items i ON i.sale_id=s.id "
+            "GROUP BY s.id,s.source,s.status,s.created_at,s.metadata_json,"
+            "s.external_order_id,s.cancelled_at,s.deleted_at ORDER BY s.id"
         ).fetchall()
         result = []
         for stored in rows:
@@ -128,12 +140,14 @@ def read_sales(path):
             source = str(stored["source"] or data.get("source") or "erp").strip().casefold()
             external_order_id = str(stored["external_order_id"] or data.get("order_number") or "").strip()
             cancelled = bool(stored["cancelled_at"] or stored["deleted_at"])
-            amount = data.get("total_amount")
-            if amount is None and data.get("unit_price") is not None:
-                try:
-                    amount = float(data.get("unit_price")) * float(data.get("quantity") or 1)
-                except (TypeError, ValueError):
-                    amount = None
+            # erp_sale_items is the source of truth for performed-sale pricing.
+            # metadata_json is descriptive and historically does not contain the
+            # persisted item price, which made real customer purchases appear as
+            # zero.  Never fabricate a partial amount when an active item has an
+            # unknown price.
+            amount = None
+            if int(stored["active_item_count"] or 0) and not int(stored["unknown_price_count"] or 0):
+                amount = stored["confirmed_amount"]
             result.append({
                 "operation_type": "sale", "source": source or "erp", "external_id": str(stored["id"]),
                 "related_order_source": "tictactoy" if source == "tictactoy" and external_order_id else "",
