@@ -62,6 +62,18 @@ test('task completion control suppresses duplicate requests', async ({ page }) =
   await expect.poll(() => completionRequests).toBe(1);
 });
 
+test('existing task card restores focus after Escape', async ({ page }) => {
+  await page.goto('/app/tasks?view=today', { waitUntil: 'domcontentloaded' });
+  const trigger = page.getByRole('button', {
+    name: 'Открыть карточку «Подтвердить наличие часов для клиента»',
+  });
+  await trigger.click();
+  await expect(page.locator('#taskModal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#taskModal')).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
 test('tasks page has no page-level overflow at required viewports', async ({ page }) => {
   for (const viewport of [
     { width: 1920, height: 1080 },

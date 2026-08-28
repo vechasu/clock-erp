@@ -14,7 +14,7 @@
         view: validViews.includes(initial.get("view")) ? initial.get("view") : "today",
         page: Math.max(1, Number(initial.get("page")) || 1),
         rows: [], pages: 1, total: 0, requestToken: 0, task: null, links: [],
-        returnFocus: null, filtersOpen: initial.get("filters") === "1", drawerHistoryPushed: false,
+        returnFocus: null, restoreTaskFocusId: null, filtersOpen: initial.get("filters") === "1", drawerHistoryPushed: false,
         pendingCompletions: new Set(),
     };
     const list = q("#taskList"), status = q("#taskStatus"), drawer = q("#taskModal"), backdrop = q("#taskBackdrop");
@@ -321,6 +321,12 @@
         q("#pageLabel").textContent = `Страница ${state.page} из ${state.pages}`;
         q("#prevPage").disabled = state.page <= 1;
         q("#nextPage").disabled = state.page >= state.pages;
+        if (state.restoreTaskFocusId) {
+            const taskId = Number(state.restoreTaskFocusId);
+            const row = qa(".task-row").find((item) => Number(item.dataset.taskId) === taskId);
+            state.restoreTaskFocusId = null;
+            if (row) row.querySelector(".task-row-action")?.focus();
+        }
     }
 
     async function load() {
@@ -484,7 +490,9 @@
     }
 
     function closeDrawer() {
+        const restoreTaskFocusId = state.drawerHistoryPushed && state.task ? state.task.id : null;
         hideDrawer();
+        if (restoreTaskFocusId) state.restoreTaskFocusId = restoreTaskFocusId;
         if (state.drawerHistoryPushed) {
             state.drawerHistoryPushed = false;
             history.back();
