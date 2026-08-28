@@ -114,6 +114,7 @@ class SalesTableLayoutContractTest(unittest.TestCase):
         )
         self.assertIn("window.salesInitialTableLayoutView", template)
         self.assertIn('style="visibility: hidden"', template)
+        self.assertIn("scrollbar-gutter: stable", template)
         self.assertLess(
             template.index('localStorage.getItem("ttt-erp-sidebar-collapsed")'),
             template.index('{% include "_sidebar.html" %}'),
