@@ -16,6 +16,10 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='css/erp-components.css') }}"
     >
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/settings-navigation.css') }}"
+    >
     <script defer src="{{ url_for('static', filename='js/settings.js') }}"></script>
 </head>
 
@@ -240,6 +244,45 @@
                 </button>
             </div>
         </form>
+
+        <section class="settings-card settings-navigation-card" aria-labelledby="navigationPreferencesTitle">
+            <div class="settings-section settings-navigation-section">
+                <h2 id="navigationPreferencesTitle">Синие вкладки</h2>
+                <p>
+                    Настройте порядок и видимость вкладок только для своего аккаунта.
+                </p>
+                <div id="navigationPreferencesStatus" class="settings-form-status" aria-live="polite"></div>
+                <ol id="navigationPreferencesList" class="navigation-preferences-list">
+                    {% for item in navigation_preference_items %}
+                        <li
+                            class="navigation-preference-item"
+                            data-navigation-preference-key="{{ item.key }}"
+                            draggable="true"
+                        >
+                            <span class="navigation-drag-handle" aria-hidden="true" title="Перетащить вкладку">⋮⋮</span>
+                            <span class="navigation-preference-label">{{ item.label }}</span>
+                            <span class="navigation-preference-controls">
+                                <button class="navigation-move-button" type="button" data-navigation-move="up" aria-label="Переместить «{{ item.label }}» вверх">↑</button>
+                                <button class="navigation-move-button" type="button" data-navigation-move="down" aria-label="Переместить «{{ item.label }}» вниз">↓</button>
+                                {% if item.required %}
+                                    <span class="navigation-required-hint">Всегда отображается</span>
+                                    <input type="checkbox" checked disabled aria-label="Показывать «{{ item.label }}». Всегда отображается">
+                                {% else %}
+                                    <label class="navigation-visibility-toggle">
+                                        <input type="checkbox" data-navigation-visible {% if item.enabled %}checked{% endif %}>
+                                        <span>Показывать</span>
+                                    </label>
+                                {% endif %}
+                            </span>
+                        </li>
+                    {% endfor %}
+                </ol>
+                <div class="actions settings-actions navigation-preference-actions">
+                    <button id="navigationPreferencesReset" class="button erp-secondary-action" type="button">Сбросить настройки</button>
+                    <button id="navigationPreferencesSave" class="button erp-primary-action" type="button">Сохранить</button>
+                </div>
+            </div>
+        </section>
 
         {% if can_manage_invitations %}
             {% include "_employee_invitations.html" %}
