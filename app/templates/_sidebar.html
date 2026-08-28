@@ -17,7 +17,7 @@
 >
 <link rel="stylesheet" href="{{ url_for('static', filename='css/collaboration.css') }}">
 <script>window.COLLABORATION_BOOTSTRAP={csrf:{{ csrf_token()|tojson }},users:{{ collaboration_users|tojson }}};</script>
-<script defer src="{{ url_for('static', filename='js/collaboration.js') }}"></script>
+<script async src="{{ url_for('static', filename='js/collaboration.js') }}"></script>
 <a class="erp-skip-link" href="#main-content">
     Перейти к основному содержимому
 </a>

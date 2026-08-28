@@ -1,4 +1,5 @@
 (() => {
+const initializeCollaboration = () => {
     const boot = window.COLLABORATION_BOOTSTRAP || {};
     const match = (() => {
         let found = location.pathname.match(/^\/order\/(\d+)$/);
@@ -40,4 +41,7 @@
             status.textContent = "Ответственный обновлён";
         } catch (error) { status.textContent = error.message; } finally { transfer.disabled = false; }
     });
+};
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initializeCollaboration, {once:true});
+else initializeCollaboration();
 })();
