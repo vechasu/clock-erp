@@ -15,6 +15,9 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/erp-states.css') }}"
 >
+<link rel="stylesheet" href="{{ url_for('static', filename='css/collaboration.css') }}">
+<script>window.COLLABORATION_BOOTSTRAP={csrf:{{ csrf_token()|tojson }},users:{{ collaboration_users|tojson }}};</script>
+<script defer src="{{ url_for('static', filename='js/collaboration.js') }}"></script>
 <a class="erp-skip-link" href="#main-content">
     Перейти к основному содержимому
 </a>
@@ -95,7 +98,7 @@
                     {{ navigation_icon(item.icon) }}
                 </span>
                 <span class="sidebar-label">{{ item.label }}</span>
-                {% if item.badge %}<span class="sidebar-count" aria-label="Активных задач на сегодня и просроченных: {{ item.badge }}">{{ item.badge }}</span>{% endif %}
+                {% if item.badge %}<span class="sidebar-count" aria-label="{{ 'Непрочитанных входящих' if item.key == 'inbox' else 'Активных задач на сегодня и просроченных' }}: {{ item.badge }}">{{ item.badge }}</span>{% endif %}
             </a>
         {% endfor %}
     </nav>

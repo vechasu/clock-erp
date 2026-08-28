@@ -244,5 +244,8 @@ fieldset legend { padding: 0 6px; color: var(--erp-text); font-size: 13px; font-
     * { scroll-behavior: auto !important; transition: none !important; }
 }
 
+.tasks-scope-tabs { display:flex; gap:8px; padding:0 0 16px; overflow:auto; }
+.tasks-scope-tabs button { border:1px solid var(--erp-border,#d8dee8); border-radius:10px; background:var(--erp-surface,#fff); padding:8px 13px; color:inherit; white-space:nowrap; cursor:pointer; }
+.tasks-scope-tabs button.active { font-weight:700; border-color:var(--erp-primary,#315efb); box-shadow:0 0 0 1px var(--erp-primary,#315efb); }
 .tasks-page :is(button, input, select, textarea, a):focus-visible { outline: 3px solid color-mix(in srgb, var(--erp-primary) 38%, transparent); outline-offset: 2px; }
 .tasks-page [hidden] { display: none !important; }

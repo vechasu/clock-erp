@@ -13,7 +13,7 @@
 <main class="main" id="main-content" tabindex="-1">
     <header class="erp-workspace-header purchases-head">
         <div class="erp-workspace-heading"><h1>Закупки</h1><p>Спрос клиентов и работа с поставщиками</p></div>
-        <div class="erp-workspace-actions"><button class="purchase-button primary" type="button" data-open="request-modal">Новый запрос</button></div>
+        <div class="erp-workspace-actions"><a class="purchase-button" href="?tab=requests">Все</a><a class="purchase-button" href="?tab=requests&amp;mine=1">Мои</a><button class="purchase-button primary" type="button" data-open="request-modal">Новый запрос</button></div>
     </header>
     {% if data_error %}<div class="purchase-error" role="alert">Данные закупок временно недоступны.</div>{% endif %}
     <section class="purchase-summary" aria-label="Сводка закупок">
@@ -84,4 +84,3 @@
 <script>window.PURCHASES_CONFIG={{ {'csrf':csrf,'statusLabels':status_labels,'orderStatusLabels':order_status_labels}|tojson }};</script>
 <script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/purchases.js') }}"></script><script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
 </body></html>
-

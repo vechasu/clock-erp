@@ -32,6 +32,10 @@ class TaskNotFoundError(LookupError):
     pass
 
 
+class TaskConflictError(RuntimeError):
+    pass
+
+
 def moscow_today(now=None):
     current = now or datetime.now(MOSCOW_TIMEZONE)
     if current.tzinfo is None:
@@ -245,7 +249,8 @@ class TaskStore:
                 histories[int(row["task_id"])].append(item)
         return [self._serialize(row, links[int(row["id"])], histories[int(row["id"])]) for row in rows]
 
-    def create(self, payload, actor_id, user_exists, entity_resolver):
+    def create(self, payload, actor_id, user_exists, entity_resolver, collaboration=None,
+               actor=None):
         values = self.normalize(payload)
         if not user_exists(values["assignee_id"]):
             raise TaskValidationError("Ответственный сотрудник не найден.", "assignee_id")
@@ -259,6 +264,8 @@ class TaskStore:
         series_id = _text(payload.get("series_id"), 120) or None
         with self.connect() as connection:
             try:
+                if collaboration is not None:
+                    collaboration.prepare(connection)
                 cursor = connection.execute(
                     "INSERT INTO tasks(title,description,section,status,priority,due_date,due_time,reminder_at,"
                     "author_id,assignee_id,source_comment,contact_name,contact_phone,contact_email,contact_channel,"
@@ -282,6 +289,13 @@ class TaskStore:
                                   {"entity_type": link["entity_type"], "entity_id": link["entity_id"]}, now)
                 if values["assignee_id"] != int(actor_id):
                     self._notification(connection, task_id, values["assignee_id"], "assigned", "assigned", now)
+                if collaboration is not None:
+                    collaboration.record_assignment(
+                        connection, "task", str(task_id), None, values["assignee_id"],
+                        actor or {"id": actor_id}, values["title"],
+                        "/app/tasks?task_id={}".format(task_id),
+                        operation_key=key or "task-create:{}".format(task_id), created_at=now,
+                    )
                 connection.commit()
             except sqlite3.IntegrityError:
                 connection.rollback()
@@ -300,7 +314,8 @@ class TaskStore:
                 raise TaskNotFoundError("Задача не найдена.")
             return self._enrich(connection, [row], True)[0]
 
-    def update(self, task_id, payload, actor_id, user_exists, entity_resolver):
+    def update(self, task_id, payload, actor_id, user_exists, entity_resolver,
+               collaboration=None, actor=None):
         current = self.get(task_id)
         if current["status"] in {"completed", "cancelled"} and "status" not in payload:
             raise TaskValidationError("Сначала восстановите задачу.", "status")
@@ -323,11 +338,19 @@ class TaskStore:
                    for field in editable if current.get(field) != merged.get(field)}
         now = utc_now()
         with self.connect() as connection:
+            if collaboration is not None and "assignee_id" in changed:
+                collaboration.prepare(connection)
             assignments = ",".join("{}=?".format(field) for field in editable)
-            connection.execute(
-                "UPDATE tasks SET {},updated_at=?,updated_by=? WHERE id=?".format(assignments),
-                [merged.get(field) for field in editable] + [now, int(actor_id), int(task_id)],
+            expected_version = int(payload.get("version") or current.get("version") or 1)
+            cursor = connection.execute(
+                "UPDATE tasks SET {},updated_at=?,updated_by=?,version=version+1 WHERE id=? AND version=?".format(assignments),
+                [merged.get(field) for field in editable] + [now, int(actor_id), int(task_id), expected_version],
             )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                raise TaskConflictError(
+                    "Эта запись была изменена другим сотрудником после того, как вы её открыли."
+                )
             if links is not None:
                 self._replace_links(connection, task_id, links, actor_id, now)
             for field, change in changed.items():
@@ -336,6 +359,16 @@ class TaskStore:
                               {"field": field, "from": change["from"], "to": change["to"]}, now)
             if "assignee_id" in changed and merged["assignee_id"] != int(actor_id):
                 self._notification(connection, task_id, merged["assignee_id"], "assigned", now, now)
+            if collaboration is not None and "assignee_id" in changed:
+                collaboration.record_assignment(
+                    connection, "task", str(task_id), changed["assignee_id"]["from"],
+                    merged["assignee_id"], actor or {"id": actor_id}, merged["title"],
+                    "/app/tasks?task_id={}".format(task_id),
+                    comment=payload.get("assignment_comment", ""),
+                    operation_key=payload.get("assignment_operation_key") or
+                    payload.get("idempotency_key") or uuid.uuid4().hex,
+                    created_at=now,
+                )
             connection.commit()
         return self.get(task_id)
 
@@ -532,7 +565,8 @@ class TaskStore:
         return result
 
     def list(self, view="today", query="", assignee_id=None, priority="", entity_type="",
-             status="", due="", only_mine=None, page=1, per_page=50, today=None):
+             status="", due="", only_mine=None, scope="all", current_user_id=None,
+             page=1, per_page=50, today=None):
         if view not in VIEWS:
             raise TaskValidationError("Неизвестное представление.", "view")
         today = today or moscow_today()
@@ -569,6 +603,14 @@ class TaskStore:
         if assignee_id or only_mine:
             clauses.append("t.assignee_id=?")
             parameters.append(int(assignee_id or only_mine))
+        if scope not in {"mine", "created", "team", "all"}:
+            raise TaskValidationError("Неизвестная область задач.", "scope")
+        if scope == "mine":
+            clauses.append("t.assignee_id=?")
+            parameters.append(int(current_user_id))
+        elif scope == "created":
+            clauses.append("t.author_id=?")
+            parameters.append(int(current_user_id))
         if priority:
             if priority not in PRIORITIES:
                 raise TaskValidationError("Неизвестный приоритет.", "priority")

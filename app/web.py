@@ -52,6 +52,7 @@ from app.clients.wildberries_orders import (
 )
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
+from app.services.collaboration import CollaborationStore, CollaborationValidationError
 from app.services.inventory_journal import InventoryJournal
 from app.services.order_status import (
     ERP_ASSEMBLED,
@@ -153,6 +154,7 @@ from app.services.tasks import (
     ENTITY_TYPES as TASK_ENTITY_TYPES,
     TaskNotFoundError,
     TaskStore,
+    TaskConflictError,
     TaskValidationError,
     moscow_today,
 )
@@ -1172,6 +1174,10 @@ def orders_page():
         request.args, force=request.args.get("retry") == "1"
     )
     orders_page_rows = list_state["rows"]
+    if request.args.get("mine") == "1":
+        assigned = _collaboration_store().assigned_entity_ids("order", current_auth_user()["id"])
+        orders_page_rows = [row for row in orders_page_rows if str(row.get("id") or row.get("ID") or "") in assigned]
+        list_state["rows"], list_state["total"], list_state["page_count"] = orders_page_rows, len(orders_page_rows), 1
     selected_order = orders_page_rows[0] if orders_page_rows else None
     return render_orders_page(
         orders=orders,
@@ -1185,6 +1191,10 @@ def orders_page():
 @app.get("/api/orders")
 def orders_list_api():
     _orders, list_state = current_orders_list_state(request.args)
+    if request.args.get("mine") == "1":
+        assigned = _collaboration_store().assigned_entity_ids("order", current_auth_user()["id"])
+        list_state["rows"] = [row for row in list_state["rows"] if str(row.get("id") or row.get("ID") or "") in assigned]
+        list_state["total"], list_state["page_count"] = len(list_state["rows"]), 1
     selected_id = str(request.args.get("selected_id") or "").strip()
     selected_order = next((
         order for order in list_state["rows"]
@@ -1221,6 +1231,8 @@ def customers_page():
     query = str(request.args.get("q") or "").strip()
     filter_keys = ("segment", "source", "city", "first_from", "first_to", "last_from", "last_to", "sales_min", "amount_min", "contacts")
     filters = {key: request.args.get(key, "") for key in filter_keys}
+    if request.args.get("mine") == "1":
+        filters["customer_ids"] = [int(value) for value in _collaboration_store().assigned_entity_ids("customer", current_auth_user()["id"]) if value.isdigit()]
     waiting_ids, attention_ids = [], []
     try:
         with purchase_store().connect() as connection:
@@ -4116,7 +4128,7 @@ def inventory_discrepancy_task_api(item_id):
             task_payload, user.get("id"), _task_user_exists, _task_entity
         )
         control.link_task(item_id, task["id"], str(user.get("id") or ""), _inventory_actor())
-    except (TaskValidationError, TaskNotFoundError) as error:
+    except (TaskValidationError, TaskNotFoundError, TaskConflictError) as error:
         return _task_api_error(error)
     return jsonify(ok=True, task_id=task["id"], duplicate=not created)
 
@@ -7100,6 +7112,11 @@ def repair_page():
         if bool(case.get("archived_at")) == (repair_view == "archive")
         and repair_case_matches(case, filters)
     ]
+    if request.args.get("mine") == "1":
+        assigned = _collaboration_store().assigned_entity_ids(
+            "repair", current_auth_user()["id"]
+        )
+        cases = [case for case in cases if str(case.get("id")) in assigned]
     cases.sort(key=repair_attention_key)
 
     page, per_page = parse_erp_pagination()
@@ -16238,6 +16255,10 @@ def purchases_page():
             "q", "status", "brand", "channel", "date_from", "date_to", "active_only", "sort", "page", "per_page"
         )}
         listing = purchase_store().list_requests(filters, customer_ids=customer_ids)
+        if request.args.get("mine") == "1":
+            assigned = _collaboration_store().assigned_entity_ids("purchase", current_auth_user()["id"])
+            listing["rows"] = [row for row in listing["rows"] if str(row.get("id")) in assigned]
+            listing["total"], listing["pages"] = len(listing["rows"]), 1
         requests_list = [_purchase_enrich_request(item) for item in listing["rows"]]
         plan = purchase_store().list_plan(_purchase_stock)
         for item in plan:
@@ -17146,6 +17167,19 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/journal", "/journal"],
     },
     {
+        "key": "inbox",
+        "label": "Входящие",
+        "description": "Персональные назначения и упоминания.",
+        "icon": "tasks",
+        "href": "/app/inbox",
+        "mobile_href": "/app/inbox",
+        "position": 7,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/inbox"],
+    },
+    {
         "key": "repair",
         "label": "Ремонт",
         "description": "Учёт ремонтных обращений.",
@@ -17228,17 +17262,20 @@ def get_navigation_items(include_disabled=False):
     del include_disabled
     active_key = get_active_navigation_key(request.path)
     task_badge = 0
+    inbox_badge = 0
     try:
         user = current_auth_user() or {}
         if user.get("id"):
             store = TaskStore(app.config["TASKS_DATABASE"])
             store.generate_notifications(user["id"])
             task_badge = store.counts(assignee_id=user["id"])["active"]
+            inbox_badge = _collaboration_store().unread_count(user["id"])
     except (MigrationRequiredError, sqlite3.Error):
         task_badge = 0
     return [
         {**definition, "enabled": True, "active": definition["key"] == active_key,
-         "badge": task_badge if definition["key"] == "tasks" else 0}
+         "badge": task_badge if definition["key"] == "tasks" else
+                  inbox_badge if definition["key"] == "inbox" else 0}
         for definition in NAVIGATION_DEFINITIONS
     ]
 
@@ -17253,6 +17290,7 @@ def inject_sidebar_navigation():
             team = []
     return {
         "sidebar_navigation_items": get_navigation_items(),
+        "collaboration_users": _task_users(),
         "sidebar_brand": {
             "title": "TTT",
             "subtitle": "Внутренняя система",
@@ -17268,7 +17306,7 @@ SECTION_LABELS = {
     "orders": "Заказы", "tasks": "Задачи", "products": "Товары",
     "sales": "Продажи", "analytics": "Аналитика",
     "inventory": "Инвентаризация", "receipts": "Приход",
-    "journal": "Журнал", "repair": "Ремонты", "customers": "Клиенты",
+    "journal": "Журнал", "inbox": "Входящие", "repair": "Ремонты", "customers": "Клиенты",
     "purchases": "Закупки", "team": "Команда", "settings": "Настройки",
 }
 
@@ -21718,6 +21756,13 @@ def _tasks_store():
     return TaskStore(app.config["TASKS_DATABASE"])
 
 
+def _collaboration_store():
+    return CollaborationStore(
+        app.config["TASKS_DATABASE"], app.config["AUTH_DATABASE"],
+        CatalogDatabase().path,
+    )
+
+
 def _task_users():
     path = Path(app.config["AUTH_DATABASE"]).resolve()
     connection = sqlite3.connect("file:{}?mode=ro".format(path), uri=True)
@@ -21815,6 +21860,8 @@ def _task_api_error(error):
                          {error.field: str(error)} if error.field else None)
     if isinstance(error, TaskNotFoundError):
         return api_error("TASK_NOT_FOUND", str(error), 404)
+    if isinstance(error, TaskConflictError):
+        return api_error("TASK_VERSION_CONFLICT", str(error), 409)
     raise error
 
 
@@ -21850,6 +21897,7 @@ def api_tasks_collection_get():
             priority=request.args.get("priority", ""), entity_type=request.args.get("entity_type", ""),
             status=request.args.get("status", ""), due=request.args.get("due", ""),
             only_mine=user.get("id") if request.args.get("only_mine") == "1" else None,
+            scope=request.args.get("scope", "all"), current_user_id=user.get("id"),
             page=request.args.get("page", 1), per_page=request.args.get("per_page", 50),
         )
     except TaskValidationError as error:
@@ -21866,9 +21914,10 @@ def api_tasks_collection_post():
         payload.setdefault("assignee_id", user.get("id"))
         payload.setdefault("idempotency_key", request.headers.get("Idempotency-Key"))
         task, created = _tasks_store().create(
-            payload, user.get("id"), _task_user_exists, _task_entity
+            payload, user.get("id"), _task_user_exists, _task_entity,
+            collaboration=_collaboration_store(), actor=user,
         )
-    except (TaskValidationError, TaskNotFoundError) as error:
+    except (TaskValidationError, TaskNotFoundError, TaskConflictError) as error:
         return _task_api_error(error)
     if created:
         _record_task_audit(task, "created")
@@ -21883,10 +21932,13 @@ def api_task_resource(task_id):
         if request.method == "GET":
             task = _tasks_store().get(task_id)
         else:
+            payload = api_json_payload()
+            payload.setdefault("assignment_operation_key", request.headers.get("Idempotency-Key"))
             task = _tasks_store().update(
-                task_id, api_json_payload(), user.get("id"), _task_user_exists, _task_entity
+                task_id, payload, user.get("id"), _task_user_exists, _task_entity,
+                collaboration=_collaboration_store(), actor=user,
             )
-    except (TaskValidationError, TaskNotFoundError) as error:
+    except (TaskValidationError, TaskNotFoundError, TaskConflictError) as error:
         return _task_api_error(error)
     if request.method != "GET":
         _record_task_audit(task)
@@ -22038,6 +22090,105 @@ def api_task_entities():
             seen.add(item["id"])
             unique.append(item)
     return api_success(unique[:20])
+
+
+def _collaboration_entity(entity_type, entity_id):
+    if entity_type not in {"order", "customer", "purchase", "repair", "task"}:
+        return None
+    if entity_type == "task":
+        try:
+            task = _tasks_store().get(int(entity_id))
+        except (TaskNotFoundError, ValueError):
+            return None
+        return {"id": str(task["id"]), "label": task["title"],
+                "href": "/app/tasks?task={}".format(task["id"])}
+    return _task_entity(entity_type, entity_id)
+
+
+def _inbox_actor_names(rows):
+    users = {int(user["id"]): user for user in _task_users()}
+    result = []
+    for row in rows:
+        item = dict(row)
+        actor = users.get(int(item["actor_user_id"])) or {}
+        item["actor_name"] = " ".join(
+            str(actor.get(field) or "").strip() for field in ("first_name", "last_name")
+        ).strip() or actor.get("email") or "Сотрудник"
+        result.append(item)
+    return result
+
+
+@app.route("/api/v1/responsibility/<entity_type>/<entity_id>", methods=["GET", "POST"])
+def api_responsibility(entity_type, entity_id):
+    entity = _collaboration_entity(entity_type, entity_id)
+    if entity is None:
+        return api_error("ASSIGNMENT_ENTITY_NOT_FOUND", "Объект не найден или недоступен.", 404)
+    store = _collaboration_store()
+    if request.method == "GET":
+        return api_success(store.get_assignment(entity_type, entity_id))
+    actor = current_auth_user() or {}
+    payload = api_json_payload()
+    try:
+        if entity_type == "task":
+            task = _tasks_store().update(
+                int(entity_id), {
+                    "assignee_id": payload.get("responsible_user_id"),
+                    "assignment_comment": payload.get("comment", ""),
+                    "assignment_operation_key": request.headers.get("Idempotency-Key") or
+                                                payload.get("operation_key"),
+                }, actor["id"], _task_user_exists, _task_entity,
+                collaboration=store, actor=actor,
+            )
+            return api_success(_serialize_tasks([task])[0])
+        assignment, created = store.assign(
+            entity_type, entity_id, payload.get("responsible_user_id"), actor,
+            entity["label"], entity.get("href", ""), payload.get("comment", ""),
+            request.headers.get("Idempotency-Key") or payload.get("operation_key", ""),
+        )
+    except (CollaborationValidationError, TaskValidationError,
+            TaskNotFoundError, TaskConflictError) as error:
+        if isinstance(error, (TaskValidationError, TaskNotFoundError, TaskConflictError)):
+            return _task_api_error(error)
+        return api_error("ASSIGNMENT_INVALID", str(error), 422)
+    return api_success(assignment, duplicate=not created)
+
+
+@app.get("/app/inbox")
+def inbox_page():
+    user = current_auth_user() or {}
+    unread_only = request.args.get("filter") == "unread"
+    listing = _collaboration_store().list_inbox(
+        user["id"], unread_only, request.args.get("page", 1), 30
+    )
+    listing["rows"] = _inbox_actor_names(listing["rows"])
+    return render_template("inbox.html", inbox=listing, unread_only=unread_only,
+                           csrf=csrf_token())
+
+
+@app.get("/api/v1/inbox")
+def api_inbox():
+    user = current_auth_user() or {}
+    listing = _collaboration_store().list_inbox(
+        user["id"], request.args.get("filter") == "unread",
+        request.args.get("page", 1), request.args.get("per_page", 30),
+    )
+    listing["rows"] = _inbox_actor_names(listing["rows"])
+    listing["unread_count"] = _collaboration_store().unread_count(user["id"])
+    return api_success(listing)
+
+
+@app.post("/api/v1/inbox/<int:event_id>/read")
+def api_inbox_read(event_id):
+    user = current_auth_user() or {}
+    if not _collaboration_store().mark_read(event_id, user["id"]):
+        return api_error("INBOX_EVENT_NOT_FOUND", "Событие не найдено.", 404)
+    return api_success({"id": event_id, "read": True})
+
+
+@app.post("/api/v1/inbox/read-all")
+def api_inbox_read_all():
+    user = current_auth_user() or {}
+    return api_success({"updated": _collaboration_store().mark_all_read(user["id"])})
 
 
 @app.route("/app", defaults={"react_path": ""}, strict_slashes=False)
