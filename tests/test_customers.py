@@ -22,6 +22,7 @@ from app.services.customer_registry import (
     normalize_email as registry_normalize_email,
     normalize_phone as registry_normalize_phone,
 )
+from scripts.backfill_customers import read_sales
 
 
 def order(order_id, name="Иван Иванов", phone="+7 921 123-45-67", email="ivan@example.ru", **values):
@@ -182,6 +183,62 @@ class CustomerBackfillTest(unittest.TestCase):
         self.assertEqual(first["linked_orders"], 2)
         self.assertEqual(second["new_links"], 0)
         self.assertEqual(second["actual_customers"], 1)
+
+
+class CustomerSaleImportTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.path = Path(self.temporary.name) / "catalog.db"
+        with sqlite3.connect(str(self.path)) as connection:
+            connection.executescript(
+                "CREATE TABLE erp_sales (id TEXT PRIMARY KEY,source TEXT,status TEXT,"
+                "created_at TEXT,metadata_json TEXT,external_order_id TEXT,"
+                "cancelled_at TEXT,deleted_at TEXT);"
+                "CREATE TABLE erp_sale_items (id INTEGER PRIMARY KEY,sale_id TEXT,"
+                "quantity REAL,returned_quantity REAL,unit_price REAL);"
+            )
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def insert_sale(self, identifier, status="completed", cancelled_at=None):
+        with sqlite3.connect(str(self.path)) as connection:
+            connection.execute(
+                "INSERT INTO erp_sales VALUES(?,?,?,?,?,?,?,NULL)",
+                (identifier, "tictactoy", status, "2026-08-20", "{}", "101", cancelled_at),
+            )
+
+    def test_completed_sale_amount_comes_from_items_and_accounts_for_returns(self):
+        self.insert_sale("sale-1", status="partially_returned")
+        with sqlite3.connect(str(self.path)) as connection:
+            connection.executemany(
+                "INSERT INTO erp_sale_items(sale_id,quantity,returned_quantity,unit_price) VALUES(?,?,?,?)",
+                [("sale-1", 2, 1, 12500), ("sale-1", 1, 0, 2500)],
+            )
+        rows = read_sales(self.path)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["completed"])
+        self.assertEqual(rows[0]["amount"], 15000)
+
+    def test_unknown_price_is_not_presented_as_zero(self):
+        self.insert_sale("sale-unknown")
+        with sqlite3.connect(str(self.path)) as connection:
+            connection.execute(
+                "INSERT INTO erp_sale_items(sale_id,quantity,returned_quantity,unit_price) VALUES(?,?,?,NULL)",
+                ("sale-unknown", 1, 0),
+            )
+        self.assertIsNone(read_sales(self.path)[0]["amount"])
+
+    def test_cancelled_sale_is_not_completed(self):
+        self.insert_sale("sale-cancelled", cancelled_at="2026-08-21")
+        with sqlite3.connect(str(self.path)) as connection:
+            connection.execute(
+                "INSERT INTO erp_sale_items(sale_id,quantity,returned_quantity,unit_price) VALUES(?,?,?,?)",
+                ("sale-cancelled", 1, 0, 9999),
+            )
+        row = read_sales(self.path)[0]
+        self.assertFalse(row["completed"])
+        self.assertTrue(row["cancelled"])
 
 
 class CanonicalCustomerRegistryTest(unittest.TestCase):
