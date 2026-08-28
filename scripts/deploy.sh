@@ -102,6 +102,8 @@ SERVICE_ENV_UPDATED=0
 MAIL_ROLLBACK_BACKUP=""
 MAIL_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
+DATA_SNAPSHOT_AFTER=""
+PYTHON_BIN=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
 BITRIX_COMMENT_ENDPOINT_BACKUP=""
@@ -258,6 +260,67 @@ check_backup_disk_usage() {
         || { printf 'BACKUP_ERROR: disk usage is %s%%\n' "$usage" >&2; return 1; }
 }
 
+stable_data_snapshot() {
+    "$PYTHON_BIN" scripts/data_safety_snapshot.py --instance-dir instance |
+        "$PYTHON_BIN" -c 'import json,sys; data=json.load(sys.stdin); data.get("catalog",{}).pop("audit_events",None); data.get("auth",{}).pop("sessions",None); print(json.dumps(data,sort_keys=True,separators=(",",":")))'
+}
+
+prepare_service_vault_key() {
+    local env_mode key_count vault_state env_stage
+    systemctl cat "$SERVICE_NAME" 2>/dev/null |
+        grep -Eq '^[[:space:]]*EnvironmentFile=-?/etc/clock-erp/clock-erp.env([[:space:]]|$)' \
+        || { printf 'SERVICE_VAULT_KEY_ERROR: systemd EnvironmentFile is not connected\n' >&2; return 1; }
+    [[ -f "$SERVICE_ENV_FILE" ]] \
+        || { printf 'SERVICE_VAULT_KEY_ERROR: protected EnvironmentFile is missing\n' >&2; return 1; }
+    env_mode="$(stat -c '%U:%G:%a' "$SERVICE_ENV_FILE")"
+    [[ "$env_mode" == "root:root:600" ]] \
+        || { printf 'SERVICE_VAULT_KEY_ERROR: protected EnvironmentFile permissions are invalid\n' >&2; return 1; }
+
+    key_count="$(grep -c '^SERVICE_VAULT_KEY=' "$SERVICE_ENV_FILE" || true)"
+    if [[ "$key_count" == "0" ]]; then
+        vault_state="$($PYTHON_BIN - <<'PYTHON_STATE'
+import sqlite3
+from pathlib import Path
+path = Path('instance/services.db')
+if not path.is_file():
+    print('empty')
+else:
+    with sqlite3.connect(str(path)) as connection:
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'services' not in tables or 'service_accounts' not in tables:
+            print('empty')
+        else:
+            services = connection.execute('SELECT COUNT(*) FROM services').fetchone()[0]
+            credentials = connection.execute(
+                'SELECT COUNT(*) FROM service_accounts WHERE login_encrypted IS NOT NULL OR password_encrypted IS NOT NULL'
+            ).fetchone()[0]
+            print('populated' if services or credentials else 'empty')
+PYTHON_STATE
+)"
+        if [[ "$vault_state" != "empty" ]]; then
+            printf 'SERVICE_VAULT_KEY_ERROR: existing Services records require the original key\n' >&2
+            return 1
+        fi
+        SERVICE_ENV_BACKUP="$BACKUP_DIR/temporary/clock-erp-env-before-vault-$(date +%Y%m%d-%H%M%S)"
+        cp -p "$SERVICE_ENV_FILE" "$SERVICE_ENV_BACKUP"
+        chmod 600 "$SERVICE_ENV_BACKUP"
+        env_stage="$(mktemp "$BACKUP_DIR/temporary/clock-erp-env-XXXXXX")"
+        cp -p "$SERVICE_ENV_FILE" "$env_stage"
+        printf '\nSERVICE_VAULT_KEY=' >> "$env_stage"
+        "$PYTHON_BIN" -c 'import base64,os,sys; sys.stdout.write(base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"))' >> "$env_stage"
+        printf '\n' >> "$env_stage"
+        install -o root -g root -m 0600 "$env_stage" "$SERVICE_ENV_FILE"
+        rm -f -- "$env_stage"
+        SERVICE_ENV_UPDATED=1
+        key_count=1
+        printf 'SERVICE_VAULT_KEY_CREATED=protected-environment-file\n'
+    fi
+    [[ "$key_count" == "1" ]] \
+        || { printf 'SERVICE_VAULT_KEY_ERROR: expected exactly one protected key entry\n' >&2; return 1; }
+    SERVICE_VAULT_KEY="$(sed -n 's/^SERVICE_VAULT_KEY=//p' "$SERVICE_ENV_FILE")"
+    export SERVICE_VAULT_KEY
+}
+
 printf 'PRECHECK: repository, service, disk, active operations\n'
 cd "$PROJECT_DIR"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1
@@ -357,17 +420,29 @@ else
     python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" \
         --project-root "$PROJECT_DIR" --create-daily --apply
 fi
+if [[ -x venv/bin/python ]]; then
+    PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
+else
+    PYTHON_BIN="python3"
+fi
+if [[ -x "$RETENTION_TOOL" ]]; then
+    "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" \
+        --project-root "$PROJECT_DIR" \
+        --create-temporary "pre-services-vault-${FETCHED_COMMIT:0:12}" --apply
+else
+    python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" \
+        --project-root "$PROJECT_DIR" \
+        --create-temporary "pre-services-vault-${FETCHED_COMMIT:0:12}" --apply
+fi
+prepare_service_vault_key
+DATA_SNAPSHOT_BEFORE="$(stable_data_snapshot)"
+printf 'DATA_BEFORE=%s\n' "$DATA_SNAPSHOT_BEFORE"
 
 printf 'MIGRATION PREFLIGHT: stage release and rehearse exact runtime\n'
 FAILURE_STAGE="MIGRATION PREFLIGHT"
 RELEASE_DIR="$(mktemp -d "$BACKUP_DIR/temporary/release-XXXXXX")"
 chmod 700 "$RELEASE_DIR"
 git archive "$FETCHED_COMMIT" | tar -x -C "$RELEASE_DIR"
-if [[ -x venv/bin/python ]]; then
-    PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
-else
-    PYTHON_BIN="python3"
-fi
 PRODUCTION_SQLITE_VERSION="$(
     "$PYTHON_BIN" -c 'import sqlite3; print(sqlite3.sqlite_version)'
 )"
@@ -386,6 +461,15 @@ for path in sorted(Path('app/templates').glob('*.html')):
     environment.parse(path.read_text(encoding='utf-8'))
 PYTHON_CHECK
 )
+if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
+        "$RELEASE_DIR/scripts/preflight_service_vault.py" \
+        --database "$PROJECT_DIR/instance/services.db" --allow-missing
+else
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
+        "$RELEASE_DIR/scripts/preflight_service_vault.py" \
+        --database "$PROJECT_DIR/instance/services.db"
+fi
 PREFLIGHT_REPORT="$(mktemp "$REHEARSAL_ROOT/preflight-report-XXXXXX.json")"
 chmod 600 "$PREFLIGHT_REPORT"
 if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
@@ -519,30 +603,8 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         printf 'Service did not stop before production migration\n' >&2
         false
     fi
-    DATA_SNAPSHOT_BEFORE="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     rollback_directory="$(mktemp -d "$BACKUP_DIR/production-migration-XXXXXX")"
     chmod 700 "$rollback_directory"
-    if [[ ! -f "$SERVICE_ENV_FILE" ]]; then
-        printf 'SERVICE_VAULT_KEY_ERROR: protected EnvironmentFile is missing\n' >&2
-        false
-    fi
-    SERVICE_ENV_BACKUP="$rollback_directory/clock-erp.env-before"
-    cp -p "$SERVICE_ENV_FILE" "$SERVICE_ENV_BACKUP"
-    chmod 600 "$SERVICE_ENV_BACKUP"
-    if ! grep -q '^SERVICE_VAULT_KEY=' "$SERVICE_ENV_FILE"; then
-        env_stage="$(mktemp "$BACKUP_DIR/temporary/clock-erp-env-XXXXXX")"
-        cp -p "$SERVICE_ENV_FILE" "$env_stage"
-        printf '\nSERVICE_VAULT_KEY=' >> "$env_stage"
-        "$PYTHON_BIN" -c 'import base64,os,sys; sys.stdout.write(base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"))' >> "$env_stage"
-        printf '\n' >> "$env_stage"
-        install -o root -g root -m 0600 "$env_stage" "$SERVICE_ENV_FILE"
-        rm -f -- "$env_stage"
-        SERVICE_ENV_UPDATED=1
-        printf 'SERVICE_VAULT_KEY_CREATED=protected-environment-file\n'
-    fi
-    SERVICE_VAULT_KEY="$(sed -n 's/^SERVICE_VAULT_KEY=//p' "$SERVICE_ENV_FILE" | tail -1)"
-    export SERVICE_VAULT_KEY
-    "$PYTHON_BIN" -c 'import base64,os; assert len(base64.urlsafe_b64decode(os.environ["SERVICE_VAULT_KEY"].encode("ascii"))) == 32'
     if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
         CATALOG_ROLLBACK_BACKUP="$rollback_directory/catalog-before.db"
         sqlite3 instance/catalog.db ".backup '$CATALOG_ROLLBACK_BACKUP'"
@@ -660,7 +722,7 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py apply --database instance/mail.db
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
     fi
-    DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
+    DATA_SNAPSHOT_AFTER="$(stable_data_snapshot)"
     if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
         printf 'POST-DEPLOY DATA SAFETY: business aggregate mismatch\n' >&2
         false
@@ -729,25 +791,15 @@ fi
 if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_services_vault.py verify --database instance/services.db
 fi
-SERVICES_HTTP_STATUS="$(LC_ALL=en_US.utf8 LANG=en_US.utf8 $PYTHON_BIN - <<'PYTHON_SMOKE'
-from app.web import app
-from app.auth import get_auth_store
-app.config.update(TESTING=True, AUTH_TESTING=True)
-with app.app_context():
-    users = get_auth_store().list_team_presence()
-owner = next((user for user in users if user.get('role') == 'owner'), None)
-if not owner:
-    raise SystemExit('services smoke owner is missing')
-with app.test_client() as client:
-    with client.session_transaction() as session:
-        session['user_id'] = owner['id']
-    response = client.get('/app/services')
-    if response.status_code != 200 or 'Рабочие сервисы'.encode('utf-8') not in response.data:
-        raise SystemExit('services smoke failed: {}'.format(response.status_code))
-    print(response.status_code)
-PYTHON_SMOKE
-)"
-printf 'SERVICES_HTTP=%s\n' "$SERVICES_HTTP_STATUS"
+PYTHONPATH="$PROJECT_DIR" ERP_PRODUCTION_SERVICES_SMOKE=confirmed \
+    LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN" \
+    scripts/services_production_smoke.py
+DATA_SNAPSHOT_AFTER="$(stable_data_snapshot)"
+if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
+    printf 'POST-SMOKE DATA SAFETY: stable business aggregate mismatch\n' >&2
+    false
+fi
+printf 'DATA_AFTER=%s\n' "$DATA_SNAPSHOT_AFTER"
 if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
 fi
