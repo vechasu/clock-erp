@@ -1051,7 +1051,9 @@ def apply_audit_identity_constraints(connection):
         "SELECT sql FROM sqlite_master WHERE type = 'table' "
         "AND name = 'erp_audit_events'"
     ).fetchone()
-    if row is None or "'user'" in (row["sql"] or ""):
+    # The legacy table already contains the word 'user' in actor_type.
+    # Detect a value that only exists in the expanded entity_type constraint.
+    if row is None or "'settings'" in (row["sql"] or ""):
         return
     connection.commit()
     connection.execute("PRAGMA foreign_keys = OFF")
