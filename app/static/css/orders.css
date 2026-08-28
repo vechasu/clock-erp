@@ -729,3 +729,180 @@ body.orders-page.has-open-sale-dialog { overflow:hidden; }
     .orders-page .card-head { padding: 10px 12px; }
     .orders-page .actions { gap: 6px; }
 }
+
+.orders-page .order-card-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    overflow: visible;
+}
+
+.orders-page .order-card-summary {
+    min-width: 0;
+}
+
+.orders-page .order-card-summary .card-title h2 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.orders-page .order-card-head .card-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.orders-page .sale-completed-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: var(--theme-success-soft, #edf8f3);
+    color: var(--erp-success, #28755a);
+    font-size: 11px;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.orders-page .sale-completed-badge svg,
+.orders-page .order-actions-trigger svg,
+.orders-page .order-actions-dropdown svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.orders-page .order-card-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
+.orders-page .order-card-actions .status-form {
+    flex: 0 0 170px;
+    min-width: 170px;
+}
+
+.orders-page .order-card-actions .status-form .field {
+    width: 100%;
+}
+
+.orders-page .order-primary-action {
+    white-space: nowrap;
+}
+
+.orders-page .order-actions-menu {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.orders-page .order-actions-trigger {
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.orders-page .order-actions-trigger[aria-expanded="true"] svg {
+    transform: rotate(180deg);
+}
+
+.orders-page .order-actions-dropdown {
+    position: fixed;
+    z-index: 1000;
+    display: grid;
+    padding: 6px;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+    box-shadow: 0 16px 38px rgba(15, 23, 42, .18);
+}
+
+.orders-page .order-actions-dropdown a {
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    color: var(--erp-text);
+    font-size: 13px;
+    font-weight: 650;
+    text-decoration: none;
+}
+
+.orders-page .order-actions-dropdown a:hover,
+.orders-page .order-actions-dropdown a:focus-visible {
+    outline: 0;
+    background: var(--erp-surface-muted);
+    box-shadow: var(--erp-focus-ring);
+}
+
+.orders-page .order-actions-separator {
+    height: 1px;
+    margin: 5px 4px;
+    background: var(--erp-border);
+}
+
+@container (max-width: 800px) {
+    .orders-page .order-card-head {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .orders-page .order-card-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        width: 100%;
+    }
+
+    .orders-page .order-card-actions .status-form {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 900px) {
+    .orders-page .order-card-head {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .orders-page .order-card-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        width: 100%;
+    }
+
+    .orders-page .order-card-actions .status-form {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 560px) {
+    .orders-page .order-card-actions {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .orders-page .order-card-actions .status-form {
+        grid-column: 1 / -1;
+    }
+
+    .orders-page .order-primary-action,
+    .orders-page .order-actions-menu,
+    .orders-page .order-actions-trigger {
+        width: 100%;
+    }
+
+    .orders-page .order-card-head .card-subtitle {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+    }
+}

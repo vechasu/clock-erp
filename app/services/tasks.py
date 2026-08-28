@@ -311,12 +311,49 @@ class TaskStore:
                 return self.get(row[0]), False
         return self.get(task_id), True
 
-    def get(self, task_id):
+    def get(self, task_id, include_deleted=False):
         with self.connect() as connection:
-            row = connection.execute("SELECT * FROM tasks WHERE id=?", (int(task_id),)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE id=?" +
+                ("" if include_deleted else " AND deleted_at IS NULL"),
+                (int(task_id),),
+            ).fetchone()
             if row is None:
                 raise TaskNotFoundError("Задача не найдена.")
             return self._enrich(connection, [row], True)[0]
+
+    def soft_delete(self, task_id, actor_id, actor_role="employee"):
+        try:
+            actor_id = int(actor_id)
+        except (TypeError, ValueError):
+            raise TaskPermissionError("У вас нет права удалить эту задачу.")
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE id=?", (int(task_id),)
+            ).fetchone()
+            if row is None:
+                raise TaskNotFoundError("Задача не найдена.")
+            if row["deleted_at"]:
+                raise TaskConflictError("Задача уже удалена.")
+            if actor_role != "admin" and actor_id not in {
+                    int(row["author_id"]), int(row["assignee_id"])}:
+                raise TaskPermissionError("У вас нет права удалить эту задачу.")
+            now = utc_now()
+            cursor = connection.execute(
+                "UPDATE tasks SET deleted_at=?,deleted_by=?,updated_at=?,updated_by=?,version=version+1 "
+                "WHERE id=? AND deleted_at IS NULL",
+                (now, actor_id, now, actor_id, int(task_id)),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                raise TaskConflictError("Задача уже удалена.")
+            self._history(connection, task_id, "deleted", actor_id, {}, now)
+            connection.execute(
+                "UPDATE task_notifications SET seen_at=? WHERE task_id=? AND seen_at IS NULL",
+                (now, int(task_id)),
+            )
+            connection.commit()
+        return self.get(task_id, include_deleted=True)
 
     def update(self, task_id, payload, actor_id, user_exists, entity_resolver,
                collaboration=None, actor=None):
@@ -347,7 +384,8 @@ class TaskStore:
             assignments = ",".join("{}=?".format(field) for field in editable)
             expected_version = int(payload.get("version") or current.get("version") or 1)
             cursor = connection.execute(
-                "UPDATE tasks SET {},updated_at=?,updated_by=?,version=version+1 WHERE id=? AND version=?".format(assignments),
+                "UPDATE tasks SET {},updated_at=?,updated_by=?,version=version+1 "
+                "WHERE id=? AND version=? AND deleted_at IS NULL".format(assignments),
                 [merged.get(field) for field in editable] + [now, int(actor_id), int(task_id), expected_version],
             )
             if cursor.rowcount != 1:
@@ -409,7 +447,9 @@ class TaskStore:
         now = utc_now()
         next_id = None
         with self.connect() as connection:
-            row = connection.execute("SELECT * FROM tasks WHERE id=?", (int(task_id),)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE id=? AND deleted_at IS NULL", (int(task_id),)
+            ).fetchone()
             if row is None:
                 raise TaskNotFoundError("Задача не найдена.")
             previous = str(row["status"])
@@ -417,7 +457,7 @@ class TaskStore:
                 task = self.get(task_id)
                 occurrence_key = "{}:{}".format(row["series_id"] or task_id, task_id)
                 child = connection.execute(
-                    "SELECT id FROM tasks WHERE next_occurrence_key=?", (occurrence_key,)
+                    "SELECT id FROM tasks WHERE next_occurrence_key=? AND deleted_at IS NULL", (occurrence_key,)
                 ).fetchone()
                 task["next_task_id"] = int(child[0]) if child else None
                 return task
@@ -425,7 +465,8 @@ class TaskStore:
             cancelled = status == "cancelled"
             connection.execute(
                 "UPDATE tasks SET status=?,previous_status=?,completion_result=?,completed_at=?,completed_by=?,"
-                "cancelled_at=?,cancelled_by=?,updated_at=?,updated_by=? WHERE id=?",
+                "cancelled_at=?,cancelled_by=?,updated_at=?,updated_by=? "
+                "WHERE id=? AND deleted_at IS NULL",
                 (status, previous, _text(result, 10000) if completed else row["completion_result"],
                  now if completed else None, int(actor_id) if completed else None,
                  now if cancelled else None, int(actor_id) if cancelled else None, now, int(actor_id), int(task_id)),
@@ -436,7 +477,10 @@ class TaskStore:
             should_repeat = completed or (cancelled and continue_series)
             if should_repeat and row["repeat_type"] != "none":
                 occurrence_key = "{}:{}".format(row["series_id"] or task_id, task_id)
-                existing = connection.execute("SELECT id FROM tasks WHERE next_occurrence_key=?", (occurrence_key,)).fetchone()
+                existing = connection.execute(
+                    "SELECT id FROM tasks WHERE next_occurrence_key=? AND deleted_at IS NULL",
+                    (occurrence_key,),
+                ).fetchone()
                 if existing:
                     next_id = int(existing[0])
                 else:
@@ -476,7 +520,8 @@ class TaskStore:
         current = self.get(task_id)
         with self.connect() as connection:
             connection.execute(
-                "UPDATE tasks SET section=?,due_date=NULL,due_time=NULL,updated_at=?,updated_by=? WHERE id=?",
+                "UPDATE tasks SET section=?,due_date=NULL,due_time=NULL,updated_at=?,updated_by=? "
+                "WHERE id=? AND deleted_at IS NULL",
                 (section, now, int(actor_id), int(task_id)),
             )
             self._history(connection, task_id, "date_changed", actor_id,
@@ -489,7 +534,8 @@ class TaskStore:
         current = self.get(task_id)
         now = utc_now()
         with self.connect() as connection:
-            connection.execute("UPDATE tasks SET due_date=?,section='inbox',updated_at=?,updated_by=? WHERE id=?",
+            connection.execute("UPDATE tasks SET due_date=?,section='inbox',updated_at=?,updated_by=? "
+                               "WHERE id=? AND deleted_at IS NULL",
                                (value, now, int(actor_id), int(task_id)))
             self._history(connection, task_id, "date_changed", actor_id,
                           {"from": current["due_date"], "to": value}, now)
@@ -509,6 +555,7 @@ class TaskStore:
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT id,status,due_date,check_date FROM tasks WHERE assignee_id=? "
+                "AND deleted_at IS NULL "
                 "AND status IN ('new','in_progress','waiting') AND "
                 "((due_date IS NOT NULL AND due_date<=?) OR (status='waiting' AND check_date IS NOT NULL AND check_date<=?))",
                 (int(user_id), today, today),
@@ -522,7 +569,8 @@ class TaskStore:
                 self._notification(connection, row["id"], user_id, kind, key, now)
             connection.commit()
             return int(connection.execute(
-                "SELECT COUNT(*) FROM task_notifications WHERE user_id=? AND seen_at IS NULL",
+                "SELECT COUNT(*) FROM task_notifications n JOIN tasks t ON t.id=n.task_id "
+                "WHERE n.user_id=? AND n.seen_at IS NULL AND t.deleted_at IS NULL",
                 (int(user_id),),
             ).fetchone()[0])
 
@@ -530,7 +578,7 @@ class TaskStore:
         with self.connect() as connection:
             rows = [dict(row) for row in connection.execute(
                 "SELECT n.*,t.title FROM task_notifications n JOIN tasks t ON t.id=n.task_id "
-                "WHERE n.user_id=? ORDER BY n.id DESC LIMIT 100", (int(user_id),)
+                "WHERE n.user_id=? AND t.deleted_at IS NULL ORDER BY n.id DESC LIMIT 100", (int(user_id),)
             ).fetchall()]
             if mark_seen:
                 connection.execute("UPDATE task_notifications SET seen_at=? WHERE user_id=? AND seen_at IS NULL",
@@ -558,7 +606,7 @@ class TaskStore:
     @staticmethod
     def _structural_clauses(assignee_id=None, priority="", entity_type="", status="", due="",
                             only_mine=None, scope="all", current_user_id=None, today=None):
-        clauses, parameters = [], []
+        clauses, parameters = ["t.deleted_at IS NULL"], []
         if assignee_id or only_mine:
             clauses.append("t.assignee_id=?")
             parameters.append(int(assignee_id or only_mine))
@@ -669,7 +717,7 @@ class TaskStore:
         if view not in VIEWS:
             raise TaskValidationError("Неизвестное представление.", "view")
         today = today or moscow_today()
-        clauses, parameters = [], []
+        clauses, parameters = ["t.deleted_at IS NULL"], []
         if view == "logbook":
             clauses.append("t.status IN ('completed','cancelled')")
         else:
@@ -757,7 +805,7 @@ class TaskStore:
         if scope not in {"mine", "created", "team", "all"}:
             raise TaskValidationError("Неизвестная область задач.", "scope")
 
-        clauses, parameters = [], []
+        clauses, parameters = ["t.deleted_at IS NULL"], []
         if include_completed:
             clauses.append("t.status!='cancelled'")
         else:
@@ -854,7 +902,7 @@ class TaskStore:
         with self.connect() as connection:
             cursor = connection.execute(
                 "UPDATE tasks SET {}=?,due_time=?,section=?,updated_at=?,updated_by=?,version=version+1 "
-                "WHERE id=? AND version=?".format(date_field),
+                "WHERE id=? AND version=? AND deleted_at IS NULL".format(date_field),
                 (date_value, time_value, "inbox" if date_value else section, now, int(actor_id),
                  int(task_id), version),
             )
@@ -875,7 +923,8 @@ class TaskStore:
             raise TaskValidationError("Неизвестный тип связи.", "entity_type")
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT t.* FROM tasks t JOIN task_links l ON l.task_id=t.id WHERE l.entity_type=? AND l.entity_id=? "
+                "SELECT t.* FROM tasks t JOIN task_links l ON l.task_id=t.id WHERE t.deleted_at IS NULL "
+                "AND l.entity_type=? AND l.entity_id=? "
                 "ORDER BY CASE WHEN t.status IN ('new','in_progress','waiting') THEN 0 ELSE 1 END,t.updated_at DESC LIMIT ?",
                 (entity_type, str(entity_id), int(limit)),
             ).fetchall()
