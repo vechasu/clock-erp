@@ -50,6 +50,11 @@
       "file": "app/schema_migrations.py",
       "sha256": "faef7c5fc7318536652a94798e85ae778d2852f7b7b818024018cef62cee08da",
       "owner": "migration-platform"
+    },
+    {
+      "file": "app/mail_migrations.py",
+      "sha256": "89b7cd2ba09d2f430b165941b61c2abd564b4b6aea8ca2967129318fd1c8f856",
+      "owner": "mail"
     }
   ],
   "ensure_functions": [],

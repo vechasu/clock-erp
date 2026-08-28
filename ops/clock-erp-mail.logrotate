@@ -1,0 +1,8 @@
+/var/log/clock-erp-mail.log {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    create 0600 root root
+}

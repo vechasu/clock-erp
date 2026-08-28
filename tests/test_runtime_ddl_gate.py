@@ -30,7 +30,7 @@ class RuntimeDDLGateTest(unittest.TestCase):
         self.assertEqual(report["tracked_runtime_containers"], 1)
         self.assertEqual(report["tracked_ensure_functions"], 0)
         self.assertEqual(report["tracked_legacy_scripts"], 6)
-        self.assertEqual(report["tracked_migration_modules"], 6)
+        self.assertEqual(report["tracked_migration_modules"], 7)
 
     def test_new_runtime_ddl_container_is_detected(self):
         from scripts import check_runtime_ddl
