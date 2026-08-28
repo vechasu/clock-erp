@@ -13,17 +13,10 @@
 <div class="app analytics-app">
     {% include "_sidebar.html" %}
     <main class="main analytics-main" id="main-content" tabindex="-1">
-        <header class="analytics-header">
-            <div><p class="analytics-eyebrow">Центр управления бизнесом</p><h1>Аналитика</h1><p>Что произошло, почему изменился результат и что требует действия.</p></div>
-            <a class="erp-button erp-button-secondary" id="analyticsExport" href="{{ url_for('analytics_export_csv', section=analytics.section, from=analytics.filters.from, to=analytics.filters.to, channel=analytics.filters.channel, brand=analytics.filters.brand) }}">Экспорт CSV</a>
+        <header class="analytics-header erp-workspace-header">
+            <div class="erp-workspace-heading"><p class="analytics-eyebrow">Центр управления</p><h1>Аналитика</h1><p>Продажи, спрос и решения по выбранному периоду.</p></div>
+            <div class="analytics-header-actions"><details class="analytics-freshness"><summary><i class="is-ok"></i>Данные актуальны</summary><div><span>ERP · локальные данные</span><span>Bitrix · локальный снимок</span><span>Каналы · проведённые продажи ERP</span><small>Расчёты: {{ analytics.timezone }}</small></div></details><a class="erp-button erp-button-secondary" id="analyticsExport" href="{{ url_for('analytics_export_csv', section=analytics.section, from=analytics.filters.from, to=analytics.filters.to, channel=analytics.filters.channel, brand=analytics.filters.brand) }}">Экспорт CSV</a></div>
         </header>
-
-        <div class="analytics-freshness" aria-label="Актуальность источников">
-            <span><i class="is-ok"></i>ERP · локальные данные</span>
-            <span><i></i>Bitrix · локальный снимок</span>
-            <span><i></i>Каналы · проведённые продажи ERP</span>
-            <small>Расчёты: {{ analytics.timezone }}</small>
-        </div>
 
         <form class="analytics-filters" id="analyticsFilters" action="{{ url_for('analytics_page') }}" method="get">
             <input type="hidden" name="section" value="{{ analytics.section }}" id="analyticsSectionInput">
@@ -31,8 +24,8 @@
             <label>По <input type="date" name="to" value="{{ analytics.filters.to }}"></label>
             <label>Канал <select name="channel"><option value="">Все</option>{% for key,label in analytics.sources %}<option value="{{ key }}"{% if analytics.filters.channel == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
             <label>Бренд <select name="brand"><option value="">Все</option>{% for item in analytics.brands %}<option{% if analytics.filters.brand == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
-            <button class="erp-button erp-button-primary" type="submit">Применить</button>
-            <a class="analytics-clear" href="{{ url_for('analytics_page') }}">Очистить</a>
+            <button class="erp-button erp-button-primary" type="submit">Показать</button>
+            <a class="analytics-clear" href="{{ url_for('analytics_page') }}">Сбросить</a>
         </form>
 
         <nav class="analytics-tabs" aria-label="Подразделы аналитики">
@@ -40,7 +33,7 @@
             <a href="{{ url_for('analytics_page', section=key, from=analytics.filters.from, to=analytics.filters.to, channel=analytics.filters.channel, brand=analytics.filters.brand) }}" data-analytics-section="{{ key }}"{% if analytics.section == key %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
             {% endfor %}
         </nav>
-        <div id="analyticsContent" aria-live="polite">{% include "_analytics_section.html" %}</div>
+        <div id="analyticsContent" aria-live="polite" aria-busy="false">{% include "_analytics_section.html" %}</div>
     </main>
 </div>
 </body>
