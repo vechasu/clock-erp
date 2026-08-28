@@ -388,12 +388,23 @@ class OrdersListIntegrationTest(unittest.TestCase):
                     "VALUES (?,?,? ,?,'erp','synced',?)",
                     (order_id, "N", "A", "Сотрудник", "2026-08-28T11:00:00"),
                 )
+            connection.execute(
+                "INSERT INTO erp_order_comments (order_id,text,author_name,created_at,source) "
+                "VALUES (?,?,?,?, 'erp')",
+                (order_ids[0], "Последний внутренний", "Сотрудник", "2026-08-28T12:00:00"),
+            )
+            connection.execute(
+                "INSERT INTO erp_order_status_events (external_order_id,old_status,new_status,actor,source,sync_result,created_at) "
+                "VALUES (?,?,? ,?,'erp','synced',?)",
+                (order_ids[0], "A", "F", "Последний сотрудник", "2026-08-28T12:00:00"),
+            )
         statements.clear()
         enriched = web.enrich_orders_list_rows(self.orders[:50], database=catalog)
         selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
         self.assertLessEqual(len(selects), 3)
-        self.assertEqual(enriched[0]["internal_comment"]["text"], "Внутренний 0")
-        self.assertEqual(enriched[0]["status_event"]["actor"], "Сотрудник")
+        self.assertFalse(any("ROW_NUMBER" in statement for statement in selects))
+        self.assertEqual(enriched[0]["internal_comment"]["text"], "Последний внутренний")
+        self.assertEqual(enriched[0]["status_event"]["actor"], "Последний сотрудник")
 
 
 if __name__ == "__main__":
