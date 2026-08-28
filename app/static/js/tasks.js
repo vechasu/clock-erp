@@ -12,7 +12,7 @@
     const initial = new URLSearchParams(location.search);
     const state = {
         view: validViews.includes(initial.get("view")) ? initial.get("view") : "today",
-        scope: ["mine", "created", "team", "all"].includes(initial.get("scope")) ? initial.get("scope") : "mine",
+        scope: ["mine", "created", "team", "all"].includes(initial.get("scope")) ? initial.get("scope") : "all",
         page: Math.max(1, Number(initial.get("page")) || 1),
         rows: [], pages: 1, total: 0, requestToken: 0, task: null, links: [],
         returnFocus: null, restoreTaskFocusId: null, filtersOpen: initial.get("filters") === "1", drawerHistoryPushed: false,
@@ -106,7 +106,7 @@
 
     function applyFiltersFromUrl(params) {
         state.view = validViews.includes(params.get("view")) ? params.get("view") : "today";
-        state.scope = ["mine", "created", "team", "all"].includes(params.get("scope")) ? params.get("scope") : "mine";
+        state.scope = ["mine", "created", "team", "all"].includes(params.get("scope")) ? params.get("scope") : "all";
         state.page = Math.max(1, Number(params.get("page")) || 1);
         search.value = params.get("q") || "";
         filterDefs.forEach(({ node, param }) => { node.value = params.get(param) || ""; });
