@@ -5,7 +5,7 @@
     <title>Vechasu ERP — Задачи</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css', v='3') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css', v='4') }}">
 </head>
 <body class="tasks-page"><div class="app">{% include "_sidebar.html" %}
 <main class="tasks-main" id="main-content" tabindex="-1">
@@ -18,6 +18,7 @@
         {% endfor %}
         </nav>
         <section class="tasks-workspace" aria-label="Список задач">
+            <div class="tasks-mode-switch" role="group" aria-label="Режим отображения"><button type="button" data-mode="list"{% if request.args.get('mode') != 'calendar' %} class="active" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>Список</button><button type="button" data-mode="calendar"{% if request.args.get('mode') == 'calendar' %} class="active" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>Календарь</button></div>
             <div class="tasks-toolbar">
                 <div class="tasks-search-wrap">
                     <span class="tasks-search-icon" aria-hidden="true"></span>
@@ -35,9 +36,24 @@
                 <label><span>Срок</span><select id="dueFilter"><option value="">Любой срок</option><option value="overdue">Просрочено</option><option value="today">Сегодня</option><option value="future">В будущем</option><option value="none">Без срока</option></select></label>
             </div>
             <div class="tasks-filter-summary" id="filterSummary" hidden><div class="tasks-filter-chips" id="filterChips" aria-label="Активные фильтры"></div><button id="resetFilters" type="button">Сбросить всё</button></div>
-            <div class="tasks-list-head"><div id="taskStatus" class="tasks-status" role="status" aria-live="polite" aria-atomic="true"></div></div>
-            <div id="taskList" class="tasks-list" aria-live="polite" aria-busy="false"></div>
-            <div class="tasks-pagination" id="taskPagination" hidden><button id="prevPage" type="button">Назад</button><span id="pageLabel"></span><button id="nextPage" type="button">Далее</button></div>
+            <div id="listMode"{% if request.args.get('mode') == 'calendar' %} hidden{% endif %}>
+                <div class="tasks-list-head"><div id="taskStatus" class="tasks-status" role="status" aria-live="polite" aria-atomic="true"></div></div>
+                <div id="taskList" class="tasks-list" aria-live="polite" aria-busy="false"></div>
+                <div class="tasks-pagination" id="taskPagination" hidden><button id="prevPage" type="button">Назад</button><span id="pageLabel"></span><button id="nextPage" type="button">Далее</button></div>
+            </div>
+            <section id="calendarMode" class="tasks-calendar" aria-label="Календарь задач"{% if request.args.get('mode') != 'calendar' %} hidden{% endif %}>
+                <div class="calendar-toolbar">
+                    <button type="button" id="calendarToday">Сегодня</button>
+                    <button type="button" id="calendarPrev" aria-label="Предыдущий период">←</button>
+                    <h2 id="calendarTitle" aria-live="polite"></h2>
+                    <button type="button" id="calendarNext" aria-label="Следующий период">→</button>
+                    <div class="calendar-kind-switch" role="group" aria-label="Масштаб календаря"><button type="button" data-calendar-kind="month">Месяц</button><button type="button" data-calendar-kind="week">Неделя</button></div>
+                    <label class="calendar-completed"><input type="checkbox" id="calendarCompleted"><span>Показывать выполненные</span></label>
+                </div>
+                <details id="undatedTasks" class="calendar-undated"><summary>Без даты · <span id="undatedCount">0</span></summary><div id="undatedList" class="calendar-undated-list" data-calendar-undated></div></details>
+                <div id="calendarStatus" class="tasks-status" role="status" aria-live="polite"></div>
+                <div id="calendarGrid" class="calendar-grid" aria-busy="false"></div>
+            </section>
         </section>
     </div>
 </main></div>
@@ -66,5 +82,5 @@
     <footer><div class="task-actions" id="taskActions"><button type="button" data-action="start">Начать</button><button type="button" data-action="waiting">Ожидаю</button><button type="button" data-action="complete">Выполнить</button><button type="button" data-action="cancel">Отменить</button><button type="button" data-action="restore">Восстановить</button></div><span></span><button type="button" id="cancelTask" class="tasks-secondary">Закрыть</button><button type="submit" id="saveTask" class="tasks-primary">Сохранить</button></footer>
 </form></aside>
 <script>window.TASKS_BOOTSTRAP={csrf:{{ csrf|tojson }},currentUserId:{{ (current_user.id if current_user else 0)|tojson }},prefillType:{{ request.args.get('entity_type','')|tojson }},prefillId:{{ request.args.get('entity_id','')|tojson }},prefillTitle:{{ request.args.get('title','')|tojson }},prefillContext:{{ request.args.get('context','')|tojson }}};</script>
-<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/notifications.js') }}"></script><script src="{{ url_for('static', filename='js/tasks.js', v='3') }}"></script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script><script src="{{ url_for('static', filename='js/sidebar.js') }}"></script><script src="{{ url_for('static', filename='js/notifications.js') }}"></script><script src="{{ url_for('static', filename='js/tasks.js', v='4') }}"></script>
 </body></html>

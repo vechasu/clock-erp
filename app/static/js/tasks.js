@@ -12,17 +12,23 @@
     const initial = new URLSearchParams(location.search);
     const state = {
         view: validViews.includes(initial.get("view")) ? initial.get("view") : "today",
+        mode: initial.get("mode") === "calendar" ? "calendar" : "list",
+        calendarKind: initial.get("calendar") === "week" ? "week" : "month",
+        calendarDate: /^\d{4}-\d{2}-\d{2}$/.test(initial.get("date") || "") ? initial.get("date") : null,
+        includeCompleted: initial.get("completed") === "1",
         scope: ["mine", "created", "team", "all"].includes(initial.get("scope")) ? initial.get("scope") : "all",
         page: Math.max(1, Number(initial.get("page")) || 1),
         rows: [], pages: 1, total: 0, requestToken: 0, task: null, links: [],
         returnFocus: null, restoreTaskFocusId: null, filtersOpen: initial.get("filters") === "1", drawerHistoryPushed: false,
-        pendingCompletions: new Set(),
+        pendingCompletions: new Set(), calendarRows: [], undatedRows: [], calendarRange: null,
     };
     const list = q("#taskList"), status = q("#taskStatus"), drawer = q("#taskModal"), backdrop = q("#taskBackdrop");
     const form = q("#taskForm"), errorBox = q("#taskFormError"), save = q("#saveTask");
     const search = q("#taskSearch"), clearSearch = q("#clearSearch"), mine = q("#mineFilter");
     const filterToggle = q("#toggleFilters"), filterPanel = q("#advancedFilters"), filterCount = q("#filterCount");
     const filterSummary = q("#filterSummary"), filterChips = q("#filterChips"), reset = q("#resetFilters");
+    const listMode = q("#listMode"), calendarMode = q("#calendarMode"), calendarGrid = q("#calendarGrid");
+    const calendarStatus = q("#calendarStatus"), calendarCompleted = q("#calendarCompleted");
     const filterDefs = [
         { node: q("#assigneeFilter"), param: "assignee_id", label: "Ответственный" },
         { node: q("#priorityFilter"), param: "priority", label: "Приоритет" },
@@ -89,6 +95,12 @@
         const params = new URLSearchParams();
         params.set("view", state.view);
         params.set("scope", state.scope);
+        params.set("mode", state.mode);
+        if (state.mode === "calendar") {
+            params.set("calendar", state.calendarKind);
+            params.set("date", state.calendarDate || localDate());
+            if (state.includeCompleted) params.set("completed", "1");
+        }
         if (state.page > 1) params.set("page", String(state.page));
         if (search.value.trim()) params.set("q", search.value.trim());
         filterDefs.forEach(({ node, param }) => { if (node.value) params.set(param, node.value); });
@@ -107,6 +119,10 @@
     function applyFiltersFromUrl(params) {
         state.view = validViews.includes(params.get("view")) ? params.get("view") : "today";
         state.scope = ["mine", "created", "team", "all"].includes(params.get("scope")) ? params.get("scope") : "all";
+        state.mode = params.get("mode") === "calendar" ? "calendar" : "list";
+        state.calendarKind = params.get("calendar") === "week" ? "week" : "month";
+        state.calendarDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") || "") ? params.get("date") : localDate();
+        state.includeCompleted = params.get("completed") === "1";
         state.page = Math.max(1, Number(params.get("page")) || 1);
         search.value = params.get("q") || "";
         filterDefs.forEach(({ node, param }) => { node.value = params.get(param) || ""; });
@@ -114,6 +130,7 @@
         state.filtersOpen = params.get("filters") === "1";
         updateViewButtons();
         updateScopeButtons();
+        updateMode();
         updateFilters();
     }
 
@@ -341,7 +358,280 @@
         }
     }
 
+    function isoDate(date) {
+        return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+    }
+
+    function dateFromIso(value) {
+        const [year, month, day] = value.split("-").map(Number);
+        return new Date(Date.UTC(year, month - 1, day, 12));
+    }
+
+    function addDays(value, amount) {
+        const date = dateFromIso(value);
+        date.setUTCDate(date.getUTCDate() + amount);
+        return isoDate(date);
+    }
+
+    function calendarRange() {
+        const cursor = dateFromIso(state.calendarDate || localDate());
+        if (state.calendarKind === "week") {
+            const mondayOffset = (cursor.getUTCDay() + 6) % 7;
+            const start = addDays(isoDate(cursor), -mondayOffset);
+            return { start, end: addDays(start, 6) };
+        }
+        const first = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), 1, 12));
+        const last = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0, 12));
+        const start = addDays(isoDate(first), -((first.getUTCDay() + 6) % 7));
+        const end = addDays(isoDate(last), 6 - ((last.getUTCDay() + 6) % 7));
+        return { start, end };
+    }
+
+    function updateMode() {
+        const calendar = state.mode === "calendar";
+        listMode.hidden = calendar;
+        calendarMode.hidden = !calendar;
+        q(".tasks-workspace").setAttribute("aria-label", calendar ? "Календарь задач" : "Список задач");
+        qa("[data-mode]").forEach((button) => {
+            const active = button.dataset.mode === state.mode;
+            button.classList.toggle("active", active);
+            button.setAttribute("aria-pressed", String(active));
+        });
+        qa("[data-calendar-kind]").forEach((button) => {
+            const active = button.dataset.calendarKind === state.calendarKind;
+            button.classList.toggle("active", active);
+            button.setAttribute("aria-pressed", String(active));
+        });
+        calendarCompleted.checked = state.includeCompleted;
+    }
+
+    function calendarCard(task) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = `calendar-task priority-${task.priority}${task.completed ? " completed" : ""}`;
+        const tone = dateTone({ ...task, due_date: task.calendar_date, check_date: null, status: task.status });
+        card.classList.add(tone);
+        card.dataset.taskId = task.id;
+        card.draggable = Boolean(task.can_edit);
+        card.setAttribute("aria-label", `Открыть задачу «${task.title}»${task.calendar_date ? `, ${formatDate(task.calendar_date)}` : ", без даты"}`);
+        const time = document.createElement("span");
+        time.className = "calendar-task-time";
+        time.textContent = task.due_time || (task.completed ? "✓" : "");
+        const dot = document.createElement("span");
+        dot.className = "calendar-priority-dot";
+        dot.setAttribute("aria-hidden", "true");
+        const title = document.createElement("span");
+        title.className = "calendar-task-title";
+        title.textContent = task.title;
+        const avatar = document.createElement("span");
+        avatar.className = "calendar-task-avatar";
+        avatar.textContent = initials(task.assignee_name);
+        avatar.title = task.assignee_name;
+        card.append(time, dot, title);
+        if (task.entity_type) {
+            const relation = document.createElement("span");
+            relation.className = "calendar-task-relation";
+            relation.textContent = { customer: "К", order: "З", product: "Т", sale: "П", repair: "Р", purchase: "Зк" }[task.entity_type] || "↗";
+            relation.title = task.entity_label || "Связанная запись";
+            card.append(relation);
+        }
+        card.append(avatar);
+        card.addEventListener("click", (event) => { event.stopPropagation(); openTask(task.id, card); });
+        card.addEventListener("dragstart", (event) => {
+            if (!task.can_edit) { event.preventDefault(); return; }
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/task-id", String(task.id));
+            card.classList.add("dragging");
+        });
+        card.addEventListener("dragend", () => card.classList.remove("dragging"));
+        return card;
+    }
+
+    function enableDrop(node, date, time) {
+        node.addEventListener("dragover", (event) => { event.preventDefault(); node.classList.add("drop-target"); });
+        node.addEventListener("dragleave", () => node.classList.remove("drop-target"));
+        node.addEventListener("drop", async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            node.classList.remove("drop-target");
+            node.dataset.dropGuard = String(Date.now());
+            const taskId = Number(event.dataTransfer.getData("text/task-id"));
+            if (taskId) await moveCalendarTask(taskId, date, time);
+        });
+    }
+
+    function clickAfterDrop(node) {
+        return Date.now() - Number(node.dataset.dropGuard || 0) < 500;
+    }
+
+    async function moveCalendarTask(taskId, dueDate, dueTime) {
+        const task = [...state.calendarRows, ...state.undatedRows].find((item) => Number(item.id) === Number(taskId));
+        if (!task || !task.can_edit) { notify("У вас нет права переносить эту задачу.", true); return; }
+        calendarGrid.classList.add("saving");
+        try {
+            await api(`/api/v1/tasks/${taskId}/calendar-reschedule`, {
+                method: "POST",
+                body: JSON.stringify({ due_date: dueDate, ...(dueTime !== undefined ? { due_time: dueTime } : {}), version: task.version, section: task.section || "inbox" }),
+            });
+            notify(dueDate ? "Задача перенесена." : "Дата задачи убрана.");
+        } catch (error) {
+            notify(`${error.message} Изменение отменено.`, true);
+        } finally {
+            calendarGrid.classList.remove("saving");
+            await loadCalendar();
+        }
+    }
+
+    function openCalendarNew(date, time, trigger) {
+        openNew(trigger);
+        form.elements.due_date.value = date;
+        form.elements.due_time.value = time || "";
+    }
+
+    function renderUndated() {
+        const wrap = q("#undatedList");
+        q("#undatedCount").textContent = String(state.undatedTotal || state.undatedRows.length);
+        wrap.replaceChildren();
+        state.undatedRows.forEach((task) => wrap.append(calendarCard(task)));
+        if (!state.undatedRows.length) {
+            const empty = document.createElement("span");
+            empty.className = "calendar-undated-empty";
+            empty.textContent = "Нет подходящих задач без даты";
+            wrap.append(empty);
+        }
+        enableDrop(wrap, null, null);
+        q("#undatedTasks").open = state.undatedRows.length > 0 && state.undatedRows.length <= 4;
+    }
+
+    function monthCell(date, currentMonth, rows) {
+        const cell = document.createElement("div");
+        cell.className = "calendar-day";
+        if (date.slice(0, 7) !== currentMonth) cell.classList.add("outside");
+        if (date === localDate()) cell.classList.add("is-today");
+        cell.tabIndex = 0;
+        cell.setAttribute("role", "button");
+        cell.setAttribute("aria-label", `Создать задачу на ${formatDate(date)}`);
+        const number = document.createElement("span");
+        number.className = "calendar-day-number";
+        number.textContent = String(Number(date.slice(-2)));
+        const stack = document.createElement("div");
+        stack.className = "calendar-day-tasks";
+        rows.forEach((task, index) => {
+            const card = calendarCard(task);
+            if (index >= 3) card.hidden = true;
+            stack.append(card);
+        });
+        if (rows.length > 3) {
+            const more = document.createElement("button");
+            more.type = "button";
+            more.className = "calendar-more";
+            more.textContent = `+ ещё ${rows.length - 3}`;
+            more.addEventListener("click", (event) => {
+                event.stopPropagation();
+                stack.querySelectorAll(".calendar-task[hidden]").forEach((item) => { item.hidden = false; });
+                more.remove();
+            });
+            stack.append(more);
+        }
+        cell.append(number, stack);
+        cell.addEventListener("click", () => { if (!clickAfterDrop(cell)) openCalendarNew(date, "", cell); });
+        cell.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openCalendarNew(date, "", cell); }
+        });
+        enableDrop(cell, date, undefined);
+        return cell;
+    }
+
+    function renderMonth(range) {
+        calendarGrid.className = "calendar-grid calendar-month";
+        const weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+        weekdays.forEach((label) => {
+            const head = document.createElement("div"); head.className = "calendar-weekday"; head.textContent = label; calendarGrid.append(head);
+        });
+        const month = (state.calendarDate || localDate()).slice(0, 7);
+        for (let date = range.start; date <= range.end; date = addDays(date, 1)) {
+            calendarGrid.append(monthCell(date, month, state.calendarRows.filter((task) => task.calendar_date === date)));
+        }
+    }
+
+    function renderWeek(range) {
+        calendarGrid.className = "calendar-grid calendar-week";
+        for (let date = range.start; date <= range.end; date = addDays(date, 1)) {
+            const column = document.createElement("section");
+            column.className = `calendar-week-day${date === localDate() ? " is-today" : ""}`;
+            const heading = document.createElement("h3");
+            heading.textContent = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short" }).format(dateFromIso(date));
+            const allDay = document.createElement("div"); allDay.className = "calendar-all-day";
+            state.calendarRows.filter((task) => task.calendar_date === date && !task.due_time).forEach((task) => allDay.append(calendarCard(task)));
+            allDay.addEventListener("click", () => { if (!clickAfterDrop(allDay)) openCalendarNew(date, "", allDay); });
+            enableDrop(allDay, date, "");
+            column.append(heading, allDay);
+            for (let hour = 8; hour <= 20; hour += 1) {
+                const time = `${String(hour).padStart(2, "0")}:00`;
+                const slot = document.createElement("div");
+                slot.className = "calendar-time-slot";
+                slot.tabIndex = 0;
+                slot.setAttribute("role", "button");
+                slot.setAttribute("aria-label", `Создать задачу ${formatDate(date)} в ${time}`);
+                const label = document.createElement("span"); label.textContent = time; slot.append(label);
+                state.calendarRows.filter((task) => task.calendar_date === date && task.due_time && Number(task.due_time.slice(0, 2)) === hour).forEach((task) => slot.append(calendarCard(task)));
+                slot.addEventListener("click", () => { if (!clickAfterDrop(slot)) openCalendarNew(date, time, slot); });
+                slot.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openCalendarNew(date, time, slot); } });
+                enableDrop(slot, date, time);
+                column.append(slot);
+            }
+            calendarGrid.append(column);
+        }
+    }
+
+    function renderCalendar() {
+        const range = state.calendarRange || calendarRange();
+        calendarGrid.replaceChildren();
+        const cursor = dateFromIso(state.calendarDate || localDate());
+        q("#calendarTitle").textContent = state.calendarKind === "month"
+            ? new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(cursor)
+            : `${formatDate(range.start)} — ${formatDate(range.end)}`;
+        if (state.calendarKind === "month") renderMonth(range); else renderWeek(range);
+        renderUndated();
+        calendarStatus.textContent = `${state.calendarRows.length} задач в периоде`;
+    }
+
+    async function loadCalendar() {
+        const token = ++state.requestToken;
+        const range = calendarRange();
+        state.calendarRange = range;
+        calendarStatus.textContent = "Загружаем календарь…";
+        calendarGrid.classList.add("loading");
+        calendarGrid.setAttribute("aria-busy", "true");
+        const params = new URLSearchParams({ start: range.start, end: range.end, scope: state.scope });
+        if (search.value.trim()) params.set("q", search.value.trim());
+        filterDefs.forEach(({ node, param }) => { if (node.value) params.set(param, node.value); });
+        if (mine.checked) params.set("only_mine", "1");
+        if (state.includeCompleted) params.set("include_completed", "1");
+        try {
+            const payload = await api(`/api/v1/tasks/calendar?${params}`);
+            if (token !== state.requestToken) return;
+            state.calendarRows = payload.data.rows;
+            state.undatedRows = payload.data.undated;
+            state.undatedTotal = payload.data.undated_total;
+            renderCalendar();
+        } catch (error) {
+            if (token !== state.requestToken) return;
+            calendarGrid.replaceChildren();
+            calendarStatus.textContent = error.message;
+            calendarStatus.classList.add("error");
+        } finally {
+            if (token === state.requestToken) {
+                calendarGrid.classList.remove("loading");
+                calendarGrid.setAttribute("aria-busy", "false");
+                updateFilters();
+            }
+        }
+    }
+
     async function load() {
+        updateMode();
+        if (state.mode === "calendar") return loadCalendar();
         const token = ++state.requestToken;
         status.textContent = "Загружаем задачи…";
         list.classList.add("loading");
@@ -598,8 +888,10 @@
 
     function changeView(view, mode = "push") {
         state.view = view;
+        state.mode = "list";
         state.page = 1;
         updateViewButtons();
+        updateMode();
         syncUrl(mode, null);
         load();
     }
@@ -615,6 +907,36 @@
     }
 
     qa("[data-view]").forEach((button) => button.addEventListener("click", () => changeView(button.dataset.view)));
+    qa("[data-mode]").forEach((button) => button.addEventListener("click", () => {
+        if (state.mode === button.dataset.mode) return;
+        state.mode = button.dataset.mode;
+        state.page = 1;
+        updateMode();
+        syncUrl("push", null);
+        load();
+    }));
+    qa("[data-calendar-kind]").forEach((button) => button.addEventListener("click", () => {
+        state.calendarKind = button.dataset.calendarKind;
+        updateMode();
+        syncUrl("push", null);
+        loadCalendar();
+    }));
+    q("#calendarToday").addEventListener("click", () => { state.calendarDate = localDate(); syncUrl("push", null); loadCalendar(); });
+    q("#calendarPrev").addEventListener("click", () => {
+        const cursor = dateFromIso(state.calendarDate || localDate());
+        if (state.calendarKind === "month") { cursor.setUTCDate(1); cursor.setUTCMonth(cursor.getUTCMonth() - 1); }
+        else cursor.setUTCDate(cursor.getUTCDate() - 7);
+        state.calendarDate = isoDate(cursor); syncUrl("push", null); loadCalendar();
+    });
+    q("#calendarNext").addEventListener("click", () => {
+        const cursor = dateFromIso(state.calendarDate || localDate());
+        if (state.calendarKind === "month") { cursor.setUTCDate(1); cursor.setUTCMonth(cursor.getUTCMonth() + 1); }
+        else cursor.setUTCDate(cursor.getUTCDate() + 7);
+        state.calendarDate = isoDate(cursor); syncUrl("push", null); loadCalendar();
+    });
+    calendarCompleted.addEventListener("change", () => {
+        state.includeCompleted = calendarCompleted.checked; syncUrl("push", null); loadCalendar();
+    });
     qa("[data-scope]").forEach((button) => button.addEventListener("click", () => {
         state.scope = button.dataset.scope; state.page = 1; updateScopeButtons(); syncUrl("push", null); load();
     }));

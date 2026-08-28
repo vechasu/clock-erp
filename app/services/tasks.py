@@ -36,6 +36,10 @@ class TaskConflictError(RuntimeError):
     pass
 
 
+class TaskPermissionError(PermissionError):
+    pass
+
+
 def moscow_today(now=None):
     current = now or datetime.now(MOSCOW_TIMEZONE)
     if current.tzinfo is None:
@@ -651,6 +655,136 @@ class TaskStore:
             serialized = self._enrich(connection, rows, False)
         return {"rows": serialized, "total": total, "page": page, "per_page": per_page,
                 "pages": pages, "today": today}
+
+    def calendar(self, start, end, query="", assignee_id=None, priority="", entity_type="",
+                 status="", due="", only_mine=None, scope="all", current_user_id=None,
+                 include_completed=False, today=None):
+        """Return only tasks needed by a bounded calendar window plus undated tasks."""
+        start_value = _date(start, "start")
+        end_value = _date(end, "end")
+        if not start_value or not end_value or start_value > end_value:
+            raise TaskValidationError("Укажите корректный диапазон календаря.", "range")
+        start_date = datetime.strptime(start_value, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_value, "%Y-%m-%d").date()
+        if (end_date - start_date).days > 62:
+            raise TaskValidationError("Диапазон календаря не может превышать 63 дня.", "range")
+        if scope == "assigned_by_me":
+            scope = "created"
+        if scope not in {"mine", "created", "team", "all"}:
+            raise TaskValidationError("Неизвестная область задач.", "scope")
+
+        clauses, parameters = [], []
+        if include_completed:
+            clauses.append("t.status!='cancelled'")
+        else:
+            clauses.append("t.status IN ('new','in_progress','waiting')")
+        query = _text(query, 200)
+        if query:
+            folded = "%{}%".format(query.casefold())
+            digit_value = "".join(character for character in query if character.isdigit())
+            digits = "%{}%".format(digit_value) if digit_value else "__no_phone_match__"
+            clauses.append("(erp_casefold(t.title) LIKE ? OR erp_casefold(t.description) LIKE ? OR "
+                           "erp_casefold(t.source_comment) LIKE ? OR erp_casefold(t.completion_result) LIKE ? OR "
+                           "erp_casefold(t.contact_name) LIKE ? OR erp_casefold(t.contact_phone) LIKE ? OR "
+                           "erp_casefold(t.contact_email) LIKE ? OR erp_digits(t.contact_phone) LIKE ? OR EXISTS("
+                           "SELECT 1 FROM task_links l WHERE l.task_id=t.id AND "
+                           "(erp_casefold(l.entity_label) LIKE ? OR erp_casefold(l.entity_id) LIKE ?)))")
+            parameters.extend([folded] * 7 + [digits] + [folded] * 2)
+        if assignee_id or only_mine:
+            clauses.append("t.assignee_id=?")
+            parameters.append(int(assignee_id or only_mine))
+        if scope == "mine":
+            clauses.append("t.assignee_id=?")
+            parameters.append(int(current_user_id))
+        elif scope == "created":
+            clauses.append("t.author_id=?")
+            parameters.append(int(current_user_id))
+        if priority:
+            if priority not in PRIORITIES:
+                raise TaskValidationError("Неизвестный приоритет.", "priority")
+            clauses.append("t.priority=?")
+            parameters.append(priority)
+        if status:
+            if status not in STATUSES:
+                raise TaskValidationError("Неизвестный статус.", "status")
+            clauses.append("t.status=?")
+            parameters.append(status)
+        if entity_type:
+            if entity_type not in ENTITY_TYPES:
+                raise TaskValidationError("Неизвестный тип связи.", "entity_type")
+            clauses.append("EXISTS(SELECT 1 FROM task_links le WHERE le.task_id=t.id AND le.entity_type=?)")
+            parameters.append(entity_type)
+        today = today or moscow_today()
+        if due in {"none", "today", "overdue", "future"}:
+            date_sql = "CASE WHEN t.status='waiting' AND t.check_date IS NOT NULL THEN t.check_date ELSE t.due_date END"
+            if due == "none": clauses.append("{} IS NULL".format(date_sql))
+            elif due == "today": clauses.append("{}=?".format(date_sql)); parameters.append(today)
+            elif due == "overdue": clauses.append("{}<?".format(date_sql)); parameters.append(today)
+            else: clauses.append("{}>?".format(date_sql)); parameters.append(today)
+
+        base_where = " AND ".join(clauses)
+        calendar_date = "CASE WHEN t.status='waiting' AND t.check_date IS NOT NULL THEN t.check_date ELSE t.due_date END"
+        order = (" ORDER BY calendar_date,t.due_time IS NULL,t.due_time,"
+                 "CASE t.priority WHEN 'urgent' THEN 0 WHEN 'important' THEN 1 ELSE 2 END,t.id")
+        with self.connect() as connection:
+            dated = connection.execute(
+                "SELECT t.*,{} AS calendar_date FROM tasks t WHERE {} AND {} BETWEEN ? AND ?{}".format(
+                    calendar_date, base_where, calendar_date, order
+                ), parameters + [start_value, end_value]
+            ).fetchall()
+            undated_total = int(connection.execute(
+                "SELECT COUNT(*) FROM tasks t WHERE {} AND {} IS NULL".format(base_where, calendar_date),
+                parameters,
+            ).fetchone()[0])
+            undated = connection.execute(
+                "SELECT t.*,NULL AS calendar_date FROM tasks t WHERE {} AND {} IS NULL "
+                "ORDER BY t.created_at DESC,t.id DESC LIMIT 100".format(base_where, calendar_date),
+                parameters,
+            ).fetchall()
+            rows = self._enrich(connection, list(dated) + list(undated), False)
+        return {
+            "rows": rows[:len(dated)], "undated": rows[len(dated):],
+            "undated_total": undated_total, "start": start_value, "end": end_value,
+            "today": today,
+        }
+
+    def calendar_reschedule(self, task_id, due_date, due_time, actor_id, actor_role="employee",
+                            section="inbox", expected_version=None):
+        current = self.get(task_id)
+        if actor_role != "admin" and int(actor_id) not in {
+                int(current["author_id"]), int(current["assignee_id"])}:
+            raise TaskPermissionError("У вас нет права переносить эту задачу.")
+        date_value = _date(due_date)
+        time_value = _time(due_time) if due_time is not None else current.get("due_time")
+        if not date_value and current["status"] == "waiting" and current.get("check_date"):
+            raise TaskValidationError("У задачи в ожидании обязательна дата следующей проверки.", "due_date")
+        if not date_value:
+            if section not in SECTIONS:
+                raise TaskValidationError("Неизвестный раздел.", "section")
+            time_value = None
+        date_field = "check_date" if current["status"] == "waiting" and current.get("check_date") else "due_date"
+        old_date = current.get(date_field)
+        old_time = current.get("due_time")
+        version = int(expected_version or current.get("version") or 1)
+        now = utc_now()
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE tasks SET {}=?,due_time=?,section=?,updated_at=?,updated_by=?,version=version+1 "
+                "WHERE id=? AND version=?".format(date_field),
+                (date_value, time_value, "inbox" if date_value else section, now, int(actor_id),
+                 int(task_id), version),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                raise TaskConflictError(
+                    "Эта запись была изменена другим сотрудником после загрузки календаря."
+                )
+            self._history(connection, task_id, "date_changed", actor_id, {
+                "field": date_field, "from": old_date, "to": date_value,
+                "time_from": old_time, "time_to": time_value,
+            }, now)
+            connection.commit()
+        return self.get(task_id)
 
     def for_entity(self, entity_type, entity_id, limit=20):
         if entity_type not in ENTITY_TYPES:
