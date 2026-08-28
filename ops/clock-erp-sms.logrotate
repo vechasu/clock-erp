@@ -1,0 +1,9 @@
+/var/log/clock-erp-sms.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 root adm
+}

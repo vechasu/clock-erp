@@ -33,12 +33,12 @@
     },
     {
       "file": "app/catalog_migration_steps.py",
-      "sha256": "de9c4745a170c3f773c842a19f7dab421cb25a01f29f8699bdd7a3929887ca6d",
+      "sha256": "7575e9f3f578dbdf099af7e7628eede60bc4dab6e309c6c431d6fb9a533995cc",
       "owner": "catalog-migrations"
     },
     {
       "file": "app/catalog_schema_manifest.json",
-      "sha256": "39aba305b8ec7f227daf6ee907b151b81897c2b5c04f67e0656dc1f9eba16b9f",
+      "sha256": "ae9211573d6612c48c256623653cf01f82aee349c1d8c515b79011c556e31b8d",
       "owner": "catalog-migrations"
     },
     {
@@ -48,8 +48,13 @@
     },
     {
       "file": "app/schema_migrations.py",
-      "sha256": "faef7c5fc7318536652a94798e85ae778d2852f7b7b818024018cef62cee08da",
+      "sha256": "92e17d3500ed7fb7a704c5e1a6e828d289d0e4e40dafe9c05c0f7c9d2a43c92f",
       "owner": "migration-platform"
+    },
+    {
+      "file": "app/sms_migrations.py",
+      "sha256": "b056f55857ec5563f901ba1bfe97ea766768dbcc5743bfd44890fa141a3063c1",
+      "owner": "sms"
     }
   ],
   "ensure_functions": [],

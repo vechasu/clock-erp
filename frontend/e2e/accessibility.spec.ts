@@ -11,6 +11,7 @@ const routes = [
   '/app/analytics',
   '/app/repairs',
   '/app/journal',
+  '/app/sms',
   '/app/settings',
   '/app/products/inventory',
   '/app/inventory',

@@ -9,7 +9,7 @@ from app.catalog_db import CatalogDatabase
 
 ENTITY_TYPES = {
     "product", "sale", "receipt", "brand", "category", "inventory", "repair",
-    "order", "customer", "task", "purchase", "settings", "user",
+    "order", "customer", "task", "purchase", "settings", "user", "sms",
 }
 ACTION_TYPES = {
     "created",
@@ -54,6 +54,7 @@ FIELD_WHITELISTS = {
     "purchase": {"status", "quantity", "price", "comment", "responsible_user_id"},
     "settings": {"value"},
     "user": {"last_login_at"},
+    "sms": {"status"},
 }
 SENSITIVE_MARKERS = {
     "password", "passwd", "secret", "token", "authorization", "credential",

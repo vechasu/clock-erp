@@ -966,7 +966,7 @@ CREATE INDEX IF NOT EXISTS idx_erp_inventory_items_product
 CREATE TABLE IF NOT EXISTS erp_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK (
-        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair', 'order', 'customer', 'task', 'purchase', 'settings', 'user')
+        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair', 'order', 'customer', 'task', 'purchase', 'settings', 'user', 'sms')
     ),
     entity_id TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -1003,6 +1003,7 @@ def apply_fresh_catalog_schema(connection, ddl_observer=None):
         ddl_observer("CATALOG_SCHEMA_SQL")
     connection.executescript(CATALOG_SCHEMA_SQL)
     apply_audit_identity_constraints(connection)
+    apply_audit_sms_constraints(connection)
     _apply_excel_receipt_constraints(connection)
     _apply_excel_cardinality_columns(connection)
     _apply_excel_import_draft_schema(connection)
@@ -1024,6 +1025,7 @@ def migration_source_checksum():
     steps = [
         apply_fresh_catalog_schema,
         apply_audit_identity_constraints,
+        apply_audit_sms_constraints,
         _apply_excel_receipt_constraints,
         _apply_excel_cardinality_columns,
         _apply_excel_import_draft_schema,
@@ -1102,6 +1104,49 @@ def apply_audit_identity_constraints(connection):
             "CREATE INDEX idx_erp_audit_action ON "
             "erp_audit_events(action, occurred_at DESC)"
         )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys = ON")
+
+
+def apply_audit_sms_constraints(connection):
+    """Extend the immutable audit entity contract for SMS activity."""
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'erp_audit_events'"
+    ).fetchone()
+    if row is None or "'sms'" in (row["sql"] or ""):
+        return
+    connection.commit()
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("ALTER TABLE erp_audit_events RENAME TO erp_audit_events_old")
+        connection.execute(
+            "CREATE TABLE erp_audit_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "entity_type TEXT NOT NULL CHECK (entity_type IN "
+            "('product','sale','receipt','brand','category','inventory','repair',"
+            "'order','customer','task','purchase','settings','user','sms')), "
+            "entity_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT, "
+            "actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN "
+            "('user','system','external')), actor_display_name_snapshot TEXT NOT NULL, "
+            "occurred_at TEXT NOT NULL, object_label_snapshot TEXT NOT NULL, "
+            "object_secondary_snapshot TEXT NOT NULL DEFAULT '', "
+            "changes_json TEXT NOT NULL DEFAULT '{}', metadata_json TEXT NOT NULL DEFAULT '{}', "
+            "search_text TEXT NOT NULL DEFAULT '', status_snapshot TEXT NOT NULL DEFAULT '', "
+            "source_snapshot TEXT NOT NULL DEFAULT '')"
+        )
+        connection.execute("INSERT INTO erp_audit_events SELECT * FROM erp_audit_events_old")
+        connection.execute("DROP TABLE erp_audit_events_old")
+        connection.execute("CREATE INDEX idx_erp_audit_occurred ON erp_audit_events(occurred_at DESC,id DESC)")
+        connection.execute("CREATE INDEX idx_erp_audit_entity_occurred ON erp_audit_events(entity_type,occurred_at DESC,id DESC)")
+        connection.execute("CREATE INDEX idx_erp_audit_entity_object ON erp_audit_events(entity_type,entity_id,occurred_at DESC,id DESC)")
+        connection.execute("CREATE INDEX idx_erp_audit_actor ON erp_audit_events(actor_id,occurred_at DESC)")
+        connection.execute("CREATE INDEX idx_erp_audit_action ON erp_audit_events(action,occurred_at DESC)")
         connection.commit()
     except Exception:
         connection.rollback()

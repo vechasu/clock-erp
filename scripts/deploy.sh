@@ -51,6 +51,8 @@ readonly BITRIX_ORDERS_EXPORT_SOURCE="$PROJECT_DIR/bitrix/orders-export.php"
 readonly BITRIX_ORDERS_EXPORT_TARGET="/var/www/admin/data/www/tictactoy.ru/api/orders-export.php"
 readonly CUSTOMERS_CRON="/etc/cron.d/clock-erp-customers"
 readonly CUSTOMERS_LOGROTATE="/etc/logrotate.d/clock-erp-customers"
+readonly SMS_CRON="/etc/cron.d/clock-erp-sms"
+readonly SMS_LOGROTATE="/etc/logrotate.d/clock-erp-sms"
 readonly HEALTHCHECK_URLS=(
     "http://127.0.0.1:5000/register"
     "http://127.0.0.1:5000/login"
@@ -69,11 +71,13 @@ DOMAIN_MIGRATION_REQUIRED=0
 PURCHASES_MIGRATION_REQUIRED=0
 CUSTOMERS_MIGRATION_REQUIRED=0
 CUSTOMERS_REBUILD_REQUIRED=0
+SMS_MIGRATION_REQUIRED=0
 UNREGISTERED_MIGRATION_CHANGE=0
 CATALOG_MIGRATION_STARTED=0
 DOMAIN_MIGRATION_STARTED=0
 PURCHASES_MIGRATION_STARTED=0
 CUSTOMERS_MIGRATION_STARTED=0
+SMS_MIGRATION_STARTED=0
 CATALOG_ROLLBACK_BACKUP=""
 AUTH_ROLLBACK_BACKUP=""
 ORDERS_ROLLBACK_BACKUP=""
@@ -82,6 +86,8 @@ TASKS_DATABASE_EXISTED=0
 PURCHASES_ROLLBACK_BACKUP=""
 PURCHASES_DATABASE_EXISTED=0
 CUSTOMERS_ROLLBACK_BACKUP=""
+SMS_ROLLBACK_BACKUP=""
+SMS_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
@@ -105,7 +111,7 @@ rollback() {
     set +e
     printf 'ROLLBACK: stage=%s exit_code=%s\n' "$FAILURE_STAGE" "$exit_code" >&2
 
-    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" || "$CUSTOMERS_MIGRATION_STARTED" == "1" ) ]]; then
+    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" || "$CUSTOMERS_MIGRATION_STARTED" == "1" || "$SMS_MIGRATION_STARTED" == "1" ) ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
     fi
@@ -154,6 +160,16 @@ rollback() {
         cp -p "$CUSTOMERS_ROLLBACK_BACKUP" instance/customers.db
         sqlite3 instance/customers.db "PRAGMA quick_check;" | grep -qx "ok"
         printf 'ROLLBACK_OK: restored verified customer registry backup\n' >&2
+    fi
+    if [[ "$SMS_MIGRATION_STARTED" == "1" ]]; then
+        if [[ "$SMS_DATABASE_EXISTED" == "1" && -f "$SMS_ROLLBACK_BACKUP" ]]; then
+            cp -p "$SMS_ROLLBACK_BACKUP" instance/sms.db
+            sqlite3 instance/sms.db "PRAGMA quick_check;" | grep -qx "ok"
+            printf 'ROLLBACK_OK: restored verified SMS database backup\n' >&2
+        elif [[ "$SMS_DATABASE_EXISTED" == "0" && -f instance/sms.db ]]; then
+            rm -f -- instance/sms.db
+            printf 'ROLLBACK_OK: removed newly created SMS database\n' >&2
+        fi
     fi
     if [[ "$BITRIX_ENDPOINT_UPDATED" == "1" && -f "$BITRIX_ENDPOINT_BACKUP" ]]; then
         install -o admin -g admin -m 0640 \
@@ -229,6 +245,10 @@ changed_files="$(git diff --name-only "$PREVIOUS_COMMIT" "$FETCHED_COMMIT")"
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^(app/(catalog_db|catalog_migration_steps|schema_migrations)\.py|app/catalog_schema_manifest\.json|scripts/migration_preflight\.py)$'; then
     CATALOG_MIGRATION_REQUIRED=1
+fi
+if printf '%s\n' "$changed_files" | grep -Eq \
+    '^(app/(sms_migrations\.py|services/sms\.py)|scripts/migrate_sms\.py)$'; then
+    SMS_MIGRATION_REQUIRED=1
 fi
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^(app/(auth|domain_schema_migrations)\.py|app/services/orders_snapshot\.py|scripts/domain_migration_preflight\.py)$'; then
@@ -367,6 +387,11 @@ if [[ "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/customer_registry_schema.py" apply --database "$customers_rehearsal"
     PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/customer_registry_schema.py" verify --database "$customers_rehearsal"
 fi
+if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
+        "$RELEASE_DIR/scripts/migrate_sms.py" rehearse \
+        --database "$PROJECT_DIR/instance/sms.db"
+fi
 
 printf 'APPLICATION UPDATE: fast-forward to verified commit\n'
 FAILURE_STAGE="APPLICATION UPDATE"
@@ -382,6 +407,8 @@ install -o root -g root -m 0644 \
     ops/clock-erp-backup-retention.logrotate "$RETENTION_LOGROTATE"
 install -o root -g root -m 0644 ops/clock-erp-customers.cron "$CUSTOMERS_CRON"
 install -o root -g root -m 0644 ops/clock-erp-customers.logrotate "$CUSTOMERS_LOGROTATE"
+install -o root -g root -m 0644 ops/clock-erp-sms.cron "$SMS_CRON"
+install -o root -g root -m 0644 ops/clock-erp-sms.logrotate "$SMS_LOGROTATE"
 
 if [[ -f "$BITRIX_ENDPOINT_SOURCE" && -f "$BITRIX_ENDPOINT_TARGET" ]]; then
     /opt/php81/bin/php -l "$BITRIX_ENDPOINT_SOURCE" >/dev/null
@@ -417,7 +444,7 @@ if [[ -f "$BITRIX_ORDERS_EXPORT_SOURCE" ]]; then
     BITRIX_ORDERS_EXPORT_UPDATED=1
 fi
 
-if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" || "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
     printf 'PRODUCTION MIGRATION: stop service, backup, apply verified migrations\n'
     FAILURE_STAGE="PRODUCTION MIGRATION"
     systemctl stop "$SERVICE_NAME"
@@ -470,6 +497,16 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         sqlite3 "$CUSTOMERS_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
         CUSTOMERS_MIGRATION_STARTED=1
     fi
+    if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
+        if [[ -f instance/sms.db ]]; then
+            SMS_DATABASE_EXISTED=1
+            SMS_ROLLBACK_BACKUP="$rollback_directory/sms-before.db"
+            sqlite3 instance/sms.db ".backup '$SMS_ROLLBACK_BACKUP'"
+            chmod 600 "$SMS_ROLLBACK_BACKUP"
+            sqlite3 "$SMS_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        fi
+        SMS_MIGRATION_STARTED=1
+    fi
     if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
         "$PYTHON_BIN" scripts/migration_preflight.py apply \
             --database instance/catalog.db \
@@ -501,6 +538,12 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
             PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/backfill_customers.py --apply --backup-dir "$rollback_directory"
         fi
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py verify --database instance/customers.db
+    fi
+    if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py apply \
+            --database instance/sms.db
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py verify \
+            --database instance/sms.db
     fi
     DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
@@ -563,6 +606,10 @@ if [[ "$PURCHASES_MIGRATION_REQUIRED" == "1" ]]; then
 fi
 if [[ "$CUSTOMERS_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/customer_registry_schema.py verify --database instance/customers.db
+fi
+if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
+    PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py verify \
+        --database instance/sms.db
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from app.catalog_migration_steps import (
     apply_audit_identity_constraints,
+    apply_audit_sms_constraints,
     apply_order_comment_constraints,
     apply_fresh_catalog_schema,
     migration_source_checksum,
@@ -159,6 +160,12 @@ AUDIT_IDENTITY_MIGRATION_CHECKSUM = hashlib.sha256(
     (AUDIT_IDENTITY_MIGRATION_ID + "\n" + AUDIT_IDENTITY_MIGRATION_NAME + "\n" +
      "order,customer,task,purchase,settings,user;constraint-detection-v2").encode("utf-8")
 ).hexdigest()
+AUDIT_SMS_MIGRATION_ID = "2026-08-28-sms-audit-entity-v1"
+AUDIT_SMS_MIGRATION_NAME = "SMS activity coverage in immutable audit journal"
+AUDIT_SMS_MIGRATION_CHECKSUM = hashlib.sha256(
+    (AUDIT_SMS_MIGRATION_ID + "\n" + AUDIT_SMS_MIGRATION_NAME + "\n" +
+     "entity-type:sms;preserve-all-existing-events;sqlite-3.7.17").encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -193,6 +200,13 @@ MIGRATIONS = (
         "id": AUDIT_IDENTITY_MIGRATION_ID,
         "name": AUDIT_IDENTITY_MIGRATION_NAME,
         "checksum": AUDIT_IDENTITY_MIGRATION_CHECKSUM,
+        "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
+    {
+        "id": AUDIT_SMS_MIGRATION_ID,
+        "name": AUDIT_SMS_MIGRATION_NAME,
+        "checksum": AUDIT_SMS_MIGRATION_CHECKSUM,
         "transactional": True,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
@@ -962,6 +976,13 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                     connection.row_factory = sqlite3.Row
                     try:
                         apply_audit_identity_constraints(connection)
+                    finally:
+                        connection.close()
+                elif migration["id"] == AUDIT_SMS_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    connection.row_factory = sqlite3.Row
+                    try:
+                        apply_audit_sms_constraints(connection)
                     finally:
                         connection.close()
                 else:
