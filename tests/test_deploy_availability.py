@@ -120,6 +120,21 @@ class DeployAvailabilityTest(unittest.TestCase):
             script,
         )
 
+    def test_services_vault_preflight_is_fail_closed_before_code_update(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        preflight = script.index("SERVICES VAULT PREFLIGHT: protected key")
+        application_update = script.index("APPLICATION UPDATE: fast-forward")
+        smoke = script.index("SERVICES_HTTP_STATUS=")
+        self.assertLess(preflight, application_update)
+        self.assertLess(application_update, smoke)
+        self.assertIn("scripts/service_vault_preflight.py", script)
+        self.assertIn('systemctl show "$SERVICE_NAME" -p EnvironmentFile', script)
+        self.assertIn('services-before.db', script)
+        self.assertIn('clock-erp.env-before', script)
+        self.assertIn("SERVICE_VAULT_PROCESS_KEY_OK", script)
+        self.assertNotIn("os.urandom", script)
+        self.assertNotIn("SERVICE_VAULT_KEY_CREATED", script)
+
     def test_customer_backfill_does_not_expand_an_empty_array_on_bash_42(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn('customer_rebuild_argument[@]', script)

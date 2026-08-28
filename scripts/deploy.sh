@@ -97,8 +97,7 @@ SMS_ROLLBACK_BACKUP=""
 SMS_DATABASE_EXISTED=0
 SERVICES_ROLLBACK_BACKUP=""
 SERVICES_DATABASE_EXISTED=0
-SERVICE_ENV_BACKUP=""
-SERVICE_ENV_UPDATED=0
+DEPLOY_SAFETY_DIR=""
 MAIL_ROLLBACK_BACKUP=""
 MAIL_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
@@ -193,10 +192,6 @@ rollback() {
             rm -f -- instance/services.db
             printf 'ROLLBACK_OK: removed newly created services database\n' >&2
         fi
-    fi
-    if [[ "$SERVICE_ENV_UPDATED" == "1" && -f "$SERVICE_ENV_BACKUP" ]]; then
-        install -o root -g root -m 0600 "$SERVICE_ENV_BACKUP" "$SERVICE_ENV_FILE"
-        printf 'ROLLBACK_OK: restored protected service environment\n' >&2
     fi
     if [[ "$MAIL_MIGRATION_STARTED" == "1" ]]; then
         if [[ "$MAIL_DATABASE_EXISTED" == "1" && -f "$MAIL_ROLLBACK_BACKUP" ]]; then
@@ -349,6 +344,7 @@ else
     printf 'BACKUP_ERROR: retention tool is not installed\n' >&2
     false
 fi
+
 check_backup_disk_usage
 if [[ -x "$RETENTION_TOOL" ]]; then
     "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" \
@@ -386,6 +382,37 @@ for path in sorted(Path('app/templates').glob('*.html')):
     environment.parse(path.read_text(encoding='utf-8'))
 PYTHON_CHECK
 )
+
+printf 'SERVICES VAULT PREFLIGHT: protected key, database copy and systemd wiring\n'
+FAILURE_STAGE="SERVICES VAULT PREFLIGHT"
+[[ -f "$SERVICE_ENV_FILE" ]] \
+    || { printf 'SERVICE_VAULT_PREFLIGHT_FAILED: protected EnvironmentFile is missing\n' >&2; false; }
+[[ "$(systemctl show "$SERVICE_NAME" -p EnvironmentFile | sed 's/^[^=]*=//')" == *"$SERVICE_ENV_FILE"* ]] \
+    || { printf 'SERVICE_VAULT_PREFLIGHT_FAILED: systemd does not load the protected EnvironmentFile\n' >&2; false; }
+DEPLOY_SAFETY_DIR="$(mktemp -d "$BACKUP_DIR/deploy-safety-XXXXXX")"
+chmod 700 "$DEPLOY_SAFETY_DIR"
+cp -p "$SERVICE_ENV_FILE" "$DEPLOY_SAFETY_DIR/clock-erp.env-before"
+chmod 600 "$DEPLOY_SAFETY_DIR/clock-erp.env-before"
+if [[ -f instance/services.db ]]; then
+    sqlite3 instance/services.db ".backup '$DEPLOY_SAFETY_DIR/services-before.db'"
+    chmod 600 "$DEPLOY_SAFETY_DIR/services-before.db"
+    sqlite3 "$DEPLOY_SAFETY_DIR/services-before.db" "PRAGMA quick_check;" | grep -qx "ok"
+else
+    printf 'SERVICE_VAULT_PREFLIGHT_FAILED: Services database is missing\n' >&2
+    false
+fi
+PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/service_vault_preflight.py" \
+    --environment-file "$SERVICE_ENV_FILE" \
+    --database "$DEPLOY_SAFETY_DIR/services-before.db" \
+    --report "$DEPLOY_SAFETY_DIR/services-preflight.json"
+SERVICE_VAULT_KEY="$(PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" - "$SERVICE_ENV_FILE" <<'PYTHON_KEY'
+import sys
+from scripts.service_vault_preflight import load_key
+sys.stdout.write(load_key(sys.argv[1]))
+PYTHON_KEY
+)"
+export SERVICE_VAULT_KEY
+
 PREFLIGHT_REPORT="$(mktemp "$REHEARSAL_ROOT/preflight-report-XXXXXX.json")"
 chmod 600 "$PREFLIGHT_REPORT"
 if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
@@ -522,27 +549,6 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
     DATA_SNAPSHOT_BEFORE="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     rollback_directory="$(mktemp -d "$BACKUP_DIR/production-migration-XXXXXX")"
     chmod 700 "$rollback_directory"
-    if [[ ! -f "$SERVICE_ENV_FILE" ]]; then
-        printf 'SERVICE_VAULT_KEY_ERROR: protected EnvironmentFile is missing\n' >&2
-        false
-    fi
-    SERVICE_ENV_BACKUP="$rollback_directory/clock-erp.env-before"
-    cp -p "$SERVICE_ENV_FILE" "$SERVICE_ENV_BACKUP"
-    chmod 600 "$SERVICE_ENV_BACKUP"
-    if ! grep -q '^SERVICE_VAULT_KEY=' "$SERVICE_ENV_FILE"; then
-        env_stage="$(mktemp "$BACKUP_DIR/temporary/clock-erp-env-XXXXXX")"
-        cp -p "$SERVICE_ENV_FILE" "$env_stage"
-        printf '\nSERVICE_VAULT_KEY=' >> "$env_stage"
-        "$PYTHON_BIN" -c 'import base64,os,sys; sys.stdout.write(base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"))' >> "$env_stage"
-        printf '\n' >> "$env_stage"
-        install -o root -g root -m 0600 "$env_stage" "$SERVICE_ENV_FILE"
-        rm -f -- "$env_stage"
-        SERVICE_ENV_UPDATED=1
-        printf 'SERVICE_VAULT_KEY_CREATED=protected-environment-file\n'
-    fi
-    SERVICE_VAULT_KEY="$(sed -n 's/^SERVICE_VAULT_KEY=//p' "$SERVICE_ENV_FILE" | tail -1)"
-    export SERVICE_VAULT_KEY
-    "$PYTHON_BIN" -c 'import base64,os; assert len(base64.urlsafe_b64decode(os.environ["SERVICE_VAULT_KEY"].encode("ascii"))) == 32'
     if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
         CATALOG_ROLLBACK_BACKUP="$rollback_directory/catalog-before.db"
         sqlite3 instance/catalog.db ".backup '$CATALOG_ROLLBACK_BACKUP'"
@@ -677,6 +683,25 @@ else
     systemctl restart "$SERVICE_NAME"
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
+"$PYTHON_BIN" - <<'PYTHON_SERVICE_KEY'
+import os
+import subprocess
+
+details = subprocess.check_output(
+    ["systemctl", "show", "clock-erp", "-p", "MainPID"]
+).decode("ascii").strip()
+pid = int(details.split("=", 1)[1] or "0")
+if not pid:
+    raise SystemExit("SERVICE_VAULT_PROCESS_KEY_FAILED: service MainPID is missing")
+process_key = None
+with open("/proc/{}/environ".format(pid), "rb") as environment:
+    for item in environment.read().split(b"\0"):
+        if item.startswith(b"SERVICE_VAULT_KEY="):
+            process_key = item.split(b"=", 1)[1].decode("ascii")
+if process_key != os.environ.get("SERVICE_VAULT_KEY"):
+    raise SystemExit("SERVICE_VAULT_PROCESS_KEY_FAILED: systemd process key does not match preflight")
+print("SERVICE_VAULT_PROCESS_KEY_OK")
+PYTHON_SERVICE_KEY
 
 printf 'HEALTH CHECK: public routes and startup log\n'
 FAILURE_STAGE="HEALTH CHECK"
