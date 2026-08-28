@@ -108,6 +108,32 @@ class OrdersUiRedesignTest(unittest.TestCase):
         ):
             self.assertIn(expected, active_row)
 
+    def test_order_number_never_uses_ellipsis_and_badges_can_wrap(self):
+        html = self.render_selected_order()
+        active_row = html.split('class="order-row active"', 1)[1].split(
+            "</a>", 1
+        )[0]
+        self.assertIn('<span class="order-number">Заказ №7007</span>', active_row)
+
+        number_rule = self.source.split(".order-number {", 1)[1].split("}", 1)[0]
+        self.assertIn("flex:0 0 auto", number_rule)
+        self.assertIn("max-width:100%", number_rule)
+        self.assertIn("color:var(--blue)", number_rule)
+        self.assertIn("overflow-wrap:anywhere", number_rule)
+        self.assertNotIn("overflow:hidden", number_rule)
+        self.assertNotIn("text-overflow:ellipsis", number_rule)
+
+        badges_rule = self.source.split(".order-row-badges {", 1)[1].split(
+            "}", 1
+        )[0]
+        self.assertIn("flex:1 1 160px", badges_rule)
+        self.assertIn("flex-wrap:wrap", badges_rule)
+        self.assertIn("min-width:0", badges_rule)
+        self.assertNotIn(
+            ".orders-page .order-number,\n.orders-page .order-meta span",
+            self.source,
+        )
+
     def test_filters_include_source_and_no_find_button(self):
         filters = self.source.split(
             'class="panel-toolbar filters erp-toolbar"', 1
