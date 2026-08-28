@@ -34,6 +34,7 @@ MAX_INITIAL_MESSAGES = 2000
 STATUSES = {"new", "in_progress", "waiting_customer", "answered", "closed"}
 ENTITY_TYPES = {"customer", "order", "repair", "purchase", "task"}
 EMAIL_RE = re.compile(r"^[^\s@<>\r\n]+@[^\s@<>\r\n]+\.[^\s@<>\r\n]+$")
+MAIL_HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 
 
 class MailError(RuntimeError):
@@ -84,6 +85,8 @@ def safe_error(error):
         return "Почтовый сервер не ответил вовремя."
     if isinstance(error, (ssl.SSLError, socket.gaierror, ConnectionError, OSError)):
         return "Не удалось установить защищённое соединение с почтовым сервером."
+    if isinstance(error, MailConnectionError):
+        return str(error)
     return "Почтовая операция завершилась ошибкой."
 
 
@@ -270,6 +273,71 @@ def parse_addresses(value):
     return addresses
 
 
+def validated_connection_settings(payload, existing=None):
+    """Return a normalized, TLS-only account payload without a password."""
+    existing = dict(existing or {})
+
+    def value(name, fallback=""):
+        raw = payload.get(name)
+        if raw is None or str(raw).strip() == "":
+            raw = existing.get(name, fallback)
+        return str(raw or "").strip()
+
+    legacy_security = value("security", existing.get("security", "ssl"))
+    clean = {
+        "mailbox_name": value("mailbox_name"),
+        "sender_name": value("sender_name")[:240],
+        "email": value("email"),
+        "imap_host": value("imap_host"),
+        "imap_port": value("imap_port", "993"),
+        "imap_security": value(
+            "imap_security", existing.get("imap_security", legacy_security)
+        ),
+        "smtp_host": value("smtp_host"),
+        "smtp_port": value("smtp_port", "465"),
+        "smtp_security": value(
+            "smtp_security", existing.get("smtp_security", legacy_security)
+        ),
+        "login": value("login"),
+    }
+    required = (
+        "mailbox_name", "email", "imap_host", "imap_port",
+        "smtp_host", "smtp_port", "login",
+    )
+    if any(not clean[name] for name in required):
+        raise MailValidationError("Заполните обязательные параметры подключения.")
+    if any("\r" in item or "\n" in item for item in clean.values()):
+        raise MailValidationError("Параметры подключения содержат недопустимые символы.")
+    if not EMAIL_RE.match(normalize_email(clean["email"])):
+        raise MailValidationError("Укажите корректный email рабочего ящика.")
+    for field in ("imap_host", "smtp_host"):
+        host = clean[field]
+        if (
+            not MAIL_HOST_RE.match(host)
+            or ".." in host
+            or "." not in host
+        ):
+            raise MailValidationError("Укажите корректный адрес почтового сервера.")
+    for field in ("imap_security", "smtp_security"):
+        if clean[field] not in {"ssl", "starttls"}:
+            raise MailValidationError(
+                "Для IMAP и SMTP обязательно выберите SSL/TLS или STARTTLS."
+            )
+    for field in ("imap_port", "smtp_port"):
+        try:
+            port = int(clean[field])
+        except (TypeError, ValueError):
+            raise MailValidationError("Порты IMAP и SMTP должны быть целыми числами.")
+        if port < 1 or port > 65535:
+            raise MailValidationError("Порты IMAP и SMTP должны быть от 1 до 65535.")
+        clean[field] = port
+    clean["email"] = clean["email"][:320]
+    clean["login"] = clean["login"][:500]
+    clean["imap_host"] = clean["imap_host"][:253]
+    clean["smtp_host"] = clean["smtp_host"][:253]
+    return clean
+
+
 class MailStore:
     def __init__(self, path=None, attachment_root=None):
         self.path = Path(path or os.getenv("ERP_MAIL_DATABASE", "") or "instance/mail.db")
@@ -299,37 +367,27 @@ class MailStore:
         return dict(row) if row else None
 
     def save_account(self, payload, actor_id, secret_box):
-        required = ("mailbox_name", "email", "imap_host", "imap_port", "smtp_host", "smtp_port", "security", "login")
-        clean = {key: str(payload.get(key) or "").strip() for key in required}
-        clean["sender_name"] = str(payload.get("sender_name") or "").strip()[:240]
-        if any(not clean[key] for key in required) or not EMAIL_RE.match(normalize_email(clean["email"])):
-            raise MailValidationError("Заполните обязательные параметры подключения.")
-        if clean["security"] not in {"ssl", "starttls"}:
-            raise MailValidationError("Выберите поддерживаемый тип защищённого соединения.")
-        try:
-            clean["imap_port"] = int(clean["imap_port"])
-            clean["smtp_port"] = int(clean["smtp_port"])
-        except ValueError:
-            raise MailValidationError("Порты IMAP и SMTP должны быть целыми числами.")
         password = str(payload.get("password") or "")
         now = utc_now()
         with self.connect() as connection:
             existing = connection.execute("SELECT * FROM mail_accounts ORDER BY id LIMIT 1").fetchone()
+            clean = validated_connection_settings(payload, existing)
             encrypted = secret_box.encrypt(password) if password else (existing["encrypted_password"] if existing else "")
             if not encrypted:
                 raise MailValidationError("Введите пароль приложения.")
             values = (clean["mailbox_name"][:240], clean["sender_name"], clean["email"][:320], normalize_email(clean["email"]),
                       clean["imap_host"][:500], clean["imap_port"], clean["smtp_host"][:500], clean["smtp_port"],
-                      clean["security"], clean["login"][:500], encrypted, now)
+                      clean["smtp_security"], clean["imap_security"], clean["smtp_security"],
+                      clean["login"][:500], encrypted, now)
             if existing:
                 connection.execute(
-                    "UPDATE mail_accounts SET mailbox_name=?,sender_name=?,email=?,email_normalized=?,imap_host=?,imap_port=?,smtp_host=?,smtp_port=?,security=?,login=?,encrypted_password=?,enabled=1,updated_at=? WHERE id=?",
+                    "UPDATE mail_accounts SET mailbox_name=?,sender_name=?,email=?,email_normalized=?,imap_host=?,imap_port=?,smtp_host=?,smtp_port=?,security=?,imap_security=?,smtp_security=?,login=?,encrypted_password=?,enabled=1,initial_sync_complete=0,last_sync_status='pending',last_sync_error='',updated_at=? WHERE id=?",
                     values + (existing["id"],),
                 )
                 account_id = existing["id"]
             else:
                 cursor = connection.execute(
-                    "INSERT INTO mail_accounts(mailbox_name,sender_name,email,email_normalized,imap_host,imap_port,smtp_host,smtp_port,security,login,encrypted_password,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO mail_accounts(mailbox_name,sender_name,email,email_normalized,imap_host,imap_port,smtp_host,smtp_port,security,imap_security,smtp_security,login,encrypted_password,created_by,created_at,updated_at,last_sync_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pending')",
                     values[:-1] + (int(actor_id), now, now),
                 )
                 account_id = cursor.lastrowid
@@ -658,7 +716,8 @@ class MailTransport:
         self.account, self.password, self.timeout = account, password, timeout
 
     def imap(self):
-        if self.account["security"] == "ssl":
+        security = self.account.get("imap_security") or self.account.get("security")
+        if security == "ssl":
             try:
                 client = imaplib.IMAP4_SSL(self.account["imap_host"], int(self.account["imap_port"]), timeout=self.timeout)
             except TypeError:
@@ -673,7 +732,8 @@ class MailTransport:
         return client
 
     def smtp(self):
-        if self.account["security"] == "ssl":
+        security = self.account.get("smtp_security") or self.account.get("security")
+        if security == "ssl":
             client = smtplib.SMTP_SSL(self.account["smtp_host"], int(self.account["smtp_port"]), timeout=self.timeout, context=ssl.create_default_context())
         else:
             client = smtplib.SMTP(self.account["smtp_host"], int(self.account["smtp_port"]), timeout=self.timeout)
@@ -681,19 +741,59 @@ class MailTransport:
         client.login(self.account["login"], self.password)
         return client
 
+    def check(self):
+        """Authenticate both protocols without sending a message."""
+        results = {
+            "imap": {"connected": False, "message": "Не проверено"},
+            "smtp": {"connected": False, "message": "Не проверено"},
+            "tls": {"active": True, "message": "Защищённое соединение активно"},
+        }
+        try:
+            imap = self.imap()
+            try:
+                status, unused = imap.select("INBOX", readonly=True)
+                del unused
+                if status != "OK":
+                    raise MailConnectionError(
+                        "IMAP подключён, но папка входящих недоступна."
+                    )
+                results["imap"] = {
+                    "connected": True, "message": "Подключено"
+                }
+            finally:
+                try:
+                    imap.logout()
+                except Exception:
+                    pass
+        except Exception as error:
+            results["imap"]["message"] = safe_error(error)
+        try:
+            smtp = self.smtp()
+            try:
+                code, unused = smtp.noop()
+                del unused
+                if int(code or 0) >= 400:
+                    raise MailConnectionError("SMTP-сервер недоступен.")
+                results["smtp"] = {
+                    "connected": True, "message": "Подключено"
+                }
+            finally:
+                try:
+                    smtp.quit()
+                except Exception:
+                    pass
+        except Exception as error:
+            results["smtp"]["message"] = safe_error(error)
+        results["connected"] = bool(
+            results["imap"]["connected"] and results["smtp"]["connected"]
+        )
+        return results
+
     def test(self):
-        imap = self.imap()
-        try:
-            imap.noop()
-        finally:
-            try: imap.logout()
-            except Exception: pass
-        smtp = self.smtp()
-        try:
-            smtp.noop()
-        finally:
-            try: smtp.quit()
-            except Exception: pass
+        results = self.check()
+        if not results["connected"]:
+            raise MailConnectionError("Не удалось проверить IMAP и SMTP.")
+        return results
 
 
 class MailSynchronizer:

@@ -58,7 +58,7 @@
     },
     {
       "file": "app/mail_migrations.py",
-      "sha256": "facd0668b5d99c90b7fec39d584a2ab6a2fff63e88c5e63c45fdb473aecbab4d",
+      "sha256": "dd6e493c0a529f581276e02d85ea327065277768ad7e881ea82b96e84048debd",
       "owner": "mail"
     }
   ],

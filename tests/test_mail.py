@@ -1,6 +1,7 @@
 import base64
 import os
 import socket
+import sqlite3
 import tempfile
 import unittest
 from email.header import Header
@@ -9,8 +10,9 @@ from pathlib import Path
 
 from app.mail_migrations import migrate_database, validate_database
 from app.services.mail import (
-    MailStore, MailSynchronizer, MailValidationError, SecretBox,
+    MailStore, MailSynchronizer, MailTransport, MailValidationError, SecretBox,
     parse_addresses, parse_message, sanitize_html,
+    validated_connection_settings,
 )
 
 
@@ -50,6 +52,9 @@ class FakeSMTP:
             raise self.fail
         self.messages.append((message, to_addrs))
 
+    def noop(self):
+        return 250, b"OK"
+
     def quit(self):
         pass
 
@@ -57,6 +62,10 @@ class FakeSMTP:
 class FakeIMAPAppend:
     def append(self, *args):
         return "OK", []
+
+    def select(self, folder, readonly=False):
+        self.selected = (folder, readonly)
+        return "OK", [b"0"]
 
     def logout(self):
         pass
@@ -97,13 +106,27 @@ class MailServiceTest(unittest.TestCase):
 
     def test_schema_is_repeatable_and_verified(self):
         migrate_database(self.db)
-        self.assertIn("mail-v1", validate_database(self.db))
+        self.assertIn("mail-v2", validate_database(self.db))
 
     def test_database_is_private_after_creation_and_repeat_migration(self):
         self.assertEqual(self.db.stat().st_mode & 0o777, 0o600)
         os.chmod(str(self.db), 0o644)
         migrate_database(self.db)
         self.assertEqual(self.db.stat().st_mode & 0o777, 0o600)
+
+    def test_legacy_security_is_preserved_by_v2_migration(self):
+        legacy = self.root / "legacy-mail.db"
+        with sqlite3.connect(str(legacy)) as connection:
+            connection.execute("CREATE TABLE mail_schema_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+            connection.execute("INSERT INTO mail_schema_meta VALUES('schema_version','mail-v1-2026-08-28')")
+            connection.execute("CREATE TABLE mail_accounts(id INTEGER PRIMARY KEY,security TEXT NOT NULL)")
+            connection.execute("INSERT INTO mail_accounts(id,security) VALUES(1,'starttls')")
+        migrate_database(legacy)
+        with sqlite3.connect(str(legacy)) as connection:
+            row = connection.execute(
+                "SELECT imap_security,smtp_security FROM mail_accounts WHERE id=1"
+            ).fetchone()
+        self.assertEqual(row, ("starttls", "starttls"))
 
     def test_secret_is_authenticated_and_not_plaintext(self):
         token = self.box.encrypt("секрет")
@@ -135,6 +158,37 @@ class MailServiceTest(unittest.TestCase):
             parse_addresses("victim@example.test\r\nBcc: attacker@example.test")
         with self.assertRaises(MailValidationError):
             parse_addresses("invalid")
+
+    def test_connection_settings_require_tls_valid_ports_and_safe_values(self):
+        payload = {
+            "mailbox_name": "Общий", "email": "erp@example.test",
+            "imap_host": "imap.example.test", "imap_port": 993,
+            "imap_security": "ssl", "smtp_host": "smtp.example.test",
+            "smtp_port": 587, "smtp_security": "starttls",
+            "login": "erp@example.test",
+        }
+        clean = validated_connection_settings(payload)
+        self.assertEqual((clean["imap_security"], clean["smtp_security"]), ("ssl", "starttls"))
+        for name, value in (("smtp_port", 0), ("imap_security", "plain"), ("imap_host", "imap.test\nHeader")):
+            invalid = dict(payload, **{name: value})
+            with self.assertRaises(MailValidationError):
+                validated_connection_settings(invalid)
+
+    def test_transport_check_reads_inbox_and_authenticates_smtp_without_send(self):
+        imap = FakeIMAPAppend()
+        smtp = FakeSMTP()
+        transport = MailTransport({
+            "imap_host": "imap.example.test", "imap_port": 993,
+            "imap_security": "ssl", "smtp_host": "smtp.example.test",
+            "smtp_port": 465, "smtp_security": "ssl",
+            "login": "erp@example.test",
+        }, "secret")
+        transport.imap = lambda: imap
+        transport.smtp = lambda: smtp
+        result = transport.check()
+        self.assertTrue(result["connected"])
+        self.assertEqual(imap.selected, ("INBOX", True))
+        self.assertEqual(smtp.messages, [])
 
     def test_ingest_is_idempotent_and_stores_attachment_outside_public(self):
         parsed = parse_message(raw_message(attachment=True))
@@ -196,6 +250,16 @@ class MailServiceTest(unittest.TestCase):
         with self.store.connect() as connection:
             state = connection.execute("SELECT state FROM mail_outbox WHERE id=?", (item["id"],)).fetchone()[0]
         self.assertEqual(state, "unknown")
+
+    def test_disabled_account_is_not_synchronized(self):
+        self.store.disable(1)
+
+        class ForbiddenTransport:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("disabled account must not connect")
+
+        result = MailSynchronizer(self.store, self.box, ForbiddenTransport).sync()
+        self.assertEqual(result, {"accounts": 0, "messages": 0, "threads": 0})
 
 
 if __name__ == "__main__":

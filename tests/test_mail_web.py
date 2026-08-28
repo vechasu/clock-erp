@@ -3,6 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app import auth, web
 from app.domain_schema_migrations import apply_domain_migrations
@@ -10,6 +11,32 @@ from app.mail_migrations import migrate_database
 from app.services.mail import MailStore, SecretBox, parse_message
 
 from tests.test_mail import KEY, raw_message
+
+
+class FakeConnectionTransport:
+    connected = True
+    checks = 0
+
+    def __init__(self, account, password, timeout=8):
+        self.account = account
+        self.password = password
+        self.timeout = timeout
+
+    def check(self):
+        type(self).checks += 1
+        if self.connected:
+            return {
+                "connected": True,
+                "imap": {"connected": True, "message": "Подключено"},
+                "smtp": {"connected": True, "message": "Подключено"},
+                "tls": {"active": True, "message": "Защищённое соединение активно"},
+            }
+        return {
+            "connected": False,
+            "imap": {"connected": False, "message": "Неверный логин или пароль приложения."},
+            "smtp": {"connected": False, "message": "SMTP-сервер недоступен."},
+            "tls": {"active": True, "message": "Защищённое соединение активно"},
+        }
 
 
 class MailWebTest(unittest.TestCase):
@@ -43,6 +70,8 @@ class MailWebTest(unittest.TestCase):
         )
         self.client = web.app.test_client()
         self.store = MailStore(self.mail_path, root / "attachments")
+        FakeConnectionTransport.connected = True
+        FakeConnectionTransport.checks = 0
 
     def tearDown(self):
         web.app.config.clear(); web.app.config.update(self.original_config)
@@ -66,7 +95,18 @@ class MailWebTest(unittest.TestCase):
         return {"mailbox_name": "Общий", "sender_name": "ERP", "email": "erp@example.test",
                 "imap_host": "imap.example.test", "imap_port": 993,
                 "smtp_host": "smtp.example.test", "smtp_port": 465,
+                "imap_security": "ssl", "smtp_security": "ssl",
                 "security": "ssl", "login": "erp@example.test", "password": "app-password"}
+
+    def verified_payload(self):
+        payload = self.account_payload()
+        with patch.object(web, "MailTransport", FakeConnectionTransport):
+            response = self.client.post(
+                "/api/v1/mail/settings/test", json=payload, headers=self.headers
+            )
+        self.assertEqual(response.status_code, 200)
+        payload["connection_proof"] = response.get_json()["data"]["proof"]
+        return payload
 
     def test_mail_requires_login_and_renders_real_workspace(self):
         self.assertEqual(self.client.get("/app/mail").status_code, 302)
@@ -74,20 +114,88 @@ class MailWebTest(unittest.TestCase):
         page = self.client.get("/app/mail")
         self.assertEqual(page.status_code, 200)
         text = page.get_data(as_text=True)
-        self.assertIn("Почта не подключена", text)
+        self.assertIn("Подключите рабочую почту", text)
         self.assertIn('data-navigation-key="mail"', text)
+        self.assertNotIn('id="mailConnectionWizard"', text)
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM mail_accounts").fetchone()[0], 0)
+        self.assertNotIn("Почта не подключена", text)
+        self.assertNotIn("Данные созданы", text)
 
-    def test_only_owner_can_save_connection_and_secret_is_not_returned(self):
+    def test_only_owner_can_test_and_save_verified_connection(self):
         self.login(self.employee_id)
         denied = self.client.post("/api/v1/mail/settings", json=self.account_payload(), headers=self.headers)
         self.assertEqual(denied.status_code, 403)
+        denied_test = self.client.post("/api/v1/mail/settings/test", json=self.account_payload(), headers=self.headers)
+        self.assertEqual(denied_test.status_code, 403)
         self.login(self.owner_id)
-        saved = self.client.post("/api/v1/mail/settings", json=self.account_payload(), headers=self.headers)
+        owner_page = self.client.get("/app/mail").get_data(as_text=True)
+        self.assertIn('id="mailConnectionWizard"', owner_page)
+        unverified = self.client.post("/api/v1/mail/settings", json=self.account_payload(), headers=self.headers)
+        self.assertEqual(unverified.status_code, 422)
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM mail_accounts").fetchone()[0], 0)
+        saved = self.client.post("/api/v1/mail/settings", json=self.verified_payload(), headers=self.headers)
         self.assertEqual(saved.status_code, 200)
-        self.assertNotIn("password", saved.get_data(as_text=True).casefold())
+        body = saved.get_data(as_text=True)
+        self.assertNotIn("app-password", body)
+        self.assertNotIn("encrypted_password", body)
         with self.store.connect() as connection:
             encrypted = connection.execute("SELECT encrypted_password FROM mail_accounts").fetchone()[0]
+            enabled = connection.execute("SELECT enabled FROM mail_accounts").fetchone()[0]
+            pending = connection.execute("SELECT COUNT(*) FROM mail_sync_requests WHERE state='pending'").fetchone()[0]
         self.assertNotIn("app-password", encrypted)
+        self.assertEqual((enabled, pending), (1, 1))
+
+    def test_failed_check_does_not_activate_or_persist_account(self):
+        self.login(self.owner_id)
+        FakeConnectionTransport.connected = False
+        with patch.object(web, "MailTransport", FakeConnectionTransport):
+            response = self.client.post(
+                "/api/v1/mail/settings/test", json=self.account_payload(), headers=self.headers
+            )
+        self.assertEqual(response.status_code, 422)
+        fields = response.get_json()["fields"]
+        self.assertFalse(fields["imap"]["connected"])
+        self.assertFalse(fields["smtp"]["connected"])
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM mail_accounts").fetchone()[0], 0)
+
+    def test_connection_check_authenticates_both_protocols_without_sending(self):
+        self.login(self.owner_id)
+        with patch.object(web, "MailTransport", FakeConnectionTransport):
+            response = self.client.post(
+                "/api/v1/mail/settings/test", json=self.account_payload(), headers=self.headers
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(FakeConnectionTransport.checks, 1)
+        data = response.get_json()["data"]
+        self.assertTrue(data["imap"]["connected"])
+        self.assertTrue(data["smtp"]["connected"])
+        self.assertNotIn("app-password", response.get_data(as_text=True))
+
+    def test_repeated_verified_save_updates_single_account(self):
+        self.login(self.owner_id)
+        payload = self.verified_payload()
+        first = self.client.post("/api/v1/mail/settings", json=payload, headers=self.headers)
+        second = self.client.post("/api/v1/mail/settings", json=payload, headers=self.headers)
+        self.assertEqual((first.status_code, second.status_code), (200, 200))
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM mail_accounts").fetchone()[0], 1)
+
+    def test_saved_password_is_never_returned_to_browser(self):
+        self.login(self.owner_id)
+        saved = self.client.post("/api/v1/mail/settings", json=self.verified_payload(), headers=self.headers)
+        self.assertEqual(saved.status_code, 200)
+        page = self.client.get("/app/mail").get_data(as_text=True)
+        self.assertIn("Пароль сохранён", page)
+        self.assertNotIn("app-password", page)
+        self.assertNotIn("encrypted_password", page)
+
+    def test_mail_script_disables_generic_mutation_toasts(self):
+        script = (Path(web.PROJECT_ROOT) / "app" / "static" / "js" / "mail.js").read_text()
+        self.assertIn('headers.set("X-Vechasu-Notify", "off")', script)
+        self.assertNotIn("Данные созданы", script)
 
     def test_csrf_and_idempotent_outbox(self):
         self.store.save_account(self.account_payload(), self.owner_id, SecretBox(KEY))
