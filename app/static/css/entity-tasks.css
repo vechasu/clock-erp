@@ -1,1 +1,242 @@
-.entity-tasks{position:relative;margin:14px 0;padding:14px;border:1px solid var(--erp-border);border-radius:12px;background:var(--erp-surface)}.entity-tasks h3{margin:0 130px 10px 0}.entity-tasks-create{position:absolute;top:12px;right:12px;color:var(--erp-primary);font-size:12px;font-weight:800;text-decoration:none}.entity-tasks ul{display:grid;gap:7px;margin:0;padding:0;list-style:none}.entity-tasks li{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding-top:7px;border-top:1px solid var(--erp-border);font-size:12px}.entity-tasks li>a{color:var(--erp-text);font-weight:750;text-decoration:none}.entity-tasks li>span,.entity-tasks li>small,.entity-tasks p{color:var(--erp-muted)}.entity-tasks li>small{grid-column:1/-1}
+.entity-tasks {
+    position: relative;
+    margin: 14px 0;
+    padding: 14px;
+    border: 1px solid var(--erp-border);
+    border-radius: 12px;
+    background: var(--erp-surface);
+}
+
+.entity-tasks-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.entity-tasks h3 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+}
+
+.entity-tasks-count {
+    display: inline-grid;
+    min-width: 22px;
+    height: 22px;
+    place-items: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--erp-surface-muted);
+    color: var(--erp-muted);
+    font-size: 11px;
+}
+
+.entity-tasks-create {
+    color: var(--erp-primary);
+    font-size: 12px;
+    font-weight: 800;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.entity-tasks-create:hover,
+.entity-tasks-create:focus-visible {
+    text-decoration: underline;
+}
+
+.entity-tasks ul {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.entity-tasks li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 30px;
+    align-items: center;
+    gap: 4px 10px;
+    min-height: 40px;
+    padding: 7px 0;
+    border-top: 1px solid var(--erp-border);
+    font-size: 12px;
+}
+
+.entity-tasks li > a {
+    min-width: 0;
+    color: var(--erp-text);
+    font-weight: 750;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+.entity-tasks li > span,
+.entity-tasks li > small,
+.entity-tasks p {
+    color: var(--erp-muted);
+}
+
+.entity-tasks li > small {
+    grid-column: 1 / -1;
+}
+
+.entity-task-menu-trigger {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--erp-muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.entity-task-menu-trigger:hover,
+.entity-task-menu-trigger:focus-visible,
+.entity-task-menu-trigger[aria-expanded="true"] {
+    outline: 0;
+    background: var(--erp-surface-muted);
+    color: var(--erp-text);
+    box-shadow: var(--erp-focus-ring);
+}
+
+.entity-task-menu {
+    position: fixed;
+    z-index: 1100;
+    padding: 5px;
+    border: 1px solid var(--erp-border);
+    border-radius: 9px;
+    background: var(--erp-surface);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, .18);
+}
+
+.entity-task-menu button {
+    display: flex;
+    width: 100%;
+    min-height: 38px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--erp-danger, #b42318);
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.entity-task-menu button:hover,
+.entity-task-menu button:focus-visible {
+    outline: 0;
+    background: var(--theme-danger-soft, #fef2f2);
+    box-shadow: var(--erp-focus-ring);
+}
+
+.entity-task-menu svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.entity-tasks-empty {
+    margin: 0;
+    padding: 10px 0 2px;
+}
+
+body.has-task-delete-dialog {
+    overflow: hidden;
+}
+
+.task-delete-backdrop {
+    position: fixed;
+    z-index: 2000;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(15, 23, 42, .42);
+}
+
+.task-delete-backdrop[hidden] {
+    display: none;
+}
+
+.task-delete-dialog {
+    width: min(430px, 100%);
+    padding: 20px;
+    border: 1px solid var(--erp-border);
+    border-radius: 14px;
+    background: var(--erp-surface);
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .24);
+}
+
+.task-delete-dialog h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.task-delete-dialog p {
+    margin: 10px 0 0;
+    color: var(--erp-muted);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.task-delete-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.task-delete-actions .button-danger {
+    border-color: var(--erp-danger, #b42318);
+    background: var(--erp-danger, #b42318);
+    color: #fff;
+}
+
+.task-delete-error {
+    color: var(--erp-danger, #b42318) !important;
+    font-weight: 650;
+}
+
+@media (max-width: 480px) {
+    .entity-tasks-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .entity-tasks li {
+        grid-template-columns: minmax(0, 1fr) 30px;
+    }
+
+    .entity-tasks li > span {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .entity-task-menu-trigger {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+    }
+
+    .task-delete-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+}

@@ -8,8 +8,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-sale-dialog-v1') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-compact-actions-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
@@ -100,16 +100,20 @@
                 {% set legacy_calc_ok = selected_order.get('calculation_complete') is none %}
                 {% set sale_state = order_sale_state %}
                 <div class="detail-scroll">
-                    <header class="card-head">
-                        <div>
+                    <header class="card-head order-card-head">
+                        <div class="order-card-summary">
                             <button class="button button-secondary back-list" type="button" data-show-list>← Назад к заказам</button>
-                            <div class="card-title"><h2>Заказ №{{ detail_number }}</h2><span class="badge badge-default source-badge">{{ 'Wildberries' if is_wb else 'Tictactoy' }}</span><span data-detail-status-badge>{% if is_wb %}<span class="badge badge-work">{{ detail_status_name }}</span>{% else %}{{ status_badge(detail_status_code,detail_status_name) }}{% endif %}</span></div>
-                            <div class="card-subtitle"><span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>{% if detail_total is not none %} · <strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}</div>
+                            <div class="card-title">
+                                <h2>Заказ №{{ detail_number }}</h2>
+                                <span class="badge badge-default source-badge">{{ 'Wildberries' if is_wb else 'Tictactoy' }}</span>
+                                {% if sale_state.sale_completed %}<span class="sale-completed-badge"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10 3 3 7-7"/></svg>Продажа проведена</span>{% endif %}
+                            </div>
+                            <div class="card-subtitle">
+                                <span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>
+                                {% if detail_total is not none %}<strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}
+                            </div>
                         </div>
-                        <div class="actions">
-                            {% if sms_permissions.send %}<a class="button button-primary" href="{{ url_for('sms_page', order_id=detail_id, compose=1) }}">Отправить SMS</a>{% endif %}
-                            {% if sms_permissions.view %}<a class="button button-secondary" href="{{ url_for('sms_page', order_id=detail_id) }}">История SMS</a>{% endif %}
-                            <a class="button button-secondary" href="{{ url_for('tasks_page', entity_type='order', entity_id=detail_id, title='Заказ №' ~ detail_number) }}">Создать задачу</a>
+                        <div class="actions order-card-actions">
                             {% if is_wb %}<span class="button button-secondary" aria-label="Только чтение">Только чтение</span>{% else %}
                             <form class="status-form" method="post" action="/order/{{ detail_id }}/status" data-status-autosave>
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -121,18 +125,28 @@
                                 <span class="status-save-state" data-status-save-state aria-live="polite"></span>
                             </form>
                             {% if sale_state.sale_completed %}
-                                <span class="button button-secondary" aria-label="Продажа проведена">Продажа проведена</span><a class="button button-primary" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
+                                <a class="button button-primary order-primary-action" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
                             {% else %}
-                                <button class="button button-primary" type="button" data-order-sale-action{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
+                                <button class="button button-primary order-primary-action" type="button" data-order-sale-action{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
                             {% endif %}
-                            {% if selected_order_bitrix_url %}<a class="button button-secondary" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer">Открыть в Bitrix ↗</a>{% endif %}
-                            {% if detail_id and selected_order.get('sync_state') != 'error' %}<a class="button button-secondary" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">⎙</span> Печать заказа</a>{% endif %}
                             {% endif %}
+                            <div class="order-actions-menu" data-order-actions-menu>
+                                <button class="button button-secondary order-actions-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="orderActionsMenu" data-order-actions-trigger>Действия <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></button>
+                                <div class="order-actions-dropdown" id="orderActionsMenu" role="menu" hidden data-order-actions-dropdown>
+                                    <a role="menuitem" href="{{ url_for('tasks_page', entity_type='order', entity_id=detail_id, title='Заказ №' ~ detail_number) }}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Создать задачу</a>
+                                    <span class="order-actions-separator" role="separator"></span>
+                                    {% if sms_permissions.send %}<a role="menuitem" href="{{ url_for('sms_page', order_id=detail_id, compose=1) }}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14v10H3zM4 6l6 5 6-5"/></svg>Отправить SMS</a>{% endif %}
+                                    {% if sms_permissions.view %}<a role="menuitem" href="{{ url_for('sms_page', order_id=detail_id) }}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4a6 6 0 1 1-5.2 3M3 4v4h4M10 7v4l3 2"/></svg>История SMS</a>{% endif %}
+                                    <span class="order-actions-separator" role="separator"></span>
+                                    {% if not is_wb and selected_order_bitrix_url %}<a role="menuitem" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11 4h5v5M9 11l7-7M15 11v5H4V5h5"/></svg>Открыть в Bitrix</a>{% endif %}
+                                    {% if not is_wb and detail_id and selected_order.get('sync_state') != 'error' %}<a role="menuitem" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 7V3h8v4M5 15H3V8h14v7h-2M6 12h8v5H6z"/></svg>Печать заказа</a>{% endif %}
+                                </div>
+                            </div>
                             {% if request.args.get('notice') and request.args.get('message') %}<div class="action-feedback notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') == 'error' else 'status' }}">{{ request.args.get('message') }}</div>{% endif %}
                         </div>
                     </header>
                     <div class="detail-body">
-                        <section class="entity-tasks" data-entity-tasks data-entity-type="order" data-entity-id="{{ detail_id }}" aria-label="Задачи заказа">Загружаем задачи…</section>
+                        <section class="entity-tasks" data-entity-tasks data-entity-type="order" data-entity-id="{{ detail_id }}" data-entity-label="Заказ №{{ detail_number }}" data-csrf="{{ csrf_token() }}" aria-label="Задачи заказа">Загружаем задачи…</section>
                         {% if selected_order.get('status_sync_state') == 'pending' %}<div class="warning">Статус сохранён в ERP и ожидает синхронизации с Bitrix. Повторные попытки выполняются автоматически.</div>{% elif selected_order.get('status_sync_state') == 'unknown' %}<div class="warning">Bitrix передал неизвестный статус. Текущий статус ERP сохранён, событие записано в журнал.</div>{% endif %}
                         {% if selected_order.get('sync_state') == 'partial' %}<div class="warning">Карточка загружена частично. Недоступны: {{ selected_order.get('sync_missing')|join(', ') }}. Небезопасные действия заблокированы.</div>{% elif selected_order.get('sync_state') == 'error' %}<div class="warning">Не удалось загрузить полную карточку. <a href="{{ request.path }}?retry=1">Повторить загрузку</a>.</div>{% endif %}
                         <div class="order-detail-grid">
@@ -406,6 +420,23 @@
         select.addEventListener('change',()=>{requested=select.value;saveRequested();});
         statusForm.addEventListener('submit',event=>event.preventDefault());
     }
+    const orderActions=document.querySelector('[data-order-actions-menu]');
+    if(orderActions){
+        const trigger=orderActions.querySelector('[data-order-actions-trigger]');
+        const menu=orderActions.querySelector('[data-order-actions-dropdown]');
+        const items=()=>Array.from(menu.querySelectorAll('[role="menuitem"]'));
+        const place=()=>{const rect=trigger.getBoundingClientRect();const width=Math.min(260,window.innerWidth-16);menu.style.width=`${width}px`;menu.style.left=`${Math.max(8,Math.min(rect.right-width,window.innerWidth-width-8))}px`;menu.style.top=`${Math.max(8,Math.min(rect.bottom+6,window.innerHeight-menu.offsetHeight-8))}px`;};
+        const close=(restore=false)=>{menu.hidden=true;trigger.setAttribute('aria-expanded','false');if(restore)trigger.focus();};
+        const open=(focusIndex)=>{menu.hidden=false;trigger.setAttribute('aria-expanded','true');place();if(Number.isInteger(focusIndex))items()[focusIndex<0?items().length-1:focusIndex]?.focus();};
+        trigger.addEventListener('click',()=>menu.hidden?open():close());
+        trigger.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();open(event.key==='ArrowDown'?0:-1);}});
+        menu.addEventListener('click',event=>{if(event.target.closest('[role="menuitem"]'))close();});
+        menu.addEventListener('keydown',event=>{const links=items();const index=links.indexOf(document.activeElement);if(event.key==='Escape'){event.preventDefault();close(true);return;}if(event.key==='Tab'){close();return;}const next=event.key==='ArrowDown'?index+1:event.key==='ArrowUp'?index-1:event.key==='Home'?0:event.key==='End'?links.length-1:null;if(next!==null){event.preventDefault();links[(next+links.length)%links.length]?.focus();}});
+        document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!orderActions.contains(event.target))close();});
+        document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.hidden){event.preventDefault();close(true);}});
+        window.addEventListener('resize',()=>{if(!menu.hidden)place();});
+        document.querySelector('.detail-scroll')?.addEventListener('scroll',()=>{if(!menu.hidden)place();},{passive:true});
+    }
     const mappingEndpoint=row=>`/api/orders/${encodeURIComponent(row.dataset.orderId)}/items/${encodeURIComponent(row.dataset.orderItemId)}/mapping`;
     function mappingError(form,message,error){const node=form?.querySelector('[data-order-mapping-error]');if(node){node.textContent=message;node.hidden=false;}window.VechasuNotify?.error(message);console.error('Order item mapping failed',error||message);}
     function updateOrderMappingState(state){
@@ -472,6 +503,6 @@
     if(modal.dataset.autoOpen==='1')open();
 })();
 </script>
-<script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
+<script src="{{ url_for('static', filename='js/entity-tasks.js', v='task-soft-delete-v1') }}"></script>
 </body>
 </html>
