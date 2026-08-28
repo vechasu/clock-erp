@@ -16,6 +16,7 @@ from app.domain_schema_migrations import (
 from app.services.tasks import (
     MOSCOW_TIMEZONE,
     TaskStore,
+    TaskPermissionError,
     TaskValidationError,
     moscow_today,
 )
@@ -132,6 +133,64 @@ class TaskStoreTest(unittest.TestCase):
         before_midnight_utc = datetime(2026, 8, 26, 21, 30, tzinfo=timezone.utc)
         self.assertEqual(before_midnight_utc.astimezone(MOSCOW_TIMEZONE).hour, 0)
         self.assertEqual(moscow_today(before_midnight_utc), "2026-08-27")
+
+    def test_calendar_range_scope_filters_completed_undated_and_stable_order(self):
+        mine = self.create(title="Моя срочная", due_date="2026-08-27", due_time="09:00",
+                           priority="urgent", assignee_id=1)
+        created = self.create(title="Поставлена мной", due_date="2026-08-28", assignee_id=2)
+        self.create(title="За диапазоном", due_date="2026-09-10")
+        undated = self.create(title="Без даты", section="anytime", assignee_id=1)
+        completed = self.create(title="Готово", due_date="2026-08-29")
+        self.store.set_status(completed["id"], "completed", 1)
+        result = self.store.calendar("2026-08-24", "2026-08-30", scope="all", current_user_id=1)
+        self.assertEqual([row["id"] for row in result["rows"]], [mine["id"], created["id"]])
+        self.assertEqual([row["id"] for row in result["undated"]], [undated["id"]])
+        self.assertEqual(result["undated_total"], 1)
+        mine_scope = self.store.calendar("2026-08-24", "2026-08-30", scope="mine", current_user_id=1)
+        self.assertEqual([row["id"] for row in mine_scope["rows"]], [mine["id"]])
+        created_scope = self.store.calendar("2026-08-24", "2026-08-30", scope="assigned_by_me", current_user_id=1)
+        self.assertEqual({row["id"] for row in created_scope["rows"]}, {mine["id"], created["id"]})
+        with_completed = self.store.calendar(
+            "2026-08-24", "2026-08-30", query="готово", include_completed=True,
+            scope="all", current_user_id=1,
+        )
+        self.assertEqual([row["id"] for row in with_completed["rows"]], [completed["id"]])
+
+    def test_calendar_waiting_date_reschedule_time_history_and_permissions(self):
+        task = self.create(title="Ждём", status="waiting", waiting_for="Ответ",
+                           check_date="2026-08-27", due_date="2026-08-27",
+                           due_time="11:30", assignee_id=2)
+        result = self.store.calendar("2026-08-24", "2026-08-30", current_user_id=1)
+        self.assertEqual(result["rows"][0]["calendar_date"], "2026-08-27")
+        moved = self.store.calendar_reschedule(
+            task["id"], "2026-08-28", "16:00", 1, expected_version=task["version"]
+        )
+        self.assertEqual((moved["check_date"], moved["due_time"]), ("2026-08-28", "16:00"))
+        event = moved["history"][0]
+        self.assertEqual(event["event_type"], "date_changed")
+        self.assertEqual(event["details"]["from"], "2026-08-27")
+        self.assertEqual(event["details"]["to"], "2026-08-28")
+        self.assertEqual(event["actor_id"], 1)
+        with self.assertRaisesRegex(TaskValidationError, "обязательна"):
+            self.store.calendar_reschedule(task["id"], None, None, 1,
+                                           expected_version=moved["version"])
+        foreign = self.store.create(
+            {"title": "Чужая", "assignee_id": 2, "due_date": "2026-08-27"}, 2,
+            lambda value: True, lambda kind, value: None,
+        )[0]
+        with self.assertRaises(TaskPermissionError):
+            self.store.calendar_reschedule(foreign["id"], "2026-08-29", None, 1)
+
+    def test_calendar_range_validation_boundaries_and_no_duplicates(self):
+        first = self.create(title="Начало", due_date="2026-08-01")
+        last = self.create(title="Конец", due_date="2026-08-31")
+        result = self.store.calendar("2026-08-01", "2026-08-31", current_user_id=1)
+        self.assertEqual([row["id"] for row in result["rows"]], [first["id"], last["id"]])
+        self.assertEqual(len({row["id"] for row in result["rows"]}), len(result["rows"]))
+        for start, end in (("bad", "2026-08-31"), ("2026-09-01", "2026-08-31"),
+                           ("2026-01-01", "2026-04-01")):
+            with self.subTest(start=start, end=end), self.assertRaises(TaskValidationError):
+                self.store.calendar(start, end, current_user_id=1)
 
     def test_migration_is_idempotent_and_runtime_store_emits_no_ddl(self):
         first = domain_snapshot(self.path, "tasks")
