@@ -108,7 +108,7 @@ button:disabled { cursor: wait; opacity: .58; }
 .tasks-status button { border: 0; background: transparent; color: var(--erp-primary); font-weight: 800; cursor: pointer; }
 
 .tasks-list { display: grid; gap: 14px; transition: opacity .15s; }
-.tasks-list.loading { opacity: .48; }
+.tasks-list.loading { opacity: 1; }
 .tasks-group { display: grid; gap: 5px; }
 .tasks-group-title { display: flex; align-items: center; gap: 8px; margin: 1px 2px 5px; color: var(--erp-text); font-size: 12px; font-weight: 800; }
 .tasks-group-title span { color: var(--erp-muted); font-size: 11px; font-weight: 650; }
@@ -156,7 +156,7 @@ button:disabled { cursor: wait; opacity: .58; }
 .task-priority-dot.important { background: var(--erp-primary); }
 .task-avatar { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #e2e8f0; color: #334155; font-size: 9px; font-weight: 850; }
 .task-badge { display: inline-flex; align-items: center; min-width: 0; max-width: 240px; min-height: 22px; overflow: hidden; padding: 2px 7px; border-radius: 999px; background: #eef2f7; color: #1d4ed8; font-weight: 700; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
-.task-badge:hover { background: #dbeafe; color: var(--erp-primary); }
+.task-badge:hover { background: #dbeafe; color: #1e40af; }
 .task-row-actions { display: flex; align-items: center; opacity: 0; transition: opacity .15s; }
 .task-row:hover .task-row-actions, .task-row:focus-within .task-row-actions { opacity: 1; }
 .task-row-action { width: 40px; height: 40px; border: 0; border-radius: 9px; background: transparent; color: var(--erp-muted); font-size: 20px; cursor: pointer; }

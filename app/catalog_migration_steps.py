@@ -966,7 +966,7 @@ CREATE INDEX IF NOT EXISTS idx_erp_inventory_items_product
 CREATE TABLE IF NOT EXISTS erp_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK (
-        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair', 'order', 'customer', 'task', 'purchase', 'settings', 'user', 'sms')
+        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair', 'order', 'customer', 'task', 'purchase', 'settings', 'user', 'sms', 'service')
     ),
     entity_id TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -1130,7 +1130,7 @@ def apply_audit_sms_constraints(connection):
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "entity_type TEXT NOT NULL CHECK (entity_type IN "
             "('product','sale','receipt','brand','category','inventory','repair',"
-            "'order','customer','task','purchase','settings','user','sms')), "
+            "'order','customer','task','purchase','settings','user','sms','service')), "
             "entity_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT, "
             "actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN "
             "('user','system','external')), actor_display_name_snapshot TEXT NOT NULL, "

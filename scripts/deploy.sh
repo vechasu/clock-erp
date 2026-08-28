@@ -53,6 +53,7 @@ readonly CUSTOMERS_CRON="/etc/cron.d/clock-erp-customers"
 readonly CUSTOMERS_LOGROTATE="/etc/logrotate.d/clock-erp-customers"
 readonly SMS_CRON="/etc/cron.d/clock-erp-sms"
 readonly SMS_LOGROTATE="/etc/logrotate.d/clock-erp-sms"
+readonly SERVICE_ENV_FILE="/etc/clock-erp/clock-erp.env"
 readonly MAIL_CRON="/etc/cron.d/clock-erp-mail"
 readonly MAIL_LOGROTATE="/etc/logrotate.d/clock-erp-mail"
 readonly HEALTHCHECK_URLS=(
@@ -72,6 +73,8 @@ CATALOG_MIGRATION_REQUIRED=0
 DOMAIN_MIGRATION_REQUIRED=0
 PURCHASES_MIGRATION_REQUIRED=0
 CUSTOMERS_MIGRATION_REQUIRED=0
+SERVICES_MIGRATION_REQUIRED=0
+MAIL_MIGRATION_REQUIRED=0
 CUSTOMERS_REBUILD_REQUIRED=0
 SMS_MIGRATION_REQUIRED=0
 UNREGISTERED_MIGRATION_CHANGE=0
@@ -80,6 +83,7 @@ DOMAIN_MIGRATION_STARTED=0
 PURCHASES_MIGRATION_STARTED=0
 CUSTOMERS_MIGRATION_STARTED=0
 SMS_MIGRATION_STARTED=0
+SERVICES_MIGRATION_STARTED=0
 MAIL_MIGRATION_STARTED=0
 CATALOG_ROLLBACK_BACKUP=""
 AUTH_ROLLBACK_BACKUP=""
@@ -91,6 +95,10 @@ PURCHASES_DATABASE_EXISTED=0
 CUSTOMERS_ROLLBACK_BACKUP=""
 SMS_ROLLBACK_BACKUP=""
 SMS_DATABASE_EXISTED=0
+SERVICES_ROLLBACK_BACKUP=""
+SERVICES_DATABASE_EXISTED=0
+SERVICE_ENV_BACKUP=""
+SERVICE_ENV_UPDATED=0
 MAIL_ROLLBACK_BACKUP=""
 MAIL_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
@@ -116,7 +124,7 @@ rollback() {
     set +e
     printf 'ROLLBACK: stage=%s exit_code=%s\n' "$FAILURE_STAGE" "$exit_code" >&2
 
-    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" || "$CUSTOMERS_MIGRATION_STARTED" == "1" || "$SMS_MIGRATION_STARTED" == "1" || "$MAIL_MIGRATION_STARTED" == "1" ) ]]; then
+    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" || "$CUSTOMERS_MIGRATION_STARTED" == "1" || "$SMS_MIGRATION_STARTED" == "1" || "$SERVICES_MIGRATION_STARTED" == "1" || "$MAIL_MIGRATION_STARTED" == "1" ) ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
     fi
@@ -175,6 +183,20 @@ rollback() {
             rm -f -- instance/sms.db
             printf 'ROLLBACK_OK: removed newly created SMS database\n' >&2
         fi
+    fi
+    if [[ "$SERVICES_MIGRATION_STARTED" == "1" ]]; then
+        if [[ "$SERVICES_DATABASE_EXISTED" == "1" && -f "$SERVICES_ROLLBACK_BACKUP" ]]; then
+            cp -p "$SERVICES_ROLLBACK_BACKUP" instance/services.db
+            sqlite3 instance/services.db "PRAGMA quick_check;" | grep -qx "ok"
+            printf 'ROLLBACK_OK: restored verified services database backup\n' >&2
+        elif [[ "$SERVICES_DATABASE_EXISTED" == "0" && -f instance/services.db ]]; then
+            rm -f -- instance/services.db
+            printf 'ROLLBACK_OK: removed newly created services database\n' >&2
+        fi
+    fi
+    if [[ "$SERVICE_ENV_UPDATED" == "1" && -f "$SERVICE_ENV_BACKUP" ]]; then
+        install -o root -g root -m 0600 "$SERVICE_ENV_BACKUP" "$SERVICE_ENV_FILE"
+        printf 'ROLLBACK_OK: restored protected service environment\n' >&2
     fi
     if [[ "$MAIL_MIGRATION_STARTED" == "1" ]]; then
         if [[ "$MAIL_DATABASE_EXISTED" == "1" && -f "$MAIL_ROLLBACK_BACKUP" ]]; then
@@ -286,6 +308,10 @@ if printf '%s\n' "$changed_files" | grep -Eq \
     fi
 fi
 if printf '%s\n' "$changed_files" | grep -Eq \
+    '^(app/services/service_vault\.py|scripts/migrate_services_vault\.py)$'; then
+    SERVICES_MIGRATION_REQUIRED=1
+fi
+if printf '%s\n' "$changed_files" | grep -Eq \
     '^scripts/migrate_(brand_inventory|inventory_scopes|repair_cases|unified_catalog)\.py$'; then
     UNREGISTERED_MIGRATION_CHANGE=1
 fi
@@ -294,11 +320,10 @@ if [[ "$UNREGISTERED_MIGRATION_CHANGE" == "1" ]]; then
         'PRECHECK_FAILED: changed legacy migration script is not registered in production preflight' >&2
     false
 fi
-if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" || "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+if [[ -f instance/catalog.db ]]; then
     active_inventory_count="$(
-        if [[ -f instance/catalog.db ]]; then sqlite3 instance/catalog.db \
+        sqlite3 instance/catalog.db \
             "SELECT COUNT(*) FROM erp_inventory_sessions WHERE status = 'active';"
-        else printf '0'; fi
     )"
     if [[ "$active_inventory_count" != "0" ]]; then
         printf 'DEPLOY_BLOCKED: %s active inventory session(s)\n' \
@@ -412,7 +437,15 @@ if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
         "$RELEASE_DIR/scripts/migrate_sms.py" rehearse \
         --database "$PROJECT_DIR/instance/sms.db"
 fi
-if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+fi
+if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
+    services_rehearsal="$RELEASE_DIR/services-rehearsal.db"
+    if [[ -f instance/services.db ]]; then
+        sqlite3 instance/services.db ".backup '$services_rehearsal'"
+    fi
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/migrate_services_vault.py" apply --database "$services_rehearsal"
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/migrate_services_vault.py" verify --database "$services_rehearsal"
+fi
 if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
     mail_rehearsal="$RELEASE_DIR/mail-rehearsal.db"
     if [[ -f instance/mail.db ]]; then
@@ -429,6 +462,9 @@ CURRENT_COMMIT="$(git rev-parse HEAD)"
 [[ "$CURRENT_COMMIT" == "$FETCHED_COMMIT" ]]
 if [[ "$CURRENT_COMMIT" != "$PREVIOUS_COMMIT" ]]; then
     DEPLOY_UPDATED=1
+fi
+if printf '%s\n' "$changed_files" | grep -q '^requirements\.txt$'; then
+    "$PROJECT_DIR/venv/bin/pip" install --disable-pip-version-check --only-binary=:all: 'cryptography==35.0.0'
 fi
 install -o root -g root -m 0755 scripts/retain_erp_backups.py "$RETENTION_TOOL"
 install -o root -g root -m 0644 ops/clock-erp-backup-retention.cron "$RETENTION_CRON"
@@ -475,7 +511,7 @@ if [[ -f "$BITRIX_ORDERS_EXPORT_SOURCE" ]]; then
     BITRIX_ORDERS_EXPORT_UPDATED=1
 fi
 
-if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" || "$SMS_MIGRATION_REQUIRED" == "1" || "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" || "$SMS_MIGRATION_REQUIRED" == "1" || "$SERVICES_MIGRATION_REQUIRED" == "1" || "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
     printf 'PRODUCTION MIGRATION: stop service, backup, apply verified migrations\n'
     FAILURE_STAGE="PRODUCTION MIGRATION"
     systemctl stop "$SERVICE_NAME"
@@ -487,6 +523,27 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
     DATA_SNAPSHOT_BEFORE="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     rollback_directory="$(mktemp -d "$BACKUP_DIR/production-migration-XXXXXX")"
     chmod 700 "$rollback_directory"
+    if [[ ! -f "$SERVICE_ENV_FILE" ]]; then
+        printf 'SERVICE_VAULT_KEY_ERROR: protected EnvironmentFile is missing\n' >&2
+        false
+    fi
+    SERVICE_ENV_BACKUP="$rollback_directory/clock-erp.env-before"
+    cp -p "$SERVICE_ENV_FILE" "$SERVICE_ENV_BACKUP"
+    chmod 600 "$SERVICE_ENV_BACKUP"
+    if ! grep -q '^SERVICE_VAULT_KEY=' "$SERVICE_ENV_FILE"; then
+        env_stage="$(mktemp "$BACKUP_DIR/temporary/clock-erp-env-XXXXXX")"
+        cp -p "$SERVICE_ENV_FILE" "$env_stage"
+        printf '\nSERVICE_VAULT_KEY=' >> "$env_stage"
+        "$PYTHON_BIN" -c 'import base64,os,sys; sys.stdout.write(base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"))' >> "$env_stage"
+        printf '\n' >> "$env_stage"
+        install -o root -g root -m 0600 "$env_stage" "$SERVICE_ENV_FILE"
+        rm -f -- "$env_stage"
+        SERVICE_ENV_UPDATED=1
+        printf 'SERVICE_VAULT_KEY_CREATED=protected-environment-file\n'
+    fi
+    SERVICE_VAULT_KEY="$(sed -n 's/^SERVICE_VAULT_KEY=//p' "$SERVICE_ENV_FILE" | tail -1)"
+    export SERVICE_VAULT_KEY
+    "$PYTHON_BIN" -c 'import base64,os; assert len(base64.urlsafe_b64decode(os.environ["SERVICE_VAULT_KEY"].encode("ascii"))) == 32'
     if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
         CATALOG_ROLLBACK_BACKUP="$rollback_directory/catalog-before.db"
         sqlite3 instance/catalog.db ".backup '$CATALOG_ROLLBACK_BACKUP'"
@@ -538,7 +595,17 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         fi
         SMS_MIGRATION_STARTED=1
     fi
-    if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+    fi
+    if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
+        if [[ -f instance/services.db ]]; then
+            SERVICES_DATABASE_EXISTED=1
+            SERVICES_ROLLBACK_BACKUP="$rollback_directory/services-before.db"
+            sqlite3 instance/services.db ".backup '$SERVICES_ROLLBACK_BACKUP'"
+            chmod 600 "$SERVICES_ROLLBACK_BACKUP"
+            sqlite3 "$SERVICES_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        fi
+        SERVICES_MIGRATION_STARTED=1
+    fi
     if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
         if [[ -f instance/mail.db ]]; then
             MAIL_DATABASE_EXISTED=1
@@ -587,7 +654,11 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py verify \
             --database instance/sms.db
     fi
-    if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+    fi
+    if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_services_vault.py apply --database instance/services.db
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_services_vault.py verify --database instance/services.db
+    fi
     if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py apply --database instance/mail.db
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
@@ -658,7 +729,29 @@ if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py verify \
         --database instance/sms.db
 fi
-if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+fi
+if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
+    PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_services_vault.py verify --database instance/services.db
+fi
+SERVICES_HTTP_STATUS="$($PYTHON_BIN - <<'PYTHON_SMOKE'
+from app.web import app
+from app.auth import get_auth_store
+app.config.update(TESTING=True, AUTH_TESTING=True)
+with app.app_context():
+    users = get_auth_store().list_team_presence()
+owner = next((user for user in users if user.get('role') == 'owner'), None)
+if not owner:
+    raise SystemExit('services smoke owner is missing')
+with app.test_client() as client:
+    with client.session_transaction() as session:
+        session['user_id'] = owner['id']
+    response = client.get('/app/services')
+    if response.status_code != 200 or 'Рабочие сервисы'.encode('utf-8') not in response.data:
+        raise SystemExit('services smoke failed: {}'.format(response.status_code))
+    print(response.status_code)
+PYTHON_SMOKE
+)"
+printf 'SERVICES_HTTP=%s\n' "$SERVICES_HTTP_STATUS"
 if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
 fi

@@ -13,6 +13,7 @@ const routes = [
   '/app/journal',
   '/app/sms',
   '/app/settings',
+  '/app/services',
   '/app/products/inventory',
   '/app/inventory',
   '/app/inventory?view=discrepancies',
@@ -136,7 +137,7 @@ test('dynamic announcements are atomic live regions without focus capture', asyn
 test('key pages reflow at required widths and 200/400 percent zoom', async ({ page }) => {
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const route of ['/app/products', '/app/sales', '/app/tasks', '/app/purchases', '/app/inventory', '/login', '/register']) {
+    for (const route of ['/app/products', '/app/sales', '/app/tasks', '/app/purchases', '/app/inventory', '/app/services', '/login', '/register']) {
       await page.goto(route, { waitUntil: 'domcontentloaded' });
       const overflow = await page
         .locator('html')

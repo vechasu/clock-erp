@@ -166,6 +166,12 @@ AUDIT_SMS_MIGRATION_CHECKSUM = hashlib.sha256(
     (AUDIT_SMS_MIGRATION_ID + "\n" + AUDIT_SMS_MIGRATION_NAME + "\n" +
      "entity-type:sms;preserve-all-existing-events;sqlite-3.7.17").encode("utf-8")
 ).hexdigest()
+AUDIT_SERVICE_MIGRATION_ID = "2026-08-28-audit-service-entity-v1"
+AUDIT_SERVICE_MIGRATION_NAME = "Audit service entity coverage"
+AUDIT_SERVICE_MIGRATION_CHECKSUM = hashlib.sha256(
+    (AUDIT_SERVICE_MIGRATION_ID + "\n" + AUDIT_SERVICE_MIGRATION_NAME + "\n" +
+     "append-service-entity;preserve-all-events;sqlite-3.7").encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -208,6 +214,13 @@ MIGRATIONS = (
         "name": AUDIT_SMS_MIGRATION_NAME,
         "checksum": AUDIT_SMS_MIGRATION_CHECKSUM,
         "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
+    {
+        "id": AUDIT_SERVICE_MIGRATION_ID,
+        "name": AUDIT_SERVICE_MIGRATION_NAME,
+        "checksum": AUDIT_SERVICE_MIGRATION_CHECKSUM,
+        "transactional": False,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
 )
@@ -762,6 +775,55 @@ def apply_order_comments_migration(connection, ddl_observer=None):
     return True
 
 
+def apply_audit_service_migration(connection, ddl_observer=None):
+    """Expand the legacy CHECK constraint without changing audit rows."""
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='erp_audit_events'"
+    ).fetchone()
+    if row is None:
+        raise MigrationError("audit service migration: audit table is missing")
+    if "'service'" in str(row[0] or ""):
+        return True
+    before = int(connection.execute("SELECT COUNT(*) FROM erp_audit_events").fetchone()[0])
+    connection.commit()
+    connection.execute("PRAGMA foreign_keys=OFF")
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("ALTER TABLE erp_audit_events RENAME TO erp_audit_events_old")
+        connection.execute(
+            "CREATE TABLE erp_audit_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "entity_type TEXT NOT NULL CHECK (entity_type IN "
+            "('product','sale','receipt','brand','category','inventory','repair',"
+            "'order','customer','task','purchase','settings','user','sms','service')), "
+            "entity_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT, "
+            "actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN "
+            "('user','system','external')), "
+            "actor_display_name_snapshot TEXT NOT NULL, occurred_at TEXT NOT NULL, "
+            "object_label_snapshot TEXT NOT NULL, object_secondary_snapshot TEXT NOT NULL DEFAULT '', "
+            "changes_json TEXT NOT NULL DEFAULT '{}', metadata_json TEXT NOT NULL DEFAULT '{}', "
+            "search_text TEXT NOT NULL DEFAULT '', status_snapshot TEXT NOT NULL DEFAULT '', "
+            "source_snapshot TEXT NOT NULL DEFAULT '')"
+        )
+        connection.execute("INSERT INTO erp_audit_events SELECT * FROM erp_audit_events_old")
+        connection.execute("DROP TABLE erp_audit_events_old")
+        connection.execute("CREATE INDEX idx_erp_audit_occurred ON erp_audit_events(occurred_at DESC,id DESC)")
+        connection.execute("CREATE INDEX idx_erp_audit_entity_occurred ON erp_audit_events(entity_type,occurred_at DESC,id DESC)")
+        connection.execute("CREATE INDEX idx_erp_audit_entity_object ON erp_audit_events(entity_type,entity_id,occurred_at DESC,id DESC)")
+        connection.execute("CREATE INDEX idx_erp_audit_actor ON erp_audit_events(actor_id,occurred_at DESC)")
+        connection.execute("CREATE INDEX idx_erp_audit_action ON erp_audit_events(action,occurred_at DESC)")
+        after = int(connection.execute("SELECT COUNT(*) FROM erp_audit_events").fetchone()[0])
+        if after != before:
+            raise MigrationError("audit service migration: row count changed")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys=ON")
+    return True
+
+
 def apply_inventory_control_migration(connection, ddl_observer=None):
     """Add control metadata and deterministically number legacy documents."""
     if ddl_observer is not None:
@@ -983,6 +1045,12 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                     connection.row_factory = sqlite3.Row
                     try:
                         apply_audit_sms_constraints(connection)
+                    finally:
+                        connection.close()
+                elif migration["id"] == AUDIT_SERVICE_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    try:
+                        apply_audit_service_migration(connection, ddl_observer)
                     finally:
                         connection.close()
                 else:
