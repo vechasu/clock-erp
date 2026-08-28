@@ -296,9 +296,9 @@ class OrderStatusFrontendContractTests(unittest.TestCase):
             Path(__file__).resolve().parents[1]
             / "app/static/css/orders.css"
         ).read_text(encoding="utf-8")
-        self.assertIn("('N','Не подтверждён')", template)
-        self.assertIn("('A','Подтверждён')", template)
-        self.assertIn("('D','Собран')", template)
+        self.assertIn('data-status-filter="N"', template)
+        self.assertIn('data-status-filter="A"', template)
+        self.assertIn('data-status-filter="D"', template)
         self.assertIn('name="status"', template)
         self.assertNotIn(">Сохранить статус</button>", template)
         self.assertIn("data-status-autosave", template)

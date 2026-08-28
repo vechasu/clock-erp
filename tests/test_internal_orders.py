@@ -49,10 +49,9 @@ class InternalOrdersTest(unittest.TestCase):
             with self.subTest(path=path):
                 response = self.get_orders_page(path)
                 self.assertEqual(response.status_code, 200)
-                self.assertIn(
-                    "Управление заказами интернет-магазина",
-                    response.get_data(as_text=True),
-                )
+                html = response.get_data(as_text=True)
+                self.assertIn('class="orders-command-bar"', html)
+                self.assertNotIn("Управление заказами интернет-магазина", html)
 
     def test_orders_workspace_does_not_fetch_bitrix_detail(self):
         with (
@@ -95,14 +94,14 @@ class InternalOrdersTest(unittest.TestCase):
     def test_list_search_and_status_filters_are_restored(self):
         html = self.get_orders_page().get_data(as_text=True)
 
-        self.assertIn("Заказ №18593", html)
+        self.assertIn("№18593", html)
         self.assertIn("Иван Иванов", html)
         self.assertIn('id="orderSearch"', html)
         for status in ("all", "N", "A", "D"):
-            self.assertIn('data-filter="{}"'.format(status), html)
+            self.assertIn('data-status-filter="{}"'.format(status), html)
         for removed_status in ("T", "C"):
             self.assertNotIn(
-                'data-filter="{}"'.format(removed_status), html
+                'data-status-filter="{}"'.format(removed_status), html
             )
         self.assertIn("async function loadOrdersResults", html)
         self.assertIn("ordersSearchController?.abort()", html)
@@ -126,17 +125,16 @@ class InternalOrdersTest(unittest.TestCase):
             html = self.client.get("/order/1?page=2").get_data(as_text=True)
 
         self.assertEqual(
-            html.count('class="order-row"')
-            + html.count('class="order-row active"'),
+            html.count('class="order-table-row"')
+            + html.count('class="order-table-row active"'),
             20,
         )
         self.assertIn("Найдено: 45", html)
         self.assertIn("Страница 2 из 3", html)
         self.assertIn('aria-label="Заказов на странице"', html)
         self.assertNotIn("Всего заказов", html)
-        self.assertEqual(
-            html.count('class="erp-stat-value">15</strong>'), 3
-        )
+        for key in ("unconfirmed", "confirmed", "assembled"):
+            self.assertIn('data-status-count="{}">15</strong>'.format(key), html)
 
     def test_order_without_bitrix_id_does_not_break_the_list(self):
         response = self.get_orders_page(orders=[{
