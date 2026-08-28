@@ -404,7 +404,7 @@ printf 'SERVICES VAULT PREFLIGHT: protected key, database copy and systemd wirin
 FAILURE_STAGE="SERVICES VAULT PREFLIGHT"
 [[ -f "$SERVICE_ENV_FILE" ]] \
     || { printf 'SERVICE_VAULT_PREFLIGHT_FAILED: protected EnvironmentFile is missing\n' >&2; false; }
-[[ "$(systemctl show "$SERVICE_NAME" -p EnvironmentFile | sed 's/^[^=]*=//')" == *"$SERVICE_ENV_FILE"* ]] \
+[[ "$(systemctl show "$SERVICE_NAME" -p EnvironmentFiles | sed 's/^[^=]*=//')" == *"$SERVICE_ENV_FILE"* ]] \
     || { printf 'SERVICE_VAULT_PREFLIGHT_FAILED: systemd does not load the protected EnvironmentFile\n' >&2; false; }
 DEPLOY_SAFETY_DIR="$(mktemp -d "$BACKUP_DIR/deploy-safety-XXXXXX")"
 chmod 700 "$DEPLOY_SAFETY_DIR"

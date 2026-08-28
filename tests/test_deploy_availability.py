@@ -130,7 +130,7 @@ class DeployAvailabilityTest(unittest.TestCase):
         self.assertLess(vault_preflight, application_update)
         self.assertLess(application_update, smoke)
         self.assertIn("scripts/service_vault_preflight.py", script)
-        self.assertIn('systemctl show "$SERVICE_NAME" -p EnvironmentFile', script)
+        self.assertIn('systemctl show "$SERVICE_NAME" -p EnvironmentFiles', script)
         self.assertIn("services-before.db", script)
         self.assertIn("clock-erp.env-before", script)
         self.assertIn("SERVICE_VAULT_PROCESS_KEY_OK", script)
