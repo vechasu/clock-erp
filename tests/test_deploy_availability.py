@@ -154,6 +154,7 @@ class DeployAvailabilityTest(unittest.TestCase):
             'stage = "update"', 'stage = "archive"', 'stage = "log-security"',
         ):
             self.assertIn(stage, smoke)
+        self.assertIn("object_label_snapshot,object_secondary_snapshot", smoke)
         self.assertIn('connection.execute("DELETE FROM services', smoke)
         self.assertIn("secrets.token_urlsafe", smoke)
         self.assertIn("app.config.update(TESTING=True, AUTH_TESTING=True)", smoke)
