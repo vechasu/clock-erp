@@ -3,3 +3,4 @@ requests
 flask
 openpyxl==3.0.10
 reportlab==3.5.68
+cryptography==35.0.0

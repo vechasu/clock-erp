@@ -23,11 +23,14 @@ os.environ["ORDERS_DATABASE_PATH"] = str(PREVIEW_ROOT / "orders.db")
 os.environ["ERP_TASKS_DATABASE"] = str(PREVIEW_ROOT / "tasks.db")
 os.environ["ERP_PURCHASES_DATABASE"] = str(PREVIEW_ROOT / "purchases.db")
 os.environ["CUSTOMERS_DATABASE_PATH"] = str(PREVIEW_ROOT / "customers.db")
+os.environ["ERP_SERVICES_DATABASE"] = str(PREVIEW_ROOT / "services.db")
+os.environ["SERVICE_VAULT_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 from app.schema_migrations import apply_migrations  # noqa: E402
 from app.domain_schema_migrations import apply_domain_migrations  # noqa: E402
 from app.purchases_migrations import migrate_database as migrate_purchases  # noqa: E402
 from app.customer_registry_migrations import migrate_database as migrate_customers  # noqa: E402
+from scripts.migrate_services_vault import apply as migrate_services  # noqa: E402
 
 apply_migrations(PREVIEW_ROOT / "catalog.db", app_commit="stage2-preview")
 apply_domain_migrations(PREVIEW_ROOT / "auth.db", "auth", "stage2-preview")
@@ -35,6 +38,7 @@ apply_domain_migrations(PREVIEW_ROOT / "orders.db", "orders", "stage2-preview")
 apply_domain_migrations(PREVIEW_ROOT / "tasks.db", "tasks", "stage2-preview")
 migrate_purchases(PREVIEW_ROOT / "purchases.db")
 migrate_customers(PREVIEW_ROOT / "customers.db")
+migrate_services(PREVIEW_ROOT / "services.db")
 
 from app import web  # noqa: E402
 from app.catalog_db import CatalogDatabase  # noqa: E402
@@ -470,7 +474,8 @@ completed_task = add_preview_task("Отправить клиенту фотог�
 preview_task_store.set_status(completed_task["id"], "completed", 1, "Фотографии отправлены")
 cancelled_task = add_preview_task("Уточнить старый запрос", assignee_id=2)
 preview_task_store.set_status(cancelled_task["id"], "cancelled", 1)
-web.current_auth_user = lambda: {"id": 1, "role": "employee", "name": "Максим Орлов"}
+preview_role = "admin" if os.environ.get("ERP_PREVIEW_OWNER") == "1" else "employee"
+web.current_auth_user = lambda: {"id": 1, "role": preview_role, "name": "Максим Орлов"}
 
 
 class WarmCacheReleaseMiddleware:
