@@ -95,11 +95,11 @@ class OrdersUiRedesignTest(unittest.TestCase):
 
     def test_selected_order_row_keeps_complete_information(self):
         html = self.render_selected_order()
-        active_row = html.split('class="order-row active"', 1)[1].split(
-            "</a>", 1
+        active_row = html.split('class="order-table-row active"', 1)[1].split(
+            "</tr>", 1
         )[0]
         for expected in (
-            "Заказ №7007",
+            "№7007",
             "Очень длинное имя клиента",
             "+7 900 000-00-00",
             'data-amount="12990"',
@@ -110,10 +110,11 @@ class OrdersUiRedesignTest(unittest.TestCase):
 
     def test_order_number_never_uses_ellipsis_and_badges_can_wrap(self):
         html = self.render_selected_order()
-        active_row = html.split('class="order-row active"', 1)[1].split(
-            "</a>", 1
+        active_row = html.split('class="order-table-row active"', 1)[1].split(
+            "</tr>", 1
         )[0]
-        self.assertIn('<span class="order-number">Заказ №7007</span>', active_row)
+        self.assertIn('class="order-number"', active_row)
+        self.assertIn("№7007", active_row)
 
         number_rule = self.source.split(".order-number {", 1)[1].split("}", 1)[0]
         self.assertIn("flex:0 0 auto", number_rule)
@@ -123,12 +124,8 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertNotIn("overflow:hidden", number_rule)
         self.assertNotIn("text-overflow:ellipsis", number_rule)
 
-        badges_rule = self.source.split(".order-row-badges {", 1)[1].split(
-            "}", 1
-        )[0]
-        self.assertIn("flex:1 1 160px", badges_rule)
-        self.assertIn("flex-wrap:wrap", badges_rule)
-        self.assertIn("min-width:0", badges_rule)
+        self.assertIn(".orders-table {", self.source)
+        self.assertIn("overflow-wrap:anywhere", self.source)
         self.assertNotIn(
             ".orders-page .order-number,\n.orders-page .order-meta span",
             self.source,
@@ -136,15 +133,17 @@ class OrdersUiRedesignTest(unittest.TestCase):
 
     def test_filters_include_source_and_no_find_button(self):
         filters = self.source.split(
-            'class="panel-toolbar filters erp-toolbar"', 1
+            'class="orders-command-bar"', 1
         )[1].split("</form>", 1)[0]
         self.assertIn('class="field field-search erp-search-input"', filters)
-        self.assertIn('class="filter-selects"', filters)
-        self.assertEqual(filters.count("data-auto-submit-filter"), 3)
-        self.assertEqual(filters.count('<select class="field"'), 3)
+        self.assertIn('class="status-filter-tabs"', filters)
+        self.assertEqual(filters.count("data-auto-submit-filter"), 2)
+        self.assertEqual(filters.count('<select class="field"'), 2)
         self.assertIn('name="source"', filters)
         self.assertIn('name="status"', filters)
         self.assertIn('name="period"', filters)
+        self.assertIn('data-search-clear', filters)
+        self.assertIn('data-status-filter="all"', filters)
         self.assertNotIn("Свернуть список", filters)
         self.assertNotIn("data-collapse-list", self.source)
         self.assertNotIn(">Найти<", filters)
@@ -157,18 +156,18 @@ class OrdersUiRedesignTest(unittest.TestCase):
             Path(__file__).resolve().parents[1]
             / "app/static/css/orders.css"
         ).read_text(encoding="utf-8")
-        self.assertIn(
-            "grid-template-columns:repeat(3,minmax(0,1fr))", styles
-        )
-        self.assertIn("@media (max-width: 960px)", styles)
+        self.assertIn(".orders-command-bar", styles)
+        self.assertIn(".status-filter.active", styles)
+        self.assertIn("@media (max-width:780px)", styles)
 
-    def test_shared_erp_foundation_kpis_and_order_context_are_rendered(self):
+    def test_shared_erp_foundation_compact_filters_and_order_context_are_rendered(self):
         html = self.render_selected_order()
         self.assertIn("css/erp-components.css", html)
         self.assertIn("css/orders.css", html)
-        self.assertIn('class="orders-kpis erp-workspace-metrics"', html)
+        self.assertIn('class="orders-command-bar"', html)
         for label in ("Не подтверждены", "Подтверждены", "Собраны"):
             self.assertIn(label, html)
+        self.assertNotIn('class="orders-kpis erp-workspace-metrics"', html)
         self.assertNotIn("Всего заказов", html)
         for label in (
             "Способ доставки", "Способ оплаты", "Статус оплаты",

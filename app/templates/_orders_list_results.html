@@ -3,61 +3,79 @@
     {% set label = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else existing_label or 'Неизвестный статус' %}
     <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% else %}badge-default{% endif %}">{{ label }}</span>
 {%- endmacro %}
-{% macro item_count_label(count) -%}
-    {% if count is none %}
-        Количество уточняется
-    {% else %}
-        {{ count|int if count == count|int else count }} {% if count|int % 10 == 1 and count|int % 100 != 11 %}товар{% elif count|int % 10 in [2,3,4] and count|int % 100 not in [12,13,14] %}товара{% else %}товаров{% endif %}
-    {% endif %}
-{%- endmacro %}
 <div data-orders-results>
-    <div class="orders-list" id="ordersList">
-        {% for order in orders %}
-            {% set oid = order.get('id') or order.get('ID') %}
-            {% set number = order.get('number') or order.get('ACCOUNT_NUMBER') or oid or 'Без внешнего ID' %}
-            {% set code = order.get('status') or 'UNKNOWN' %}
-            {% set customer = order.get('customer') or 'Клиент не указан' %}
-            {% set phone = order.get('phone') or 'Телефон не указан' %}
-            {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
-            {% set created = order.get('created_at') or order.get('date') or '' %}
-            {% set is_wb = order.get('source') == 'wildberries' %}
-            <a href="{{ url_for('wildberries_order_page', wb_order_id=order.get('wb_order_id'), page=request.args.get('page',1), page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) if is_wb else url_for('order_page', order_id=oid, page=request.args.get('page',1), page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) if oid else '#' }}"{% if not oid %} aria-disabled="true"{% endif %} class="order-row{% if selected_order and (selected_order.get('id')|string == oid|string) %} active{% endif %}" data-order-id="{{ oid }}">
-                <div class="order-row-head">
-                    <span class="order-number">Заказ №{{ number }}</span>
-                    <span class="order-row-badges">
-                        <span class="badge badge-default source-badge">{{ 'Wildberries' if is_wb else 'Tictactoy' }}</span>
-                        {% if is_wb %}<span class="badge badge-work">{{ order.get('status_name') or code }}</span>{% else %}{{ order_status_badge(code, order.get('status_name') or '') }}{% endif %}
-                        {% if order.get('sale_completed') %}<span class="sale-fact-badge" title="Продажа {{ order.get('conducted_sale_id') }}">✓ Продажа проведена</span>{% endif %}
-                    </span>
-                </div>
-                <div class="order-customer-line"><span>{{ customer }}</span><span class="phone">{{ phone }}</span></div>
-                <div class="order-context">
-                    <strong>{% if total is not none %}<span class="money-value" data-amount="{{ total }}"></span> ₽{% else %}—{% endif %}</strong>
-                    <span class="date-value" data-date="{{ created }}"></span>
-                    <span>{{ item_count_label(order.get('item_units')) }}</span>
-                </div>
-            </a>
-        {% else %}
-            {% if sync_error %}
-                <div class="empty erp-error-state" role="alert"><strong>Не удалось загрузить заказы</strong><span>Список временно недоступен; ранее загруженные данные не изменены.</span><a class="erp-state-action" href="{{ request.path }}?retry=1">Повторить загрузку</a></div>
-            {% elif request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' or request.args.get('source','all') != 'all' %}
-                <div class="empty erp-no-results-state" role="status"><strong>По текущим условиям заказы не найдены</strong><span>Заказы не удалены — измените поиск или фильтры.</span><a class="erp-state-action" href="{{ url_for('orders_page') }}">Сбросить фильтры</a></div>
-            {% else %}
-                <div class="empty erp-empty-state" role="status"><strong>Заказов пока нет</strong><span>Новые заказы появятся после загрузки из Bitrix.</span></div>
-            {% endif %}
-        {% endfor %}
+    {% if orders %}
+    <div class="orders-table-scroll" tabindex="0" aria-label="Таблица заказов с горизонтальной прокруткой">
+        <table class="orders-table">
+            <thead><tr><th>Заказ</th><th>Создан</th><th>Статус</th><th>Сумма</th><th>Покупатель</th><th>Оплата</th><th>Товары</th><th>Доставка</th><th>Комментарии</th></tr></thead>
+            <tbody>
+            {% for order in orders %}
+                {% set oid = order.get('id') or order.get('ID') %}
+                {% set number = order.get('number') or order.get('ACCOUNT_NUMBER') or oid or '—' %}
+                {% set code = order.get('status') or 'UNKNOWN' %}
+                {% set is_wb = order.get('source') == 'wildberries' %}
+                {% set source_label = 'WB' if is_wb else order.get('source_name') or ('Сайт' if order.get('source') in [none, '', 'tictactoy'] else order.get('source')) %}
+                {% set order_url = url_for('wildberries_order_page', wb_order_id=order.get('wb_order_id'), page=request.args.get('page',1), page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) if is_wb else url_for('order_page', order_id=oid, page=request.args.get('page',1), page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) if oid else '#' %}
+                {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
+                {% set products = order.get('items') or order.get('products') or [] %}
+                {% set status_event = order.get('status_event') or {} %}
+                {% set internal_comment = order.get('internal_comment') or {} %}
+                <tr class="order-table-row{% if selected_order and selected_order.get('id')|string == oid|string %} active{% endif %}" data-order-id="{{ oid }}" data-order-href="{{ order_url }}" tabindex="0" aria-label="Открыть заказ №{{ number }}">
+                    <td class="order-cell order-identity-cell">
+                        <span class="order-state-dot status-{{ code|string|lower }}" aria-hidden="true"></span>
+                        <a class="order-number" href="{{ order_url }}">№{{ number }}</a>
+                        <span class="cell-secondary">{{ source_label or '—' }}</span>
+                    </td>
+                    <td><span class="date-value date-stacked" data-date="{{ order.get('created_at') or order.get('date') }}">—</span></td>
+                    <td class="status-cell status-cell-{{ code|string|lower }}">
+                        {{ order_status_badge(code, order.get('status_name') or '') }}
+                        <span class="cell-secondary date-value" data-date="{{ status_event.get('created_at') or order.get('updated_at') or '' }}">—</span>
+                        <span class="cell-secondary">{{ status_event.get('actor') or '—' }}</span>
+                        <span class="sale-state {{ 'is-done' if order.get('sale_completed') else '' }}">{{ 'Продажа проведена' if order.get('sale_completed') else 'Не проведена' }}</span>
+                    </td>
+                    <td class="money-cell">{% if total is not none %}<strong><span class="money-value" data-amount="{{ total }}"></span> ₽</strong>{% else %}—{% endif %}</td>
+                    <td>
+                        {% if order.get('customer') %}<a class="customer-link" href="{{ order_url }}">{{ order.get('customer') }}</a>{% else %}—{% endif %}
+                        {% if order.get('phone') %}<a class="cell-secondary" href="tel:{{ order.get('phone')|replace(' ','') }}">{{ order.get('phone') }}</a>{% else %}<span class="cell-secondary">—</span>{% endif %}
+                        {% if order.get('email') %}<a class="cell-secondary" href="mailto:{{ order.get('email') }}">{{ order.get('email') }}</a>{% endif %}
+                    </td>
+                    <td>
+                        <span>{{ order.get('payment') or '—' }}</span>
+                        <span class="cell-secondary">{{ order.get('payment_system') or '—' }}</span>
+                        <span class="payment-state {{ 'is-paid' if order.get('paid')|string|upper in ['Y','YES','TRUE','1'] else '' }}">{{ 'Оплачен' if order.get('paid')|string|upper in ['Y','YES','TRUE','1'] else 'Не оплачен' }}</span>
+                    </td>
+                    <td class="products-cell">
+                        {% for product in products %}
+                        <div class="list-product">
+                            <strong>{{ product.get('name') or product.get('NAME') or product.get('PRODUCT_NAME') or '—' }}</strong>
+                            <span class="cell-secondary">{% set model = product.get('model') or product.get('MODEL') %}{% set article = product.get('article') or product.get('ARTICLE') or product.get('sku') or product.get('SKU') %}{{ model or '—' }}{% if article %} · арт. {{ article }}{% endif %} · ×{{ product.get('quantity') or product.get('QUANTITY') or 1 }}</span>
+                        </div>
+                        {% else %}<span>—</span>{% endfor %}
+                    </td>
+                    <td>
+                        <span>{{ order.get('delivery') or order.get('delivery_type') or '—' }}</span>
+                        {% set address_parts = [order.get('country'), order.get('region'), order.get('city'), order.get('address') or order.get('delivery_address')] %}
+                        <span class="cell-secondary">{{ address_parts|select|unique|join(' · ') or '—' }}</span>
+                    </td>
+                    <td class="comments-cell">
+                        <div class="comment-line"><b>Внутренний</b><span>{{ internal_comment.get('text') or '—' }}</span></div>
+                        <div class="comment-line"><b>Клиент</b><span>{{ order.get('comment') or '—' }}</span></div>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
     </div>
+    {% else %}
+        {% if sync_error %}
+            <div class="empty erp-error-state" role="alert"><strong>Не удалось загрузить заказы</strong><span>Список временно недоступен; ранее загруженные данные не изменены.</span><a class="erp-state-action" href="{{ request.path }}?retry=1">Повторить загрузку</a></div>
+        {% elif request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' or request.args.get('source','all') != 'all' %}
+            <div class="empty erp-no-results-state" role="status"><strong>Заказы не найдены</strong><span>Измените поиск или выберите фильтр «Все».</span><a class="erp-state-action" href="{{ url_for('orders_page') }}">Показать все заказы</a></div>
+        {% else %}<div class="empty erp-empty-state" role="status"><strong>Заказов пока нет</strong><span>Новые заказы появятся после загрузки.</span></div>{% endif %}
+    {% endif %}
     <footer class="list-footer erp-pagination">
         <span>Найдено: {{ orders_total }} заказов</span>
-        <label class="orders-page-size">Показывать:
-            <select class="field" name="page_size" aria-label="Заказов на странице" data-orders-page-size>
-                {% for size in orders_page_sizes %}<option value="{{ size }}"{% if orders_page_size == size %} selected{% endif %}>{{ size }}</option>{% endfor %}
-            </select>
-        </label>
-        <span class="pagination">
-            {% if orders_page > 1 %}<a class="page-link" data-orders-page-link href="{{ url_for('orders_page', page=orders_page - 1, page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) }}" aria-label="Предыдущая страница">←</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">←</span>{% endif %}
-            <span>Страница {{ orders_page }} из {{ orders_page_count }}</span>
-            {% if orders_page < orders_page_count %}<a class="page-link" data-orders-page-link href="{{ url_for('orders_page', page=orders_page + 1, page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) }}" aria-label="Следующая страница">→</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">→</span>{% endif %}
-        </span>
+        <label class="orders-page-size">Показывать:<select class="field" name="page_size" aria-label="Заказов на странице" data-orders-page-size>{% for size in orders_page_sizes %}<option value="{{ size }}"{% if orders_page_size|string == size|string %} selected{% endif %}>{{ 'Все' if size == 'all' else size }}</option>{% endfor %}</select></label>
+        <span class="pagination">{% if orders_page > 1 %}<a class="page-link" data-orders-page-link href="{{ url_for('orders_page', page=orders_page - 1, page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) }}" aria-label="Предыдущая страница">←</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">←</span>{% endif %}<span>Страница {{ orders_page }} из {{ orders_page_count }}</span>{% if orders_page < orders_page_count %}<a class="page-link" data-orders-page-link href="{{ url_for('orders_page', page=orders_page + 1, page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) }}" aria-label="Следующая страница">→</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">→</span>{% endif %}</span>
     </footer>
 </div>

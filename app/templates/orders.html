@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-compact-actions-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-dense-list-v1') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
@@ -26,34 +26,43 @@
 <div class="app">
     {% include "_sidebar.html" %}
     <main class="main" id="main-content" tabindex="-1">
-        <header class="page-head erp-workspace-header">
-            <div class="page-heading erp-workspace-heading">
-                <h1>Заказы</h1>
-                <p class="page-copy">Управление заказами интернет-магазина</p>
+        {% set selected_sync = selected_order.get('sync_state') if selected_order else '' %}
+        {% set sync_class = 'error' if sync_error or selected_sync == 'error' else 'partial' if selected_sync == 'partial' else '' %}
+        <form class="orders-command-bar" id="ordersFilters" method="get" action="{{ url_for('orders_page') }}">
+            <div class="orders-command-primary">
+                <div class="orders-title"><h1>Заказы</h1><span class="orders-title-count" data-orders-title-count>{{ orders_total }} заказов</span></div>
+                <div class="erp-search-wrap orders-live-search">
+                    <input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, покупатель, товар, артикул…" aria-label="Поиск по всем полям заказов" autocomplete="off">
+                    <button class="search-clear" type="button" data-search-clear aria-label="Очистить поиск"{% if not request.args.get('q') %} hidden{% endif %}>×</button>
+                </div>
+                <div class="view-switch" id="ordersLayoutSwitch" role="radiogroup" aria-label="Режим отображения заказов">
+                    <button class="view-option" type="button" data-layout-mode="list" role="radio">Список</button>
+                    <button class="view-option" type="button" data-layout-mode="split" role="radio">Разделение</button>
+                    <button class="view-option" type="button" data-layout-mode="card" role="radio">Карточка</button>
+                </div>
+                <button class="button button-secondary wb-refresh" type="button" data-wb-sync>Обновить WB</button>
+                <input type="hidden" value="{{ csrf_token() }}" data-wb-sync-csrf>
             </div>
-            <div class="erp-workspace-actions"><a class="button button-secondary" href="{{ url_for('orders_page') }}">Все</a><a class="button button-secondary" href="{{ url_for('orders_page', mine=1) }}">Мои</a></div>
-            <div class="view-switch" id="ordersLayoutSwitch" role="radiogroup" aria-label="Режим отображения заказов">
-                <button class="view-option" type="button" data-layout-mode="list" role="radio">Список</button>
-                <button class="view-option" type="button" data-layout-mode="split" role="radio">Разделение</button>
-                <button class="view-option" type="button" data-layout-mode="card" role="radio">Карточка</button>
+            <div class="orders-command-secondary">
+                <div class="status-filter-tabs" role="group" aria-label="Фильтр по статусу">
+                    {% set active_status = request.args.get('status','all')|upper %}
+                    <button class="status-filter{% if active_status == 'ALL' %} active{% endif %}" type="button" data-status-filter="all" aria-pressed="{{ 'true' if active_status == 'ALL' else 'false' }}">Все <strong data-status-count="total">{{ order_kpis.total }}</strong></button>
+                    <button class="status-filter{% if active_status == 'N' %} active{% endif %}" type="button" data-status-filter="N" aria-pressed="{{ 'true' if active_status == 'N' else 'false' }}">Не подтверждены <strong data-status-count="unconfirmed">{{ order_kpis.unconfirmed }}</strong></button>
+                    <button class="status-filter{% if active_status == 'A' %} active{% endif %}" type="button" data-status-filter="A" aria-pressed="{{ 'true' if active_status == 'A' else 'false' }}">Подтверждены <strong data-status-count="confirmed">{{ order_kpis.confirmed }}</strong></button>
+                    <button class="status-filter{% if active_status == 'D' %} active{% endif %}" type="button" data-status-filter="D" aria-pressed="{{ 'true' if active_status == 'D' else 'false' }}">Собраны <strong data-status-count="assembled">{{ order_kpis.assembled }}</strong></button>
+                    <input type="hidden" name="status" value="{{ request.args.get('status','all') }}" data-status-input>
+                </div>
+                <div class="orders-compact-selects">
+                    <select class="field" name="source" aria-label="Источник заказа" data-auto-submit-filter>{% for value,label in [('all','Все источники'),('tictactoy','Сайт'),('wildberries','WB')] %}<option value="{{ value }}"{% if request.args.get('source','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                    <select class="field" name="period" aria-label="Период" data-auto-submit-filter>{% for value,label in [('all','Всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                </div>
+                <div class="sync-state {{ sync_class }}" aria-live="polite"{% if sync_error %} title="{{ sync_error }}"{% endif %}>
+                    <span class="sync-dot" aria-hidden="true"></span>
+                    <span>{% if sync_error or selected_sync == 'error' %}WB: ошибка{% elif selected_sync == 'partial' %}WB загружен частично{% elif selected_order %}WB обновлён{% else %}WB готов{% endif %}{% if last_sync_at %} · успешно в <time data-sync-time="{{ last_sync_at }}"></time>{% endif %}</span>
+                    {% if sync_error %}<details class="sync-error-details"><summary aria-label="Показать ошибку синхронизации">Подробнее</summary><span>{{ sync_error }}</span></details>{% endif %}
+                </div>
             </div>
-            <button class="button button-secondary" type="button" data-wb-sync>Синхронизировать WB</button>
-            <input type="hidden" value="{{ csrf_token() }}" data-wb-sync-csrf>
-            {% set selected_sync = selected_order.get('sync_state') if selected_order else '' %}
-            {% set sync_class = 'error' if sync_error or selected_sync == 'error' else 'partial' if selected_sync == 'partial' else '' %}
-            <div class="sync-state {{ sync_class }}" aria-live="polite">
-                <span class="sync-dot" aria-hidden="true"></span>
-                <strong>{% if sync_error or selected_sync == 'error' %}Ошибка синхронизации{% elif selected_sync == 'partial' %}Данные загружены частично{% elif selected_order %}Заказ синхронизирован{% else %}Bitrix подключён{% endif %}</strong>
-                {% if last_sync_at %}<span class="sync-meta">Последняя успешная: <span data-sync-time="{{ last_sync_at }}"></span></span>{% endif %}
-                {% if sync_error %}<a href="{{ request.path }}?retry=1">Повторить</a>{% endif %}
-            </div>
-        </header>
-
-        <section class="orders-kpis erp-workspace-metrics" aria-label="Показатели заказов">
-            <div class="erp-workspace-metric"><span class="erp-stat-label">Не подтверждены</span><strong class="erp-stat-value">{{ order_kpis.unconfirmed }}</strong></div>
-            <div class="erp-workspace-metric"><span class="erp-stat-label">Подтверждены</span><strong class="erp-stat-value">{{ order_kpis.confirmed }}</strong></div>
-            <div class="erp-workspace-metric"><span class="erp-stat-label">Собраны</span><strong class="erp-stat-value">{{ order_kpis.assembled }}</strong></div>
-        </section>
+        </form>
 
         {% if request.args.get('notice') and request.args.get('message') %}
             <div class="notice notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') in ['error', 'danger'] else 'status' }}" data-erp-notification-source>{{ request.args.get('message') }}</div>
@@ -61,25 +70,6 @@
 
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
             <section class="panel orders-list-panel" aria-label="Список заказов">
-                <form class="panel-toolbar filters erp-toolbar" method="get" action="{{ url_for('orders_page') }}">
-                    <div class="erp-search-wrap">
-                        <input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, ФИО, телефон, сумма или дата" aria-label="Поиск заказов" autocomplete="off">
-                        {% if request.args.get('q') or request.args.get('status','all') != 'all' or request.args.get('period','all') != 'all' or request.args.get('source','all') != 'all' %}<a class="filter-reset" href="{{ url_for('orders_page') }}">Сбросить</a>{% endif %}
-                    </div>
-                    <div class="filter-selects">
-                        <select class="field" name="source" aria-label="Источник заказа" data-auto-submit-filter>
-                            {% for value,label in [('all','Все источники'),('tictactoy','Tictactoy'),('wildberries','Wildberries')] %}<option value="{{ value }}"{% if request.args.get('source','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
-                        </select>
-                        <select class="field" name="status" aria-label="Статус заказа" data-auto-submit-filter>
-                            {% for value,label in [('all','Все статусы'),('N','Не подтверждён'),('A','Подтверждён'),('D','Собран')] %}
-                                <option value="{{ value }}" data-filter="{{ value }}"{% if request.args.get('status','all')|upper == value|upper %} selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                        <select class="field" name="period" aria-label="Период" data-auto-submit-filter>
-                            {% for value,label in [('all','За всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
-                        </select>
-                    </div>
-                </form>
                 {# Included results provide erp-empty-state, erp-no-results-state and «Сбросить фильтры». #}
                 {% include "_orders_list_results.html" %}
             </section>
@@ -325,13 +315,15 @@
     document.querySelector('[data-show-list]')?.addEventListener('click',()=>applyMode('list'));
 
     function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?new Intl.NumberFormat('ru-RU',{minimumFractionDigits:Number.isInteger(number)?0:2,maximumFractionDigits:2}).format(number):'—';}
-    function formatDate(value){if(!value)return '';const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(date);}
+    function formatDate(value){if(!value||value==='None')return '—';const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(date);}
     document.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));
     document.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));
-    document.querySelectorAll('[data-sync-time]').forEach(node=>{const raw=Number(node.dataset.syncTime);node.textContent=formatDate(raw?new Date(raw*1000).toISOString():node.dataset.syncTime);});
+    document.querySelectorAll('[data-sync-time]').forEach(node=>{const raw=Number(node.dataset.syncTime);const date=new Date(raw?raw*1000:node.dataset.syncTime);node.textContent=Number.isNaN(date.getTime())?'—':new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(date);node.dateTime=date.toISOString?.()||'';});
 
     const searchInput=document.getElementById('orderSearch');
     const filtersForm=searchInput?.form;
+    const searchClear=document.querySelector('[data-search-clear]');
+    const statusInput=document.querySelector('[data-status-input]');
     let ordersSearchTimer=null;
     let ordersSearchController=null;
     let ordersSearchRequest=0;
@@ -347,6 +339,8 @@
             const payload=await response.json();if(!response.ok||payload?.ok!==true)throw new Error('Не удалось обновить заказы');
             if(requestId!==ordersSearchRequest)return;
             const current=document.querySelector('[data-orders-results]');current.outerHTML=payload.html;
+            const titleCount=document.querySelector('[data-orders-title-count]');if(titleCount)titleCount.textContent=`${payload.total_filtered} заказов`;
+            Object.entries(payload.kpis||{}).forEach(([key,value])=>{const node=document.querySelector(`[data-status-count="${key}"]`);if(node)node.textContent=value;});
             const displayUrl=new URL(target);displayUrl.pathname='{{ url_for("orders_page") }}';displayUrl.searchParams.delete('selected_id');
             window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
             formatOrdersResults(document.querySelector('[data-orders-results]'));
@@ -354,11 +348,15 @@
         finally{if(ordersSearchController===controller)ordersSearchController=null;}
     }
     function ordersFilterUrl(){const url=new URL('{{ url_for("orders_page") }}',window.location.origin);new FormData(filtersForm).forEach((value,key)=>{if(value&&value!=='all')url.searchParams.set(key,value);});url.searchParams.delete('page');const pageSize=document.querySelector('[data-orders-page-size]')?.value||'20';url.searchParams.set('page_size',pageSize);return url;}
-    searchInput?.addEventListener('input',()=>{window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),250);});
+    searchInput?.addEventListener('input',()=>{searchClear.hidden=!searchInput.value;window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),250);});
     searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());}});
+    searchClear?.addEventListener('click',()=>{searchInput.value='';searchClear.hidden=true;window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());searchInput.focus();});
+    document.querySelectorAll('[data-status-filter]').forEach(button=>button.addEventListener('click',()=>{statusInput.value=button.dataset.statusFilter;document.querySelectorAll('[data-status-filter]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});loadOrdersResults(ordersFilterUrl());}));
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>loadOrdersResults(ordersFilterUrl())));
     document.querySelector('.orders-list-panel')?.addEventListener('change',event=>{if(!event.target.matches('[data-orders-page-size]'))return;loadOrdersResults(ordersFilterUrl());});
     document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
+    document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea'))return;window.location.assign(row.dataset.orderHref);});
+    document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||!['Enter',' '].includes(event.key))return;event.preventDefault();window.location.assign(row.dataset.orderHref);});
     window.addEventListener('popstate',()=>loadOrdersResults(window.location.href));
     function setPending(form,label){
         if(form.dataset.submitting==='1')return false;
@@ -463,7 +461,7 @@
     });
     const wbSyncButton=document.querySelector('[data-wb-sync]');
     wbSyncButton?.addEventListener('click',async()=>{
-        if(wbSyncButton.disabled)return;wbSyncButton.disabled=true;wbSyncButton.textContent='Синхронизация WB…';
+        if(wbSyncButton.disabled)return;wbSyncButton.disabled=true;wbSyncButton.setAttribute('aria-busy','true');wbSyncButton.textContent='Обновляем WB…';
         try{
             const csrf=document.querySelector('[data-wb-sync-csrf]')?.value||'';
             const response=await fetch('/api/orders/wildberries/sync',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json','X-CSRF-Token':csrf}});
@@ -472,7 +470,7 @@
             const result=payload.result;window.VechasuNotify?.success(`WB: получено ${result.received}, добавлено ${result.added}, обновлено ${result.updated}, ошибок ${result.errors}`);
             window.setTimeout(()=>window.location.reload(),400);
         }catch(error){window.VechasuNotify?.error(error.message||'Не удалось синхронизировать Wildberries');}
-        finally{wbSyncButton.disabled=false;wbSyncButton.textContent='Синхронизировать WB';}
+        finally{wbSyncButton.disabled=false;wbSyncButton.removeAttribute('aria-busy');wbSyncButton.textContent='Обновить WB';}
     });
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';

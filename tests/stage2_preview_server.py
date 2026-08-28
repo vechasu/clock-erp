@@ -393,6 +393,37 @@ preview_receipts[2].update({
 
 web.CATALOG_TAXONOMY_PATH = PREVIEW_ROOT / "catalog_taxonomy.json"
 web.get_warehouse_items = lambda *args, **kwargs: [dict(item) for item in warehouse_items]
+preview_orders = [
+    {
+        "id": "7001", "number": "7001", "status": "N",
+        "status_name": "Не подтверждён", "customer": "Мария Орлова",
+        "phone": "+7 900 111-22-33", "email": "maria@example.test",
+        "order_total": 24500, "created_at": "2026-08-28 18:42:00",
+        "updated_at": "2026-08-28 19:10:00", "source": "tictactoy",
+        "payment": "Банковская карта", "payment_system": "ЮKassa", "paid": "Y",
+        "delivery": "СДЭК", "country": "Россия", "region": "Москва",
+        "city": "Москва", "address": "ПВЗ на Тверской, 12", "comment": "Позвонить за час",
+        "products": [
+            {"name": "Tissot PRX Powermatic 80", "model": "PRX", "article": "T137.407", "quantity": 1},
+            {"name": "Ремешок Cordura Black", "model": "Cordura", "article": "STRAP-CB", "quantity": 2},
+        ],
+    },
+    {
+        "id": "7002", "number": "7002", "status": "A",
+        "status_name": "Подтверждён", "customer": "Иван Петров",
+        "phone": "+7 900 444-55-66", "order_total": 12990,
+        "created_at": "2026-08-28 17:05:00", "source": "tictactoy",
+        "products": [{"name": "Casio G-Shock GA-2100", "model": "GA-2100", "article": "GA-2100-1A1", "quantity": 1}],
+    },
+    {
+        "id": "7003", "number": "7003", "status": "D",
+        "status_name": "Собран", "customer": "—", "order_total": 9900,
+        "created_at": "2026-08-28 16:20:00", "source": "tictactoy", "products": [],
+    },
+]
+web.get_orders = lambda *args, **kwargs: [dict(item) for item in preview_orders]
+from app.services.orders_snapshot import OrdersSnapshotStore  # noqa: E402
+OrdersSnapshotStore(PREVIEW_ROOT / "orders.db").replace(preview_orders, time.time())
 
 
 def fixture_excel_warehouse_items(*args, **kwargs):

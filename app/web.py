@@ -1260,14 +1260,8 @@ def overview_page():
 @app.route("/orders")
 @app.route("/app/orders")
 def orders_page():
-    assigned = None
-    if request.args.get("mine") == "1":
-        assigned = _collaboration_store().assigned_entity_ids(
-            "order", current_auth_user()["id"]
-        )
     orders, list_state = current_orders_list_state(
         request.args, force=request.args.get("retry") == "1",
-        allowed_order_ids=assigned,
     )
     orders_page_rows = list_state["rows"]
     selected_order = orders_page_rows[0] if orders_page_rows else None
@@ -1282,13 +1276,8 @@ def orders_page():
 
 @app.get("/api/orders")
 def orders_list_api():
-    assigned = None
-    if request.args.get("mine") == "1":
-        assigned = _collaboration_store().assigned_entity_ids(
-            "order", current_auth_user()["id"]
-        )
     _orders, list_state = current_orders_list_state(
-        request.args, allowed_order_ids=assigned
+        request.args
     )
     selected_id = str(request.args.get("selected_id") or "").strip()
     selected_order = next((
@@ -1304,6 +1293,7 @@ def orders_list_api():
         orders_page_size=list_state["page_size"],
         orders_page_sizes=ORDER_PAGE_SIZES,
         orders_page_count=list_state["page_count"],
+        order_kpis=list_state["kpis"],
         sync_error=ORDERS_CACHE.get("error", ""),
     )
     return jsonify({
@@ -1314,6 +1304,7 @@ def orders_list_api():
         "page": list_state["page"],
         "page_size": list_state["page_size"],
         "page_count": list_state["page_count"],
+        "kpis": list_state["kpis"],
     })
 
 
@@ -1563,6 +1554,37 @@ def enrich_orders_list_rows(rows, database=None):
         [order.get("id") or order.get("ID") for order in prepared],
         database=database,
     )
+    database = database or CatalogDatabase()
+    metadata = {}
+    order_ids = [
+        str(order.get("id") or order.get("ID") or "") for order in prepared
+        if order.get("id") or order.get("ID")
+    ]
+    if order_ids:
+        placeholders = ",".join("?" for _value in order_ids)
+        try:
+            if database.exists():
+                with database.connect() as connection:
+                    comment_rows = connection.execute(
+                        "SELECT order_id, text, author_name, created_at FROM ("
+                        "SELECT order_id, text, author_name, created_at, "
+                        "ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY created_at DESC, id DESC) AS row_number "
+                        "FROM erp_order_comments WHERE order_id IN ({}) AND source='erp') "
+                        "WHERE row_number=1".format(placeholders), order_ids,
+                    ).fetchall()
+                    status_rows = connection.execute(
+                        "SELECT external_order_id, actor, created_at FROM ("
+                        "SELECT external_order_id, actor, created_at, "
+                        "ROW_NUMBER() OVER (PARTITION BY external_order_id ORDER BY created_at DESC, id DESC) AS row_number "
+                        "FROM erp_order_status_events WHERE external_order_id IN ({})) "
+                        "WHERE row_number=1".format(placeholders), order_ids,
+                    ).fetchall()
+                for row in comment_rows:
+                    metadata.setdefault(str(row["order_id"]), {})["internal_comment"] = dict(row)
+                for row in status_rows:
+                    metadata.setdefault(str(row["external_order_id"]), {})["status_event"] = dict(row)
+        except (OSError, sqlite3.Error, RuntimeError):
+            app.logger.exception("Failed to enrich order list metadata in bulk")
     for order in prepared:
         order_id = str(order.get("id") or order.get("ID") or "")
         units = order.get("item_units")
@@ -1571,6 +1593,7 @@ def enrich_orders_list_rows(rows, database=None):
         )
         order["conducted_sale_id"] = sale_ids.get(order_id, "")
         order["sale_completed"] = bool(order["conducted_sale_id"])
+        order.update(metadata.get(order_id, {}))
     return prepared
 
 
@@ -1612,9 +1635,15 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
         order_source = str(order.get("source") or "tictactoy").casefold()
         if source_filter in {"tictactoy", "wildberries"} and order_source != source_filter:
             continue
-        search_text = " ".join(str(order.get(key) or "") for key in (
-            "number", "id", "customer", "phone"
-        )).casefold()
+        search_values = [order.get(key) for key in (
+            "number", "id", "customer", "phone", "email", "order_total",
+            "price", "created_at", "date", "source", "source_name",
+        )]
+        for product in order.get("items") or order.get("products") or []:
+            search_values.extend(product.get(key) for key in (
+                "name", "model", "article", "sku", "barcode", "NAME", "ARTICLE",
+            ))
+        search_text = " ".join(str(value or "") for value in search_values).casefold()
         if query and query not in search_text:
             continue
         code = str(order.get("status") or "").upper()
@@ -1635,15 +1664,23 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
             if created.date() < (now - timedelta(days=days)).date():
                 continue
         filtered_orders.append(order)
-    per_page = 20
+    raw_page_size = str(args.get("page_size") or 20).strip().casefold()
+    per_page = "all" if raw_page_size == "all" else 20
+    if per_page != "all":
+        try:
+            requested_size = int(raw_page_size)
+            per_page = requested_size if requested_size in ORDER_PAGE_SIZES else 20
+        except ValueError:
+            per_page = 20
     try:
         page = max(1, int(args.get("page") or 1))
     except ValueError:
         page = 1
     total = len(filtered_orders)
-    page_count = max(1, math.ceil(total / per_page))
+    effective_page_size = max(total, 1) if per_page == "all" else per_page
+    page_count = max(1, math.ceil(total / effective_page_size))
     page = min(page, page_count)
-    orders_page_rows = filtered_orders[(page - 1) * per_page:page * per_page]
+    orders_page_rows = filtered_orders[(page - 1) * effective_page_size:page * effective_page_size]
     counts = {code: 0 for code in ("N", "A", "D")}
     for order in orders:
         code = str(order.get("status") or "").strip().upper()
