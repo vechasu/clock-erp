@@ -384,7 +384,7 @@ class OrdersSnapshotStore:
             ).fetchall()
         return [row["order_id"] for row in rows]
 
-    def query(self, args, now=None):
+    def query(self, args, now=None, allowed_order_ids=None):
         self.initialize()
         query = _text(args.get("q"))
         status = _text(args.get("status") or "all").upper()
@@ -444,6 +444,20 @@ class OrdersSnapshotStore:
         where_sql = " WHERE " + " AND ".join(clauses) if clauses else ""
 
         with self.connection() as connection:
+            if allowed_order_ids is not None:
+                connection.execute(
+                    "CREATE TEMP TABLE IF NOT EXISTS allowed_order_ids "
+                    "(order_id TEXT PRIMARY KEY)"
+                )
+                connection.execute("DELETE FROM allowed_order_ids")
+                connection.executemany(
+                    "INSERT OR IGNORE INTO allowed_order_ids(order_id) VALUES(?)",
+                    [(str(value),) for value in allowed_order_ids],
+                )
+                clauses.append(
+                    "order_id IN (SELECT order_id FROM temp.allowed_order_ids)"
+                )
+                where_sql = " WHERE " + " AND ".join(clauses)
             total = int(connection.execute(
                 "SELECT COUNT(*) FROM orders_snapshot" + where_sql,
                 parameters,
