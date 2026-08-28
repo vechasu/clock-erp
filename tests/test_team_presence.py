@@ -89,6 +89,24 @@ class TeamPresenceTest(unittest.TestCase):
         self.assertEqual(team[self.user_a]["current_section"], "Заказы")
         self.assertIsNone(team[self.user_b]["last_activity_at"])
 
+    def test_heartbeat_has_operation_id_but_no_business_audit_event(self):
+        client = web.app.test_client()
+        with client.session_transaction() as session_data:
+            session_data["user_id"] = self.user_a
+            session_data["session_version"] = 1
+            session_data["_csrf_token"] = "presence-csrf"
+        before = AuditJournal().list_events(limit=100)["events"]
+        response = client.post(
+            "/api/v1/presence/heartbeat",
+            json={"section": "Заказы"},
+            headers={"X-CSRF-Token": "presence-csrf", "X-Operation-ID": "presence-test-123"},
+        )
+        after = AuditJournal().list_events(limit=100)["events"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Operation-ID"], "presence-test-123")
+        self.assertEqual(response.get_json()["meta"]["request_id"], "presence-test-123")
+        self.assertEqual(len(after), len(before))
+
     def test_login_audit_uses_stable_user_id(self):
         web.record_login_audit({
             "id": self.user_a, "first_name": "Максим", "last_name": "",

@@ -13,6 +13,7 @@
     const queue = [];
     let sequence = 0;
     let region = null;
+    let backgroundRegion = null;
 
     function text(value, fallback) {
         const result = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
@@ -28,6 +29,34 @@
         return region;
     }
 
+    function ensureBackgroundRegion() {
+        if (backgroundRegion && backgroundRegion.isConnected) return backgroundRegion;
+        backgroundRegion = document.createElement("div");
+        backgroundRegion.className = "erp-background-activity";
+        backgroundRegion.dataset.erpBackgroundActivity = "";
+        backgroundRegion.setAttribute("role", "status");
+        backgroundRegion.setAttribute("aria-live", "polite");
+        const target = document.querySelector(".sidebar-footer") || document.querySelector("main") || document.body;
+        target.prepend(backgroundRegion);
+        return backgroundRegion;
+    }
+
+    function pageContext() {
+        const source = global.ERP_NOTIFICATION_CONTEXT || {};
+        const actor = source.actor || {};
+        return {
+            actor: text(actor.name, "Текущий пользователь"),
+            actorId: text(actor.id),
+            section: text(source.section, "ERP"),
+        };
+    }
+
+    function operationTime(value) {
+        if (typeof value === "string" && /^\d{2}:\d{2}:\d{2}$/.test(value)) return value;
+        const date = value ? new Date(value) : new Date();
+        return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+    }
+
     function normalize(kind, title, options) {
         const safeKind = Object.prototype.hasOwnProperty.call(ICONS, kind) ? kind : "info";
         const settings = typeof options === "string" ? {detail: options} : (options || {});
@@ -40,6 +69,12 @@
             action: settings.action || null,
             progress: Number.isFinite(settings.progress) ? Math.max(0, Math.min(100, settings.progress)) : null,
             persist: Boolean(settings.persist),
+            actor: text(settings.actor),
+            section: text(settings.section),
+            object: text(settings.object),
+            operationId: text(settings.operationId),
+            occurredAt: operationTime(settings.occurredAt),
+            background: Boolean(settings.background),
             timer: null,
             element: null,
         };
@@ -66,6 +101,7 @@
         toast.className = "erp-toast";
         toast.dataset.kind = item.kind;
         toast.dataset.notificationId = item.id;
+        if (item.operationId) toast.dataset.operationId = item.operationId;
         toast.setAttribute("role", item.kind === "error" ? "alert" : "status");
         toast.setAttribute("aria-live", item.kind === "error" ? "assertive" : "polite");
         toast.setAttribute("aria-atomic", "true");
@@ -86,6 +122,13 @@
             detail.className = "erp-toast-detail";
             detail.textContent = item.detail;
             copy.appendChild(detail);
+        }
+        const context = [item.section, item.object, item.actor, item.occurredAt].filter(Boolean);
+        if (context.length) {
+            const meta = document.createElement("div");
+            meta.className = "erp-toast-meta";
+            meta.textContent = context.join(" · ");
+            copy.appendChild(meta);
         }
         if (item.progress !== null) {
             const progress = document.createElement("div");
@@ -172,6 +215,12 @@
             action: Object.prototype.hasOwnProperty.call(changes, "action") ? changes.action : current.action,
             progress: Object.prototype.hasOwnProperty.call(changes, "progress") ? changes.progress : current.progress,
             persist: current.persist,
+            actor: Object.prototype.hasOwnProperty.call(changes, "actor") ? changes.actor : current.actor,
+            section: Object.prototype.hasOwnProperty.call(changes, "section") ? changes.section : current.section,
+            object: Object.prototype.hasOwnProperty.call(changes, "object") ? changes.object : current.object,
+            operationId: Object.prototype.hasOwnProperty.call(changes, "operationId") ? changes.operationId : current.operationId,
+            occurredAt: Object.prototype.hasOwnProperty.call(changes, "occurredAt") ? changes.occurredAt : current.occurredAt,
+            background: current.background,
         });
         if (!Object.prototype.hasOwnProperty.call(changes, "duration")) {
             next.duration = changes.kind ? DEFAULT_LIFETIME[next.kind] : current.duration;
@@ -270,10 +319,57 @@
             [/^\/settings(?:\/invitations(?:\/\d+\/revoke)?)?$/, "Настройки сохраняются…", "Настройки ERP сохранены"],
         ];
         const match = rules.find(function (rule) { return rule[0].test(path); });
-        if (match) return {loading: match[1], success: match[2]};
-        if (method === "DELETE") return {loading: "Удаление…", success: "Данные удалены"};
-        if (method === "POST") return {loading: "Операция выполняется…", success: "Данные созданы"};
-        return {loading: "Сохранение…", success: "Изменения сохранены"};
+        if (!match) return null;
+        const entityMatch = path.match(/^\/api\/(products|brands|categories|receipts|sales|repairs)\/([^/]+)/);
+        const entityNames = {products: "product", brands: "brand", categories: "category", receipts: "receipt", sales: "sale", repairs: "repair"};
+        const sectionNames = {products: "Товары", brands: "Товары", categories: "Товары", receipts: "Приход", sales: "Продажи", repairs: "Ремонты"};
+        const key = entityMatch && entityMatch[1];
+        const entityId = entityMatch && entityMatch[2];
+        return {
+            loading: match[1],
+            success: match[2],
+            object: label || (entityId && !["bulk"].includes(entityId) ? "ID " + entityId : ""),
+            section: sectionNames[key] || pageContext().section,
+            auditUrl: key && entityId && /^\d+$/.test(entityId)
+                ? "/app/journal?entity_type=" + entityNames[key] + "&entity_id=" + encodeURIComponent(entityId)
+                : "",
+        };
+    }
+
+    function changedCount(payload) {
+        const meta = payload && payload.meta || {};
+        const data = payload && payload.data || {};
+        for (const value of [meta.changed_count, meta.updated, data.changed_count, data.updated, data.added]) {
+            if (Number.isFinite(Number(value))) return Math.max(0, Number(value));
+        }
+        if (meta.changed === false || data.changed === false) return 0;
+        if (meta.changed === true || data.changed === true) return 1;
+        return null;
+    }
+
+    function responseActor(payload, mode) {
+        const actor = payload && payload.meta && payload.meta.actor;
+        if (actor && typeof actor === "object") return text(actor.name || actor.display_name, "Другой сотрудник");
+        return mode === "background" ? "Система" : pageContext().actor;
+    }
+
+    function backgroundResult(descriptor, payload, operationId) {
+        const count = changedCount(payload);
+        if (!descriptor || !count) return;
+        const node = ensureBackgroundRegion();
+        node.replaceChildren();
+        const message = document.createElement("span");
+        message.textContent = descriptor.success + (count > 1 ? " · изменено: " + count : "");
+        const detail = document.createElement("small");
+        detail.textContent = [descriptor.section, responseActor(payload, "background"), operationTime()].filter(Boolean).join(" · ");
+        node.append(message, detail);
+        if (descriptor.auditUrl) {
+            const link = document.createElement("a");
+            link.href = descriptor.auditUrl;
+            link.textContent = "Посмотреть в журнале";
+            node.append(link);
+        }
+        if (operationId) node.dataset.operationId = operationId;
     }
 
     function failureTitle(method, rawUrl) {
@@ -329,67 +425,128 @@
             const method = text(settings.method || (input && input.method) || "GET").toUpperCase();
             const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
             const headers = new Headers(settings.headers || (input && input.headers) || {});
-            if (!isMutation || headers.get("X-Vechasu-Notify") === "off") {
+            const notifyMode = text(headers.get("X-Vechasu-Notify")).toLowerCase();
+            if (!isMutation || notifyMode === "off") {
                 return originalFetch(input, settings);
             }
 
             const rawUrl = typeof input === "string" ? input : input.url;
             const requestPayload = bodyPayload(settings.body);
             const descriptor = operation(method, rawUrl, requestPayload, null);
+            if (!descriptor && notifyMode !== "on" && notifyMode !== "background") {
+                return originalFetch(input, settings);
+            }
+            if (!descriptor) {
+                console.warn("ERP notification skipped: operation has no named descriptor", method, rawUrl);
+                return originalFetch(input, settings);
+            }
+            const operationId = headers.get("X-Operation-ID")
+                || (global.crypto && global.crypto.randomUUID ? global.crypto.randomUUID() : PAGE_ID + "-" + (++sequence));
+            headers.set("X-Operation-ID", operationId);
+            const context = pageContext();
             const activeButton = document.activeElement && document.activeElement.closest
                 ? document.activeElement.closest("button, input[type='submit']")
                 : null;
             const priorDisabled = activeButton ? activeButton.disabled : false;
-            if (activeButton) {
+            if (activeButton && notifyMode !== "background") {
                 activeButton.disabled = true;
                 activeButton.setAttribute("aria-busy", "true");
             }
-            const notificationId = show("loading", headers.get("X-Vechasu-Loading") || descriptor.loading);
+            const notificationId = notifyMode === "background" ? null : show(
+                "loading",
+                headers.get("X-Vechasu-Loading") || descriptor.loading,
+                {
+                    actor: context.actor,
+                    section: descriptor.section,
+                    object: descriptor.object,
+                    operationId,
+                }
+            );
             let response;
             let timeoutId = null;
-            let requestSettings = settings;
+            let requestSettings = Object.assign({}, settings, {headers});
             try {
                 const existingSignal = settings.signal || (input && input.signal);
                 if (!existingSignal && global.AbortController) {
                     const controller = new global.AbortController();
-                    requestSettings = Object.assign({}, settings, {signal: controller.signal});
+                    requestSettings = Object.assign({}, requestSettings, {signal: controller.signal});
                     timeoutId = global.setTimeout(function () { controller.abort(); }, 45000);
                 }
                 response = await originalFetch(input, requestSettings);
                 let payload = null;
                 try { payload = await response.clone().json(); } catch (_error) { /* non-JSON response */ }
                 const resolved = operation(method, rawUrl, requestPayload, payload);
+                const responseOperationId = text(
+                    payload && payload.meta && payload.meta.request_id,
+                    response.headers && response.headers.get("X-Operation-ID") || operationId
+                );
+                if (notifyMode === "background") {
+                    if (response.ok && !(payload && payload.error)) backgroundResult(resolved, payload, responseOperationId);
+                    else show("error", failureTitle(method, rawUrl), {
+                        detail: safeError(response, payload, resolved.success),
+                        actor: "Система",
+                        section: resolved.section,
+                        object: resolved.object,
+                        operationId: responseOperationId,
+                    });
+                    return response;
+                }
                 if (!response.ok || (payload && payload.error)) {
                     update(notificationId, {
                         kind: "error",
                         title: failureTitle(method, rawUrl),
                         detail: safeError(response, payload, resolved.success),
+                        actor: responseActor(payload, "manual"),
+                        section: resolved.section,
+                        object: resolved.object,
+                        operationId: responseOperationId,
                     });
                 } else if (response.status === 207 || (payload && payload.meta && payload.meta.partial_success) || (payload && payload.data && Array.isArray(payload.data.errors) && payload.data.errors.length)) {
                     update(notificationId, {
                         kind: "warning",
                         title: resolved.success + " частично",
                         detail: partialDetails(payload),
+                        actor: responseActor(payload, "manual"),
+                        section: resolved.section,
+                        object: resolved.object,
+                        operationId: responseOperationId,
+                        action: resolved.auditUrl ? {label: "Посмотреть в журнале", href: resolved.auditUrl} : null,
                     });
                     remember({kind: "warning", title: resolved.success + " частично", detail: partialDetails(payload)});
+                } else if (changedCount(payload) === null || changedCount(payload) === 0) {
+                    dismiss(notificationId);
                 } else {
                     const detail = text(payload && payload.meta && (payload.meta.image_message || payload.meta.message));
-                    update(notificationId, {kind: "success", title: resolved.success, detail});
+                    update(notificationId, {
+                        kind: "success",
+                        title: resolved.success,
+                        detail,
+                        actor: responseActor(payload, "manual"),
+                        section: resolved.section,
+                        object: resolved.object,
+                        operationId: responseOperationId,
+                        action: resolved.auditUrl ? {label: "Посмотреть в журнале", href: resolved.auditUrl} : null,
+                    });
                     remember({kind: "success", title: resolved.success, detail});
                 }
                 return response;
             } catch (error) {
-                update(notificationId, {
+                if (notificationId) update(notificationId, {
                     kind: "error",
                     title: failureTitle(method, rawUrl),
                     detail: error && error.name === "AbortError"
                         ? "Сервер не ответил вовремя. Проверьте результат перед повтором."
                         : "Не удалось связаться с сервером. Проверьте подключение.",
+                    actor: notifyMode === "background" ? "Система" : context.actor,
+                    section: descriptor.section,
+                    object: descriptor.object,
+                    operationId,
                 });
+                else show("error", failureTitle(method, rawUrl), {detail: "Фоновая операция завершилась ошибкой.", actor: "Система", section: descriptor.section, object: descriptor.object, operationId});
                 throw error;
             } finally {
                 if (timeoutId) global.clearTimeout(timeoutId);
-                if (activeButton && activeButton.isConnected) {
+                if (activeButton && activeButton.isConnected && notifyMode !== "background") {
                     activeButton.disabled = priorDisabled;
                     activeButton.removeAttribute("aria-busy");
                 }
