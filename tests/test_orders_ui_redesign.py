@@ -185,6 +185,53 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn("[data-tracking-form]')?.addEventListener('submit'", self.source)
         self.assertIn("[data-order-sale-form]')?.addEventListener('submit'", self.source)
 
+    def test_order_header_is_compact_and_actions_menu_keeps_existing_urls(self):
+        header = self.source.split('class="card-head order-card-head"', 1)[1].split(
+            '</header>', 1
+        )[0]
+        self.assertIn('class="order-card-summary"', header)
+        self.assertIn('class="actions order-card-actions"', header)
+        self.assertIn('class="sale-completed-badge"', header)
+        self.assertNotIn('class="button button-secondary" aria-label="Продажа проведена"', header)
+        self.assertEqual(header.count('data-order-actions-trigger'), 1)
+        menu = header.split('data-order-actions-dropdown', 1)[1]
+        labels = (
+            "Создать задачу", "Отправить SMS", "История SMS",
+            "Открыть в Bitrix", "Печать заказа",
+        )
+        positions = [menu.index(label) for label in labels]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("url_for('tasks_page'", menu)
+        self.assertIn("url_for('sms_page'", menu)
+        self.assertIn("selected_order_bitrix_url", menu)
+        self.assertIn("url_for('order_print_page'", menu)
+        self.assertIn('data-status-autosave', header)
+        self.assertIn('data-order-sale-action', header)
+
+    def test_actions_menu_keyboard_and_responsive_contract(self):
+        self.assertIn("event.key==='ArrowDown'||event.key==='ArrowUp'", self.source)
+        self.assertIn("event.key==='Escape'", self.source)
+        self.assertIn("!orderActions.contains(event.target)", self.source)
+        self.assertIn("position: fixed", self.source)
+        self.assertIn("@media (max-width: 900px)", self.source)
+        self.assertIn("@media (max-width: 560px)", self.source)
+        self.assertIn("grid-template-columns: 1fr 1fr", self.source)
+
+    def test_order_task_block_exposes_context_create_and_safe_delete_ui(self):
+        script = (PROJECT_ROOT / "app/static/js/entity-tasks.js").read_text(encoding="utf-8")
+        styles = (PROJECT_ROOT / "app/static/css/entity-tasks.css").read_text(encoding="utf-8")
+        self.assertIn('data-entity-label="Заказ №{{ detail_number }}"', self.source)
+        self.assertIn("Создать задачу", script)
+        self.assertIn("Удалить задачу?", script)
+        self.assertIn("исчезнет из карточки заказа", script)
+        self.assertIn('method: "DELETE"', script)
+        self.assertIn('"X-CSRF-Token"', script)
+        self.assertIn("Задача удалена", script)
+        self.assertIn("В этом заказе пока нет задач", script)
+        self.assertIn("confirm.disabled = true", script)
+        self.assertIn("event.key === \"Escape\"", script)
+        self.assertIn("position: fixed", styles)
+
     def test_internal_comments_are_compact_append_only_and_have_shortcuts(self):
         comments = self.source.split(
             'class="section order-comments"', 1
