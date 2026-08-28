@@ -187,6 +187,86 @@ class AuthStore:
             ).fetchone()
         return self._row_dict(row)
 
+    def get_navigation_preferences(self, user_id):
+        if not user_id:
+            return None
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT ordered_keys, hidden_keys, updated_at
+                FROM user_navigation_preferences
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            ordered_keys = json.loads(row["ordered_keys"])
+            hidden_keys = json.loads(row["hidden_keys"])
+        except (TypeError, ValueError) as error:
+            LOGGER.warning(
+                "Invalid navigation preferences for user_id=%s: %s",
+                user_id,
+                error,
+            )
+            return None
+        if not isinstance(ordered_keys, list) or not isinstance(hidden_keys, list):
+            LOGGER.warning(
+                "Invalid navigation preferences for user_id=%s: lists expected",
+                user_id,
+            )
+            return None
+        return {
+            "ordered_keys": ordered_keys,
+            "hidden_keys": hidden_keys,
+            "updated_at": int(row["updated_at"]),
+        }
+
+    def save_navigation_preferences(
+        self, user_id, ordered_keys, hidden_keys, updated_at=None
+    ):
+        updated_at = int(updated_at if updated_at is not None else time.time())
+        ordered_json = json.dumps(
+            list(ordered_keys), ensure_ascii=False, separators=(",", ":")
+        )
+        hidden_json = json.dumps(
+            list(hidden_keys), ensure_ascii=False, separators=(",", ":")
+        )
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO user_navigation_preferences (
+                        user_id, ordered_keys, hidden_keys, updated_at
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (user_id, ordered_json, hidden_json, updated_at),
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return {
+            "ordered_keys": list(ordered_keys),
+            "hidden_keys": list(hidden_keys),
+            "updated_at": updated_at,
+        }
+
+    def reset_navigation_preferences(self, user_id):
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    "DELETE FROM user_navigation_preferences WHERE user_id = ?",
+                    (user_id,),
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+
     def list_team_presence(self, now=None, timeout_seconds=PRESENCE_TIMEOUT_SECONDS):
         """Return every account and its newest persistent server-side session."""
         now = int(now if now is not None else time.time())
