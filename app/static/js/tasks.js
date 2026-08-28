@@ -12,6 +12,7 @@
     const initial = new URLSearchParams(location.search);
     const state = {
         view: validViews.includes(initial.get("view")) ? initial.get("view") : "today",
+        scope: ["mine", "created", "team", "all"].includes(initial.get("scope")) ? initial.get("scope") : "all",
         page: Math.max(1, Number(initial.get("page")) || 1),
         rows: [], pages: 1, total: 0, requestToken: 0, task: null, links: [],
         returnFocus: null, restoreTaskFocusId: null, filtersOpen: initial.get("filters") === "1", drawerHistoryPushed: false,
@@ -87,6 +88,7 @@
     function buildUrlParams(taskId = state.task && state.task.id, newTask = false) {
         const params = new URLSearchParams();
         params.set("view", state.view);
+        params.set("scope", state.scope);
         if (state.page > 1) params.set("page", String(state.page));
         if (search.value.trim()) params.set("q", search.value.trim());
         filterDefs.forEach(({ node, param }) => { if (node.value) params.set(param, node.value); });
@@ -104,12 +106,14 @@
 
     function applyFiltersFromUrl(params) {
         state.view = validViews.includes(params.get("view")) ? params.get("view") : "today";
+        state.scope = ["mine", "created", "team", "all"].includes(params.get("scope")) ? params.get("scope") : "all";
         state.page = Math.max(1, Number(params.get("page")) || 1);
         search.value = params.get("q") || "";
         filterDefs.forEach(({ node, param }) => { node.value = params.get(param) || ""; });
         mine.checked = params.get("only_mine") === "1";
         state.filtersOpen = params.get("filters") === "1";
         updateViewButtons();
+        updateScopeButtons();
         updateFilters();
     }
 
@@ -118,6 +122,14 @@
         filterPanel.hidden = !state.filtersOpen;
         filterToggle.setAttribute("aria-expanded", String(state.filtersOpen));
         if (sync) syncUrl("replace");
+    }
+
+    function updateScopeButtons() {
+        qa("[data-scope]").forEach((button) => {
+            const active = button.dataset.scope === state.scope;
+            button.classList.toggle("active", active);
+            if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+        });
     }
 
     function makeFilterChip(text, clear) {
@@ -335,6 +347,7 @@
         list.classList.add("loading");
         list.setAttribute("aria-busy", "true");
         const params = new URLSearchParams({ view: state.view, page: state.page, per_page: "50" });
+        params.set("scope", state.scope);
         if (search.value.trim()) params.set("q", search.value.trim());
         filterDefs.forEach(({ node, param }) => { if (node.value) params.set(param, node.value); });
         if (mine.checked) params.set("only_mine", "1");
@@ -502,6 +515,7 @@
     function payload() {
         const data = Object.fromEntries(new FormData(form));
         delete data.id;
+        if (state.task) data.version = state.task.version;
         data.links = state.links.map((link) => ({ entity_type: link.entity_type, entity_id: String(link.entity_id) }));
         return data;
     }
@@ -601,6 +615,9 @@
     }
 
     qa("[data-view]").forEach((button) => button.addEventListener("click", () => changeView(button.dataset.view)));
+    qa("[data-scope]").forEach((button) => button.addEventListener("click", () => {
+        state.scope = button.dataset.scope; state.page = 1; updateScopeButtons(); syncUrl("push", null); load();
+    }));
     filterDefs.forEach(({ node }) => node.addEventListener("change", () => { state.page = 1; updateFilters(); syncUrl("push", null); load(); }));
     mine.addEventListener("change", () => { state.page = 1; updateFilters(); syncUrl("push", null); load(); });
     search.addEventListener("input", () => {

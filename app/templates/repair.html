@@ -18,6 +18,7 @@
             <header class="repair-header erp-workspace-header">
                 <div class="erp-workspace-heading"><h1>Ремонт</h1><p>Учёт ремонтных обращений</p></div>
                 <div class="erp-workspace-actions">
+                    <a class="repair-button" href="{{ url_for('repair_page', view=repair_view) }}">Все</a><a class="repair-button" href="{{ url_for('repair_page', view=repair_view, mine=1) }}">Мои</a>
                     <button id="repairAdd" class="repair-button primary erp-workspace-primary" type="button"><span aria-hidden="true">+</span> Добавить ремонт</button>
                 </div>
             </header>

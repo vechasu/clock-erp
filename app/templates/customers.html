@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/customers.css') }}"></head>
 <body class="customers-page">{% from "_pagination.html" import render_erp_pagination %}<div class="app">{% include "_sidebar.html" %}
 <main class="main" id="main-content" tabindex="-1">
-<header class="erp-workspace-header"><div class="erp-workspace-heading"><h1>Клиенты</h1><p>Единая история заказов, завершённых продаж, ремонтов и обращений</p></div></header>
+<header class="erp-workspace-header"><div class="erp-workspace-heading"><h1>Клиенты</h1><p>Единая история заказов, завершённых продаж, ремонтов и обращений</p></div><div class="erp-workspace-actions"><a href="{{ url_for('customers_page') }}">Все</a><a href="{{ url_for('customers_page', mine=1) }}">Мои</a></div></header>
 {% set segments=[('','Все','all'),('new','Новые','new'),('repeat','Повторные','repeat'),('vip','VIP','vip'),('inactive','Давно не покупали','inactive'),('repair','Есть ремонт','repair'),('waiting','Ожидают товар','waiting'),('attention','Требуют внимания','attention'),('duplicates','Дубликаты','duplicates')] %}
 <nav class="customer-segments" aria-label="Сегменты клиентов">{% for value,label,key in segments %}<a class="{{ 'active' if filters.segment==value else '' }}" href="{{ url_for('customers_page', segment=value, q=query, per_page=request.args.get('per_page',50)) }}"><span>{{ label }}</span><strong>{{ segment_counts.get(key,0) }}</strong></a>{% endfor %}</nav>
 <section class="customer-panel" aria-label="Список клиентов">

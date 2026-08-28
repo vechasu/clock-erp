@@ -10,6 +10,7 @@
 <body class="tasks-page"><div class="app">{% include "_sidebar.html" %}
 <main class="tasks-main" id="main-content" tabindex="-1">
     <header class="erp-workspace-header tasks-header"><div class="erp-workspace-heading"><h1>Задачи</h1><p>Обещания, ожидания и незавершённые дела команды</p></div><button class="tasks-primary" id="newTask" type="button">+ Новая задача</button></header>
+    <nav class="tasks-scope-tabs" aria-label="Область задач"><button type="button" data-scope="mine">Мои</button><button type="button" data-scope="created">Поставленные мной</button><button type="button" data-scope="team">Команда</button><button type="button" data-scope="all">Все</button></nav>
     <div class="tasks-layout">
         <nav class="tasks-views" aria-label="Представления задач">
         {% for value,label in [("inbox","Входящие"),("overdue","Просрочено"),("today","Сегодня"),("plans","Планы"),("waiting","Ожидаю"),("anytime","В любое время"),("someday","Когда-нибудь"),("logbook","Журнал")] %}

@@ -32,6 +32,7 @@ AUTH_MIGRATION_ID = "2026-08-26-auth-baseline-v1"
 ORDERS_MIGRATION_ID = "2026-08-26-orders-customers-baseline-v1"
 TASKS_MIGRATION_ID = "2026-08-27-internal-tasks-v1"
 TASKS_V2_MIGRATION_ID = "2026-08-27-tasks-center-v2"
+TASKS_V3_MIGRATION_ID = "2026-08-28-collaboration-responsibility-v1"
 
 
 class DomainMigrationError(RuntimeError):
@@ -313,6 +314,52 @@ TASKS_V2_INDEX_STATEMENTS = (
     "CREATE INDEX idx_task_notifications_user ON task_notifications(user_id, seen_at, id)",
 )
 
+TASKS_V3_TABLE_STATEMENTS = (
+    "ALTER TABLE tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    """CREATE TABLE entity_assignments (
+        entity_type TEXT NOT NULL CHECK (entity_type IN
+            ('order','customer','purchase','repair','task')),
+        entity_id TEXT NOT NULL,
+        responsible_user_id INTEGER,
+        updated_at TEXT NOT NULL,
+        updated_by INTEGER NOT NULL,
+        PRIMARY KEY(entity_type, entity_id)
+    )""",
+    """CREATE TABLE assignment_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL CHECK (entity_type IN
+            ('order','customer','purchase','repair','task')),
+        entity_id TEXT NOT NULL,
+        previous_user_id INTEGER,
+        new_user_id INTEGER,
+        actor_user_id INTEGER NOT NULL,
+        comment TEXT NOT NULL DEFAULT '',
+        operation_key TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE inbox_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipient_user_id INTEGER NOT NULL,
+        actor_user_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL CHECK (event_type IN
+            ('assigned','reassigned','task_assigned','task_reassigned','mentioned')),
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        operation_key TEXT NOT NULL,
+        UNIQUE(recipient_user_id, event_type, operation_key)
+    )""",
+)
+
+TASKS_V3_INDEX_STATEMENTS = (
+    "CREATE INDEX idx_entity_assignments_responsible ON entity_assignments(responsible_user_id, entity_type, entity_id)",
+    "CREATE INDEX idx_assignment_history_entity ON assignment_history(entity_type, entity_id, id)",
+    "CREATE INDEX idx_inbox_recipient_unread_created ON inbox_events(recipient_user_id, read_at, created_at, id)",
+    "CREATE INDEX idx_inbox_recipient_created ON inbox_events(recipient_user_id, created_at, id)",
+)
+
 ORDERS_LEGACY_COLUMNS = (
     ("order_id", "TEXT", 0, None, 1),
     ("source_position", "INTEGER", 1, None, 0),
@@ -371,10 +418,18 @@ TASKS_V2_MIGRATION = {
         + TASKS_V2_TABLE_STATEMENTS + TASKS_V2_INDEX_STATEMENTS
     ),
 }
+TASKS_V3_MIGRATION = {
+    "id": TASKS_V3_MIGRATION_ID,
+    "name": "Collaboration responsibility and inbox",
+    "checksum": _digest(
+        (TASKS_V3_MIGRATION_ID, "collaboration-responsibility-v1")
+        + TASKS_V3_TABLE_STATEMENTS + TASKS_V3_INDEX_STATEMENTS
+    ),
+}
 DOMAIN_MIGRATIONS = {
     "auth": AUTH_MIGRATION,
     "orders": ORDERS_MIGRATION,
-    "tasks": TASKS_V2_MIGRATION,
+    "tasks": TASKS_V3_MIGRATION,
 }
 
 
@@ -466,6 +521,7 @@ TASKS_EXPECTED_COLUMNS = {
         ("completed_at", "TEXT", 0, None, 0), ("completed_by", "INTEGER", 0, None, 0),
         ("cancelled_at", "TEXT", 0, None, 0), ("cancelled_by", "INTEGER", 0, None, 0),
         ("idempotency_key", "TEXT", 0, None, 0), ("next_occurrence_key", "TEXT", 0, None, 0),
+        ("version", "INTEGER", 1, "1", 0),
     ),
     "task_links": (
         ("id", "INTEGER", 0, None, 1), ("task_id", "INTEGER", 1, None, 0),
@@ -483,6 +539,25 @@ TASKS_EXPECTED_COLUMNS = {
         ("user_id", "INTEGER", 1, None, 0), ("notification_type", "TEXT", 1, None, 0),
         ("notification_key", "TEXT", 1, None, 0), ("created_at", "TEXT", 1, None, 0),
         ("seen_at", "TEXT", 0, None, 0),
+    ),
+    "entity_assignments": (
+        ("entity_type", "TEXT", 1, None, 1), ("entity_id", "TEXT", 1, None, 2),
+        ("responsible_user_id", "INTEGER", 0, None, 0),
+        ("updated_at", "TEXT", 1, None, 0), ("updated_by", "INTEGER", 1, None, 0),
+    ),
+    "assignment_history": (
+        ("id", "INTEGER", 0, None, 1), ("entity_type", "TEXT", 1, None, 0),
+        ("entity_id", "TEXT", 1, None, 0), ("previous_user_id", "INTEGER", 0, None, 0),
+        ("new_user_id", "INTEGER", 0, None, 0), ("actor_user_id", "INTEGER", 1, None, 0),
+        ("comment", "TEXT", 1, "''", 0), ("operation_key", "TEXT", 1, None, 0),
+        ("created_at", "TEXT", 1, None, 0),
+    ),
+    "inbox_events": (
+        ("id", "INTEGER", 0, None, 1), ("recipient_user_id", "INTEGER", 1, None, 0),
+        ("actor_user_id", "INTEGER", 1, None, 0), ("event_type", "TEXT", 1, None, 0),
+        ("entity_type", "TEXT", 1, None, 0), ("entity_id", "TEXT", 1, None, 0),
+        ("created_at", "TEXT", 1, None, 0), ("read_at", "TEXT", 0, None, 0),
+        ("metadata_json", "TEXT", 1, "'{}'", 0), ("operation_key", "TEXT", 1, None, 0),
     ),
 }
 
@@ -522,6 +597,10 @@ TASKS_INDEXES = {
     "idx_task_links_entity": (0, ("entity_type", "entity_id", "task_id")),
     "idx_task_history_task": (0, ("task_id", "id")),
     "idx_task_notifications_user": (0, ("user_id", "seen_at", "id")),
+    "idx_entity_assignments_responsible": (0, ("responsible_user_id", "entity_type", "entity_id")),
+    "idx_assignment_history_entity": (0, ("entity_type", "entity_id", "id")),
+    "idx_inbox_recipient_unread_created": (0, ("recipient_user_id", "read_at", "created_at", "id")),
+    "idx_inbox_recipient_created": (0, ("recipient_user_id", "created_at", "id")),
 }
 
 
@@ -752,10 +831,10 @@ def _verify_tasks_ledger(connection):
         "SELECT migration_id,name,checksum,state FROM " + LEDGER_TABLE + " ORDER BY migration_id"
     ).fetchall()
     expected = {
-        migration["id"]: migration for migration in (TASKS_MIGRATION, TASKS_V2_MIGRATION)
+        migration["id"]: migration for migration in (TASKS_MIGRATION, TASKS_V2_MIGRATION, TASKS_V3_MIGRATION)
     }
     if len(rows) != len(expected):
-        raise MigrationRequiredError("migration required: tasks center v2")
+        raise MigrationRequiredError("migration required: collaboration responsibility v1")
     for row in rows:
         migration = expected.get(str(row[0]))
         if not migration:
@@ -779,6 +858,11 @@ def _create_tasks_v2(connection, observer):
         _execute(connection, statement, observer)
 
 
+def _create_tasks_v3(connection, observer):
+    for statement in TASKS_V3_TABLE_STATEMENTS + TASKS_V3_INDEX_STATEMENTS:
+        _execute(connection, statement, observer)
+
+
 def _apply_tasks_v2_migrations(path, app_commit, observer):
     with DomainMigrationLock(path, "tasks"):
         connection = sqlite3.connect(str(path), timeout=30, isolation_level=None)
@@ -792,7 +876,8 @@ def _apply_tasks_v2_migrations(path, app_commit, observer):
                     _execute(connection, LEDGER_SQL, observer)
                     _create_tasks_v2(connection, observer)
                     now = _utc_now()
-                    for migration in (TASKS_MIGRATION, TASKS_V2_MIGRATION):
+                    _create_tasks_v3(connection, observer)
+                    for migration in (TASKS_MIGRATION, TASKS_V2_MIGRATION, TASKS_V3_MIGRATION):
                         connection.execute(
                             "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
                             "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
@@ -811,8 +896,26 @@ def _apply_tasks_v2_migrations(path, app_commit, observer):
                     ledger_ids = {str(row[0]) for row in connection.execute(
                         "SELECT migration_id FROM " + LEDGER_TABLE
                     ).fetchall()}
-                if TASKS_V2_MIGRATION_ID in ledger_ids:
+                if TASKS_V3_MIGRATION_ID in ledger_ids:
                     verify_tasks_schema(connection)
+                elif TASKS_V2_MIGRATION_ID in ledger_ids:
+                    connection.execute("BEGIN IMMEDIATE")
+                    try:
+                        _create_tasks_v3(connection, observer)
+                        migration = TASKS_V3_MIGRATION
+                        connection.execute(
+                            "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                            "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
+                            (migration["id"], migration["name"], migration["checksum"], _utc_now(),
+                             str(app_commit or "") or None,
+                             json.dumps({"source_state": "tasks-v2", "transactional": True}, sort_keys=True)),
+                        )
+                        verify_tasks_schema(connection)
+                        _require_integrity(connection, "tasks-v3-migration")
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
                 else:
                     _verify_tasks_v1_schema(connection)
                     connection.execute("BEGIN IMMEDIATE")
@@ -829,6 +932,15 @@ def _apply_tasks_v2_migrations(path, app_commit, observer):
                             "priority,due_date,due_time,author_id,assignee_id,created_at,updated_at,updated_by,"
                             "completed_at,completed_by,idempotency_key,CASE WHEN status='completed' THEN 'new' ELSE NULL END "
                             "FROM tasks_v1"
+                        )
+                        _create_tasks_v3(connection, observer)
+                        collaboration = TASKS_V3_MIGRATION
+                        connection.execute(
+                            "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                            "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
+                            (collaboration["id"], collaboration["name"], collaboration["checksum"], _utc_now(),
+                             str(app_commit or "") or None,
+                             json.dumps({"source_state": "tasks-v1", "transactional": True}, sort_keys=True)),
                         )
                         connection.execute(
                             "INSERT INTO task_links(task_id,entity_type,entity_id,entity_label,entity_href,created_at,created_by) "

@@ -31,6 +31,7 @@
                 <h1>Заказы</h1>
                 <p class="page-copy">Управление заказами интернет-магазина</p>
             </div>
+            <div class="erp-workspace-actions"><a class="button button-secondary" href="{{ url_for('orders_page') }}">Все</a><a class="button button-secondary" href="{{ url_for('orders_page', mine=1) }}">Мои</a></div>
             <div class="view-switch" id="ordersLayoutSwitch" role="radiogroup" aria-label="Режим отображения заказов">
                 <button class="view-option" type="button" data-layout-mode="list" role="radio">Список</button>
                 <button class="view-option" type="button" data-layout-mode="split" role="radio">Разделение</button>
