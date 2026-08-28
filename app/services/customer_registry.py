@@ -504,13 +504,12 @@ class CustomerRegistry:
         return [dict(row) for row in rows]
 
     def analytics(self, date_from="", date_to="", source="", city="", segment=""):
-        date_to_bound = date_to + "T23:59:59.999999" if len(date_to or "") == 10 else date_to
         filters = {"source": source, "city": city, "segment": segment,
-                   "last_from": date_from, "last_to": date_to_bound}
+                   "last_from": date_from, "last_to": date_to}
         listing = self.list(page=1, per_page=20, filters=filters)
         clauses, params = ["c.merged_into_id IS NULL"], []
         if date_from: clauses.append("c.last_operation_at>=?"); params.append(date_from)
-        if date_to_bound: clauses.append("c.last_operation_at<=?"); params.append(date_to_bound)
+        if date_to: clauses.append("c.last_operation_at<=?"); params.append(date_to)
         if source: clauses.append("EXISTS (SELECT 1 FROM customer_operations o WHERE o.customer_id=c.id AND o.source=?)"); params.append(source.casefold())
         if city: clauses.append("c.city=?"); params.append(city)
         if segment:
