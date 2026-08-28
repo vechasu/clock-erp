@@ -155,6 +155,7 @@ from app.services.tasks import (
     TaskNotFoundError,
     TaskStore,
     TaskConflictError,
+    TaskPermissionError,
     TaskValidationError,
     moscow_today,
 )
@@ -21874,6 +21875,8 @@ def _task_api_error(error):
         return api_error("TASK_NOT_FOUND", str(error), 404)
     if isinstance(error, TaskConflictError):
         return api_error("TASK_VERSION_CONFLICT", str(error), 409)
+    if isinstance(error, TaskPermissionError):
+        return api_error("TASK_PERMISSION_DENIED", str(error), 403)
     raise error
 
 
@@ -21916,6 +21919,51 @@ def api_tasks_collection_get():
         return _task_api_error(error)
     listing["rows"] = _serialize_tasks(listing["rows"])
     return api_success(listing)
+
+
+@app.get("/api/v1/tasks/calendar")
+def api_tasks_calendar_get():
+    user = current_auth_user() or {}
+    try:
+        listing = _tasks_store().calendar(
+            start=request.args.get("start"), end=request.args.get("end"),
+            query=request.args.get("q", ""),
+            assignee_id=request.args.get("assignee_id") or None,
+            priority=request.args.get("priority", ""),
+            entity_type=request.args.get("entity_type", ""),
+            status=request.args.get("status", ""), due=request.args.get("due", ""),
+            only_mine=user.get("id") if request.args.get("only_mine") == "1" else None,
+            scope=request.args.get("scope", "all"), current_user_id=user.get("id"),
+            include_completed=request.args.get("include_completed") == "1",
+        )
+    except TaskValidationError as error:
+        return _task_api_error(error)
+    for key in ("rows", "undated"):
+        listing[key] = _serialize_tasks(listing[key])
+        for task in listing[key]:
+            task["can_edit"] = bool(
+                user.get("role") == "admin" or int(user.get("id") or 0) in {
+                    int(task["author_id"]), int(task["assignee_id"])
+                }
+            )
+    return api_success(listing)
+
+
+@app.post("/api/v1/tasks/<int:task_id>/calendar-reschedule")
+def api_task_calendar_reschedule(task_id):
+    user = current_auth_user() or {}
+    try:
+        payload = api_json_payload()
+        task = _tasks_store().calendar_reschedule(
+            task_id, payload.get("due_date"), payload.get("due_time"), user.get("id"),
+            actor_role=user.get("role", "employee"), section=payload.get("section", "inbox"),
+            expected_version=payload.get("version"),
+        )
+    except (TaskValidationError, TaskPermissionError, TaskNotFoundError,
+            TaskConflictError) as error:
+        return _task_api_error(error)
+    _record_task_audit(task)
+    return api_success(_serialize_tasks([task])[0])
 
 
 @app.post("/api/v1/tasks")
