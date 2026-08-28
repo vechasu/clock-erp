@@ -7,6 +7,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LAYOUT_SCRIPT = PROJECT_ROOT / "app/static/js/erp-table-layout.js"
+INITIAL_LAYOUT_SCRIPT = (
+    PROJECT_ROOT / "app/static/js/sales-table-initial-layout.js"
+)
 
 
 class SalesTableLayoutUnitTest(unittest.TestCase):
@@ -100,6 +103,27 @@ class SalesTableLayoutContractTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('new CustomEvent("erp:sidebar-change"', sidebar)
+
+    def test_initial_layout_is_applied_before_blocking_footer_scripts(self):
+        template = (PROJECT_ROOT / "app/templates/sales.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertLess(
+            template.index("js/sales-table-initial-layout.js"),
+            template.index("</head>"),
+        )
+        self.assertLess(
+            template.index("window.SalesTableInitialLayout.apply"),
+            template.index("js/catalog-combobox.js"),
+        )
+        self.assertIn("window.salesInitialTableLayoutView", template)
+        self.assertLess(
+            template.index('localStorage.getItem("ttt-erp-sidebar-collapsed")'),
+            template.index('{% include "_sidebar.html" %}'),
+        )
+        self.assertIn('table.dataset.initialLayoutReady = "true"', (
+            INITIAL_LAYOUT_SCRIPT.read_text(encoding="utf-8")
+        ))
 
 
 if __name__ == "__main__":

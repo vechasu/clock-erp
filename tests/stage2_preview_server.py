@@ -498,6 +498,11 @@ window.addEventListener('popstate', function () {
 
     def __call__(self, environ, start_response):
         path = environ.get("PATH_INFO", "")
+        if (
+            os.environ.get("SALES_LAYOUT_SHIFT_DELAY") == "1"
+            and path.endswith("/catalog-combobox.js")
+        ):
+            time.sleep(1.5)
         if path.startswith("/__e2e/asset-release/"):
             release = path.rsplit("/", 1)[-1]
             if release not in {"baseline", "current"}:
