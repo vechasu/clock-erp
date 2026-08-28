@@ -56,6 +56,7 @@ def main():
         from app.auth import get_auth_store
         from app.web import app
 
+        app.config.update(TESTING=True, AUTH_TESTING=True)
         with app.app_context():
             users = get_auth_store().list_team_presence()
         owner = next((item for item in users if item.get("role") == "owner"), None)
