@@ -1566,23 +1566,27 @@ def enrich_orders_list_rows(rows, database=None):
             if database.exists():
                 with database.connect() as connection:
                     comment_rows = connection.execute(
-                        "SELECT order_id, text, author_name, created_at FROM ("
-                        "SELECT order_id, text, author_name, created_at, "
-                        "ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY created_at DESC, id DESC) AS row_number "
-                        "FROM erp_order_comments WHERE order_id IN ({}) AND source='erp') "
-                        "WHERE row_number=1".format(placeholders), order_ids,
+                        "SELECT order_id, text, author_name, created_at "
+                        "FROM erp_order_comments "
+                        "WHERE order_id IN ({}) AND source='erp' "
+                        "ORDER BY order_id, created_at DESC, id DESC".format(placeholders),
+                        order_ids,
                     ).fetchall()
                     status_rows = connection.execute(
-                        "SELECT external_order_id, actor, created_at FROM ("
-                        "SELECT external_order_id, actor, created_at, "
-                        "ROW_NUMBER() OVER (PARTITION BY external_order_id ORDER BY created_at DESC, id DESC) AS row_number "
-                        "FROM erp_order_status_events WHERE external_order_id IN ({})) "
-                        "WHERE row_number=1".format(placeholders), order_ids,
+                        "SELECT external_order_id, actor, created_at "
+                        "FROM erp_order_status_events "
+                        "WHERE external_order_id IN ({}) "
+                        "ORDER BY external_order_id, created_at DESC, id DESC".format(placeholders),
+                        order_ids,
                     ).fetchall()
                 for row in comment_rows:
-                    metadata.setdefault(str(row["order_id"]), {})["internal_comment"] = dict(row)
+                    metadata.setdefault(str(row["order_id"]), {}).setdefault(
+                        "internal_comment", dict(row)
+                    )
                 for row in status_rows:
-                    metadata.setdefault(str(row["external_order_id"]), {})["status_event"] = dict(row)
+                    metadata.setdefault(str(row["external_order_id"]), {}).setdefault(
+                        "status_event", dict(row)
+                    )
         except (OSError, sqlite3.Error, RuntimeError):
             app.logger.exception("Failed to enrich order list metadata in bulk")
     for order in prepared:
