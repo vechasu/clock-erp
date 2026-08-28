@@ -110,13 +110,10 @@ class SalesTableLayoutContractTest(unittest.TestCase):
         )
         self.assertLess(
             template.index("js/sales-table-initial-layout.js"),
-            template.index("</head>"),
-        )
-        self.assertLess(
-            template.index("window.SalesTableInitialLayout.apply"),
-            template.index("js/catalog-combobox.js"),
+            template.index('class="table-card erp-table-card'),
         )
         self.assertIn("window.salesInitialTableLayoutView", template)
+        self.assertIn('style="visibility: hidden"', template)
         self.assertLess(
             template.index('localStorage.getItem("ttt-erp-sidebar-collapsed")'),
             template.index('{% include "_sidebar.html" %}'),

@@ -1551,8 +1551,6 @@
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-focus-mode.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/sales-table-initial-layout.js') }}"></script>
     {% if config.TESTING and request.args.get("sales_layout_shift_e2e") == "1" %}
         <script>
             try {
@@ -1590,6 +1588,7 @@
     {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
         <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
     {% endif %}
+    <noscript><style>.sales-table-card-initializing { visibility: visible !important; }</style></noscript>
 </head>
 
 <body class="sales-page sales-list-page">
@@ -2196,7 +2195,9 @@
                 hidden
             ></div>
 
-            <section class="table-card erp-table-card erp-table-shell">
+            <script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
+            <script src="{{ url_for('static', filename='js/sales-table-initial-layout.js') }}"></script>
+            <section class="table-card erp-table-card erp-table-shell sales-table-card-initializing" style="visibility: hidden">
                 <div
                     class="table-wrap sales-table-wrap erp-table-scroll erp-scroll-hint"
                     data-erp-scroll-hint
@@ -2441,7 +2442,6 @@
                 <div
                     id="salesHorizontalScrollbar"
                     class="sales-horizontal-scrollbar"
-                    hidden
                 >
                     <input
                         id="salesHorizontalScrollControl"

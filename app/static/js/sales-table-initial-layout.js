@@ -212,6 +212,11 @@
         table.dataset.initialLayoutReady = "true";
         const scrollbar = document.getElementById("salesHorizontalScrollbar");
         if (scrollbar) scrollbar.hidden = !layout.overflow;
+        const tableCard = table.closest(".table-card");
+        if (tableCard) {
+            tableCard.classList.remove("sales-table-card-initializing");
+            tableCard.style.removeProperty("visibility");
+        }
 
         const visibleCount = Math.max(1, visibleKeys.length);
         table.querySelectorAll(
