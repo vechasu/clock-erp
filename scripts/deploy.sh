@@ -437,7 +437,6 @@ if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
         "$RELEASE_DIR/scripts/migrate_sms.py" rehearse \
         --database "$PROJECT_DIR/instance/sms.db"
 fi
-fi
 if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
     services_rehearsal="$RELEASE_DIR/services-rehearsal.db"
     if [[ -f instance/services.db ]]; then
@@ -595,7 +594,6 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         fi
         SMS_MIGRATION_STARTED=1
     fi
-    fi
     if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
         if [[ -f instance/services.db ]]; then
             SERVICES_DATABASE_EXISTED=1
@@ -653,7 +651,6 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
             --database instance/sms.db
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py verify \
             --database instance/sms.db
-    fi
     fi
     if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_services_vault.py apply --database instance/services.db
@@ -728,7 +725,6 @@ fi
 if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py verify \
         --database instance/sms.db
-fi
 fi
 if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_services_vault.py verify --database instance/services.db

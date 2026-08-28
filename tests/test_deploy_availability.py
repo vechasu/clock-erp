@@ -17,6 +17,19 @@ class DeployAvailabilityTest(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_remote_deploy_script_is_valid_shell(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        marker = "<<'REMOTE_SCRIPT'\n"
+        remote = script.split(marker, 1)[1].rsplit("\nREMOTE_SCRIPT", 1)[0]
+        completed = subprocess.run(
+            ["bash", "-n"],
+            input=remote,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_code_only_deploy_uses_full_service_restart(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn('CATALOG_MIGRATION_REQUIRED=0', script)
