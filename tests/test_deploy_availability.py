@@ -120,18 +120,22 @@ class DeployAvailabilityTest(unittest.TestCase):
             script,
         )
 
-    def test_services_vault_preflight_is_fail_closed_and_secret_safe(self):
+    def test_services_vault_preflight_is_fail_closed_before_code_update(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         backup = script.index('create-temporary "pre-services-vault-')
-        key_prepare = script.index("prepare_service_vault_key", backup)
-        vault_preflight = script.index("preflight_service_vault.py", key_prepare)
+        vault_preflight = script.index("SERVICES VAULT PREFLIGHT: protected key")
         application_update = script.index("APPLICATION UPDATE: fast-forward")
-        self.assertLess(backup, key_prepare)
-        self.assertLess(key_prepare, vault_preflight)
+        smoke = script.index("scripts/services_production_smoke.py")
+        self.assertLess(backup, vault_preflight)
         self.assertLess(vault_preflight, application_update)
-        self.assertIn("existing Services records require the original key", script)
-        self.assertIn("expected exactly one protected key entry", script)
-        self.assertIn("root:root:600", script)
+        self.assertLess(application_update, smoke)
+        self.assertIn("scripts/service_vault_preflight.py", script)
+        self.assertIn('systemctl show "$SERVICE_NAME" -p EnvironmentFile', script)
+        self.assertIn("services-before.db", script)
+        self.assertIn("clock-erp.env-before", script)
+        self.assertIn("SERVICE_VAULT_PROCESS_KEY_OK", script)
+        self.assertNotIn("os.urandom", script)
+        self.assertNotIn("SERVICE_VAULT_KEY_CREATED", script)
         self.assertNotIn("printf '%s' \"$SERVICE_VAULT_KEY\"", script)
 
     def test_services_smoke_covers_credentials_cleanup_and_data_guard(self):

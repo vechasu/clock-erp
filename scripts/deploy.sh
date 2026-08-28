@@ -97,8 +97,7 @@ SMS_ROLLBACK_BACKUP=""
 SMS_DATABASE_EXISTED=0
 SERVICES_ROLLBACK_BACKUP=""
 SERVICES_DATABASE_EXISTED=0
-SERVICE_ENV_BACKUP=""
-SERVICE_ENV_UPDATED=0
+DEPLOY_SAFETY_DIR=""
 MAIL_ROLLBACK_BACKUP=""
 MAIL_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
@@ -196,10 +195,6 @@ rollback() {
             printf 'ROLLBACK_OK: removed newly created services database\n' >&2
         fi
     fi
-    if [[ "$SERVICE_ENV_UPDATED" == "1" && -f "$SERVICE_ENV_BACKUP" ]]; then
-        install -o root -g root -m 0600 "$SERVICE_ENV_BACKUP" "$SERVICE_ENV_FILE"
-        printf 'ROLLBACK_OK: restored protected service environment\n' >&2
-    fi
     if [[ "$MAIL_MIGRATION_STARTED" == "1" ]]; then
         if [[ "$MAIL_DATABASE_EXISTED" == "1" && -f "$MAIL_ROLLBACK_BACKUP" ]]; then
             cp -p "$MAIL_ROLLBACK_BACKUP" instance/mail.db
@@ -263,62 +258,6 @@ check_backup_disk_usage() {
 stable_data_snapshot() {
     "$PYTHON_BIN" scripts/data_safety_snapshot.py --instance-dir instance |
         "$PYTHON_BIN" -c 'import json,sys; data=json.load(sys.stdin); data.get("catalog",{}).pop("audit_events",None); data.get("auth",{}).pop("sessions",None); print(json.dumps(data,sort_keys=True,separators=(",",":")))'
-}
-
-prepare_service_vault_key() {
-    local env_mode key_count vault_state env_stage
-    systemctl cat "$SERVICE_NAME" 2>/dev/null |
-        grep -Eq '^[[:space:]]*EnvironmentFile=-?/etc/clock-erp/clock-erp.env([[:space:]]|$)' \
-        || { printf 'SERVICE_VAULT_KEY_ERROR: systemd EnvironmentFile is not connected\n' >&2; return 1; }
-    [[ -f "$SERVICE_ENV_FILE" ]] \
-        || { printf 'SERVICE_VAULT_KEY_ERROR: protected EnvironmentFile is missing\n' >&2; return 1; }
-    env_mode="$(stat -c '%U:%G:%a' "$SERVICE_ENV_FILE")"
-    [[ "$env_mode" == "root:root:600" ]] \
-        || { printf 'SERVICE_VAULT_KEY_ERROR: protected EnvironmentFile permissions are invalid\n' >&2; return 1; }
-
-    key_count="$(grep -c '^SERVICE_VAULT_KEY=' "$SERVICE_ENV_FILE" || true)"
-    if [[ "$key_count" == "0" ]]; then
-        vault_state="$($PYTHON_BIN - <<'PYTHON_STATE'
-import sqlite3
-from pathlib import Path
-path = Path('instance/services.db')
-if not path.is_file():
-    print('empty')
-else:
-    with sqlite3.connect(str(path)) as connection:
-        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if 'services' not in tables or 'service_accounts' not in tables:
-            print('empty')
-        else:
-            services = connection.execute('SELECT COUNT(*) FROM services').fetchone()[0]
-            credentials = connection.execute(
-                'SELECT COUNT(*) FROM service_accounts WHERE login_encrypted IS NOT NULL OR password_encrypted IS NOT NULL'
-            ).fetchone()[0]
-            print('populated' if services or credentials else 'empty')
-PYTHON_STATE
-)"
-        if [[ "$vault_state" != "empty" ]]; then
-            printf 'SERVICE_VAULT_KEY_ERROR: existing Services records require the original key\n' >&2
-            return 1
-        fi
-        SERVICE_ENV_BACKUP="$BACKUP_DIR/temporary/clock-erp-env-before-vault-$(date +%Y%m%d-%H%M%S)"
-        cp -p "$SERVICE_ENV_FILE" "$SERVICE_ENV_BACKUP"
-        chmod 600 "$SERVICE_ENV_BACKUP"
-        env_stage="$(mktemp "$BACKUP_DIR/temporary/clock-erp-env-XXXXXX")"
-        cp -p "$SERVICE_ENV_FILE" "$env_stage"
-        printf '\nSERVICE_VAULT_KEY=' >> "$env_stage"
-        "$PYTHON_BIN" -c 'import base64,os,sys; sys.stdout.write(base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"))' >> "$env_stage"
-        printf '\n' >> "$env_stage"
-        install -o root -g root -m 0600 "$env_stage" "$SERVICE_ENV_FILE"
-        rm -f -- "$env_stage"
-        SERVICE_ENV_UPDATED=1
-        key_count=1
-        printf 'SERVICE_VAULT_KEY_CREATED=protected-environment-file\n'
-    fi
-    [[ "$key_count" == "1" ]] \
-        || { printf 'SERVICE_VAULT_KEY_ERROR: expected exactly one protected key entry\n' >&2; return 1; }
-    SERVICE_VAULT_KEY="$(sed -n 's/^SERVICE_VAULT_KEY=//p' "$SERVICE_ENV_FILE")"
-    export SERVICE_VAULT_KEY
 }
 
 printf 'PRECHECK: repository, service, disk, active operations\n'
@@ -412,6 +351,7 @@ else
     printf 'BACKUP_ERROR: retention tool is not installed\n' >&2
     false
 fi
+
 check_backup_disk_usage
 if [[ -x "$RETENTION_TOOL" ]]; then
     "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" \
@@ -434,7 +374,6 @@ else
         --project-root "$PROJECT_DIR" \
         --create-temporary "pre-services-vault-${FETCHED_COMMIT:0:12}" --apply
 fi
-prepare_service_vault_key
 DATA_SNAPSHOT_BEFORE="$(stable_data_snapshot)"
 printf 'DATA_BEFORE=%s\n' "$DATA_SNAPSHOT_BEFORE"
 
@@ -461,15 +400,35 @@ for path in sorted(Path('app/templates').glob('*.html')):
     environment.parse(path.read_text(encoding='utf-8'))
 PYTHON_CHECK
 )
-if [[ "$SERVICES_MIGRATION_REQUIRED" == "1" ]]; then
-    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
-        "$RELEASE_DIR/scripts/preflight_service_vault.py" \
-        --database "$PROJECT_DIR/instance/services.db" --allow-missing
+printf 'SERVICES VAULT PREFLIGHT: protected key, database copy and systemd wiring\n'
+FAILURE_STAGE="SERVICES VAULT PREFLIGHT"
+[[ -f "$SERVICE_ENV_FILE" ]] \
+    || { printf 'SERVICE_VAULT_PREFLIGHT_FAILED: protected EnvironmentFile is missing\n' >&2; false; }
+[[ "$(systemctl show "$SERVICE_NAME" -p EnvironmentFile | sed 's/^[^=]*=//')" == *"$SERVICE_ENV_FILE"* ]] \
+    || { printf 'SERVICE_VAULT_PREFLIGHT_FAILED: systemd does not load the protected EnvironmentFile\n' >&2; false; }
+DEPLOY_SAFETY_DIR="$(mktemp -d "$BACKUP_DIR/deploy-safety-XXXXXX")"
+chmod 700 "$DEPLOY_SAFETY_DIR"
+cp -p "$SERVICE_ENV_FILE" "$DEPLOY_SAFETY_DIR/clock-erp.env-before"
+chmod 600 "$DEPLOY_SAFETY_DIR/clock-erp.env-before"
+if [[ -f instance/services.db ]]; then
+    sqlite3 instance/services.db ".backup '$DEPLOY_SAFETY_DIR/services-before.db'"
+    chmod 600 "$DEPLOY_SAFETY_DIR/services-before.db"
+    sqlite3 "$DEPLOY_SAFETY_DIR/services-before.db" "PRAGMA quick_check;" | grep -qx "ok"
 else
-    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" \
-        "$RELEASE_DIR/scripts/preflight_service_vault.py" \
-        --database "$PROJECT_DIR/instance/services.db"
+    printf 'SERVICE_VAULT_PREFLIGHT_FAILED: Services database is missing\n' >&2
+    false
 fi
+PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/service_vault_preflight.py" \
+    --environment-file "$SERVICE_ENV_FILE" \
+    --database "$DEPLOY_SAFETY_DIR/services-before.db" \
+    --report "$DEPLOY_SAFETY_DIR/services-preflight.json"
+SERVICE_VAULT_KEY="$(PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" - "$SERVICE_ENV_FILE" <<'PYTHON_KEY'
+import sys
+from scripts.service_vault_preflight import load_key
+sys.stdout.write(load_key(sys.argv[1]))
+PYTHON_KEY
+)"
+export SERVICE_VAULT_KEY
 PREFLIGHT_REPORT="$(mktemp "$REHEARSAL_ROOT/preflight-report-XXXXXX.json")"
 chmod 600 "$PREFLIGHT_REPORT"
 if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
@@ -739,6 +698,25 @@ else
     systemctl restart "$SERVICE_NAME"
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
+"$PYTHON_BIN" - <<'PYTHON_SERVICE_KEY'
+import os
+import subprocess
+
+details = subprocess.check_output(
+    ["systemctl", "show", "clock-erp", "-p", "MainPID"]
+).decode("ascii").strip()
+pid = int(details.split("=", 1)[1] or "0")
+if not pid:
+    raise SystemExit("SERVICE_VAULT_PROCESS_KEY_FAILED: service MainPID is missing")
+process_key = None
+with open("/proc/{}/environ".format(pid), "rb") as environment:
+    for item in environment.read().split(b"\0"):
+        if item.startswith(b"SERVICE_VAULT_KEY="):
+            process_key = item.split(b"=", 1)[1].decode("ascii")
+if process_key != os.environ.get("SERVICE_VAULT_KEY"):
+    raise SystemExit("SERVICE_VAULT_PROCESS_KEY_FAILED: systemd process key does not match preflight")
+print("SERVICE_VAULT_PROCESS_KEY_OK")
+PYTHON_SERVICE_KEY
 
 printf 'HEALTH CHECK: public routes and startup log\n'
 FAILURE_STAGE="HEALTH CHECK"
