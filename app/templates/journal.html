@@ -21,7 +21,7 @@
             </header>
 
             <nav class="journal-tabs erp-section-tabs" aria-label="Раздел журнала">
-                {% for value, label in [("", "Все"), ("product", "Товары"), ("brand", "Бренды"), ("category", "Категории"), ("sale", "Продажи"), ("receipt", "Приход"), ("inventory", "Инвентаризация")] %}
+                {% for value, label in [("", "Все"), ("product", "Товары"), ("order", "Заказы"), ("sale", "Продажи"), ("customer", "Клиенты"), ("inventory", "Инвентаризация"), ("task", "Задачи"), ("user", "Команда")] %}
                     <a class="journal-tab erp-section-tab{% if filters.entity_type == value %} active{% endif %}" href="#" data-journal-tab="{{ value }}"{% if filters.entity_type == value %} aria-current="page"{% endif %}>{{ label }}</a>
                 {% endfor %}
             </nav>
@@ -61,6 +61,12 @@
                             <option value="receipt">Приход</option>
                             <option value="inventory">Инвентаризация</option>
                             <option value="repair">Ремонт</option>
+                            <option value="order">Заказы</option>
+                            <option value="customer">Клиенты</option>
+                            <option value="task">Задачи</option>
+                            <option value="purchase">Закупки</option>
+                            <option value="settings">Настройки</option>
+                            <option value="user">Команда</option>
                         </select>
                     {% endif %}
                     <select class="journal-control" name="action" aria-label="Тип события">

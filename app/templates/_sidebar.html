@@ -101,6 +101,25 @@
     </nav>
 
     <div class="sidebar-footer">
+        {% if current_user %}
+            <div class="sidebar-presence" data-presence-root data-section="{{ session.get('current_section', '') }}">
+                <button class="sidebar-presence-trigger" type="button" data-presence-trigger aria-expanded="false" aria-controls="sidebarPresenceMenu">
+                    <span class="sidebar-presence-dot" aria-hidden="true"></span>
+                    <span data-presence-count>{{ presence_summary.online_count }}</span>
+                    <span class="sidebar-presence-label">онлайн</span>
+                </button>
+                <div id="sidebarPresenceMenu" class="sidebar-presence-menu" data-presence-menu hidden>
+                    <strong>Сейчас в системе</strong>
+                    <div data-presence-users>
+                        {% for user in presence_summary.users %}
+                            <a href="/app/team"><span>{{ user.display_name }}</span><small>{{ user.current_section or "ERP" }}</small></a>
+                        {% else %}
+                            <span class="sidebar-presence-empty">Нет активных сотрудников</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        {% endif %}
         <div
             class="sidebar-system-status"
             title="Система работает"
@@ -240,3 +259,51 @@
 <script async src="{{ url_for('static', filename='js/erp-states.js') }}"></script>
 <script async src="{{ url_for('static', filename='js/notifications.js') }}"></script>
 <script async src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+{% if current_user %}
+<script>
+(() => {
+    const root = document.querySelector("[data-presence-root]");
+    if (!root) return;
+    const trigger = root.querySelector("[data-presence-trigger]");
+    const menu = root.querySelector("[data-presence-menu]");
+    const count = root.querySelector("[data-presence-count]");
+    const users = root.querySelector("[data-presence-users]");
+    trigger.addEventListener("click", () => {
+        menu.hidden = !menu.hidden;
+        trigger.setAttribute("aria-expanded", String(!menu.hidden));
+    });
+    document.addEventListener("click", (event) => {
+        if (menu.hidden || root.contains(event.target)) return;
+        menu.hidden = true;
+        trigger.setAttribute("aria-expanded", "false");
+    });
+    async function heartbeat() {
+        if (document.visibilityState !== "visible") return;
+        try {
+            const response = await fetch("/api/v1/presence/heartbeat", {
+                method: "POST",
+                headers: {"Content-Type": "application/json", "X-CSRF-Token": {{ csrf_token()|tojson }}},
+                body: JSON.stringify({section: root.dataset.section || ""}),
+                credentials: "same-origin",
+            });
+            if (!response.ok) return;
+            const payload = await response.json();
+            const data = payload.data || payload;
+            count.textContent = data.online_count;
+            users.innerHTML = (data.users || []).map((user) => {
+                const name = document.createElement("span");
+                name.textContent = user.display_name;
+                const section = document.createElement("small");
+                section.textContent = user.current_section || "ERP";
+                const link = document.createElement("a");
+                link.href = "/app/team";
+                link.append(name, section);
+                return link.outerHTML;
+            }).join("") || '<span class="sidebar-presence-empty">Нет активных сотрудников</span>';
+        } catch (_error) {}
+    }
+    window.setInterval(heartbeat, 60000);
+    document.addEventListener("visibilitychange", heartbeat);
+})();
+</script>
+{% endif %}
