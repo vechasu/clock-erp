@@ -99,6 +99,12 @@ class MailServiceTest(unittest.TestCase):
         migrate_database(self.db)
         self.assertIn("mail-v1", validate_database(self.db))
 
+    def test_database_is_private_after_creation_and_repeat_migration(self):
+        self.assertEqual(self.db.stat().st_mode & 0o777, 0o600)
+        os.chmod(str(self.db), 0o644)
+        migrate_database(self.db)
+        self.assertEqual(self.db.stat().st_mode & 0o777, 0o600)
+
     def test_secret_is_authenticated_and_not_plaintext(self):
         token = self.box.encrypt("секрет")
         self.assertNotIn("секрет", token)
