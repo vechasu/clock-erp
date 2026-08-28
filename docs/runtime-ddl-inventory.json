@@ -55,6 +55,11 @@
       "file": "app/sms_migrations.py",
       "sha256": "b056f55857ec5563f901ba1bfe97ea766768dbcc5743bfd44890fa141a3063c1",
       "owner": "sms"
+    },
+    {
+      "file": "app/mail_migrations.py",
+      "sha256": "89b7cd2ba09d2f430b165941b61c2abd564b4b6aea8ca2967129318fd1c8f856",
+      "owner": "mail"
     }
   ],
   "ensure_functions": [],

@@ -45,6 +45,7 @@ from app.schema_migrations import apply_migrations  # noqa: E402
 from app.purchases_migrations import migrate_database as migrate_purchases  # noqa: E402
 from app.customer_registry_migrations import migrate_database as migrate_customers  # noqa: E402
 from app.sms_migrations import migrate_database as migrate_sms  # noqa: E402
+from app.mail_migrations import migrate_database as migrate_mail  # noqa: E402
 
 
 ORIGINAL_GETADDRINFO = socket.getaddrinfo
@@ -137,6 +138,7 @@ def main():
         purchases_path = test_root / "purchases.db"
         customers_path = test_root / "customers.db"
         sms_path = test_root / "sms.db"
+        mail_path = test_root / "mail.db"
         isolated_environment = {
             "CATALOG_DATABASE_PATH": str(catalog_path),
             "ERP_AUTH_DATABASE": str(auth_path),
@@ -145,6 +147,9 @@ def main():
             "ERP_PURCHASES_DATABASE": str(purchases_path),
             "CUSTOMERS_DATABASE_PATH": str(customers_path),
             "ERP_SMS_DATABASE": str(sms_path),
+            "ERP_MAIL_DATABASE": str(mail_path),
+            "ERP_MAIL_ATTACHMENT_ROOT": str(test_root / "mail-attachments"),
+            "ERP_MAIL_SECRET_KEY": "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s=",
             "ERP_SECRET_KEY": "isolated-backend-test-secret",
             "ERP_TEST_ROOT": str(test_root),
         }
@@ -168,6 +173,7 @@ def main():
             migrate_purchases(purchases_path)
             migrate_customers(customers_path)
             migrate_sms(sms_path)
+            migrate_mail(mail_path)
             suite = unittest.defaultTestLoader.discover(
                 arguments.start_directory,
                 pattern=arguments.pattern,

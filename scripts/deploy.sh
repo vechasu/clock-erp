@@ -53,6 +53,8 @@ readonly CUSTOMERS_CRON="/etc/cron.d/clock-erp-customers"
 readonly CUSTOMERS_LOGROTATE="/etc/logrotate.d/clock-erp-customers"
 readonly SMS_CRON="/etc/cron.d/clock-erp-sms"
 readonly SMS_LOGROTATE="/etc/logrotate.d/clock-erp-sms"
+readonly MAIL_CRON="/etc/cron.d/clock-erp-mail"
+readonly MAIL_LOGROTATE="/etc/logrotate.d/clock-erp-mail"
 readonly HEALTHCHECK_URLS=(
     "http://127.0.0.1:5000/register"
     "http://127.0.0.1:5000/login"
@@ -78,6 +80,7 @@ DOMAIN_MIGRATION_STARTED=0
 PURCHASES_MIGRATION_STARTED=0
 CUSTOMERS_MIGRATION_STARTED=0
 SMS_MIGRATION_STARTED=0
+MAIL_MIGRATION_STARTED=0
 CATALOG_ROLLBACK_BACKUP=""
 AUTH_ROLLBACK_BACKUP=""
 ORDERS_ROLLBACK_BACKUP=""
@@ -88,6 +91,8 @@ PURCHASES_DATABASE_EXISTED=0
 CUSTOMERS_ROLLBACK_BACKUP=""
 SMS_ROLLBACK_BACKUP=""
 SMS_DATABASE_EXISTED=0
+MAIL_ROLLBACK_BACKUP=""
+MAIL_DATABASE_EXISTED=0
 DATA_SNAPSHOT_BEFORE=""
 BITRIX_ENDPOINT_BACKUP=""
 BITRIX_ENDPOINT_UPDATED=0
@@ -111,7 +116,7 @@ rollback() {
     set +e
     printf 'ROLLBACK: stage=%s exit_code=%s\n' "$FAILURE_STAGE" "$exit_code" >&2
 
-    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" || "$CUSTOMERS_MIGRATION_STARTED" == "1" || "$SMS_MIGRATION_STARTED" == "1" ) ]]; then
+    if [[ "$SERVICE_STOPPED" != "1" && ( "$CATALOG_MIGRATION_STARTED" == "1" || "$DOMAIN_MIGRATION_STARTED" == "1" || "$PURCHASES_MIGRATION_STARTED" == "1" || "$CUSTOMERS_MIGRATION_STARTED" == "1" || "$SMS_MIGRATION_STARTED" == "1" || "$MAIL_MIGRATION_STARTED" == "1" ) ]]; then
         systemctl stop "$SERVICE_NAME"
         SERVICE_STOPPED=1
     fi
@@ -169,6 +174,16 @@ rollback() {
         elif [[ "$SMS_DATABASE_EXISTED" == "0" && -f instance/sms.db ]]; then
             rm -f -- instance/sms.db
             printf 'ROLLBACK_OK: removed newly created SMS database\n' >&2
+        fi
+    fi
+    if [[ "$MAIL_MIGRATION_STARTED" == "1" ]]; then
+        if [[ "$MAIL_DATABASE_EXISTED" == "1" && -f "$MAIL_ROLLBACK_BACKUP" ]]; then
+            cp -p "$MAIL_ROLLBACK_BACKUP" instance/mail.db
+            sqlite3 instance/mail.db "PRAGMA quick_check;" | grep -qx "ok"
+            printf 'ROLLBACK_OK: restored verified mail database backup\n' >&2
+        elif [[ "$MAIL_DATABASE_EXISTED" == "0" && -f instance/mail.db ]]; then
+            rm -f -- instance/mail.db
+            printf 'ROLLBACK_OK: removed newly created mail database\n' >&2
         fi
     fi
     if [[ "$BITRIX_ENDPOINT_UPDATED" == "1" && -f "$BITRIX_ENDPOINT_BACKUP" ]]; then
@@ -251,6 +266,10 @@ if printf '%s\n' "$changed_files" | grep -Eq \
     SMS_MIGRATION_REQUIRED=1
 fi
 if printf '%s\n' "$changed_files" | grep -Eq \
+    '^(app/(mail_migrations\.py|services/mail\.py)|scripts/(migrate_mail\.py|mail_worker\.py))$'; then
+    MAIL_MIGRATION_REQUIRED=1
+fi
+if printf '%s\n' "$changed_files" | grep -Eq \
     '^(app/(auth|domain_schema_migrations)\.py|app/services/orders_snapshot\.py|scripts/domain_migration_preflight\.py)$'; then
     DOMAIN_MIGRATION_REQUIRED=1
 fi
@@ -275,10 +294,11 @@ if [[ "$UNREGISTERED_MIGRATION_CHANGE" == "1" ]]; then
         'PRECHECK_FAILED: changed legacy migration script is not registered in production preflight' >&2
     false
 fi
-if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" || "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
     active_inventory_count="$(
-        sqlite3 instance/catalog.db \
+        if [[ -f instance/catalog.db ]]; then sqlite3 instance/catalog.db \
             "SELECT COUNT(*) FROM erp_inventory_sessions WHERE status = 'active';"
+        else printf '0'; fi
     )"
     if [[ "$active_inventory_count" != "0" ]]; then
         printf 'DEPLOY_BLOCKED: %s active inventory session(s)\n' \
@@ -392,6 +412,15 @@ if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
         "$RELEASE_DIR/scripts/migrate_sms.py" rehearse \
         --database "$PROJECT_DIR/instance/sms.db"
 fi
+if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+    mail_rehearsal="$RELEASE_DIR/mail-rehearsal.db"
+    if [[ -f instance/mail.db ]]; then
+        sqlite3 instance/mail.db ".backup '$mail_rehearsal'"
+    fi
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/migrate_mail.py" apply --database "$mail_rehearsal"
+    PYTHONPATH="$RELEASE_DIR" "$PYTHON_BIN" "$RELEASE_DIR/scripts/migrate_mail.py" verify --database "$mail_rehearsal"
+fi
 
 printf 'APPLICATION UPDATE: fast-forward to verified commit\n'
 FAILURE_STAGE="APPLICATION UPDATE"
@@ -409,6 +438,8 @@ install -o root -g root -m 0644 ops/clock-erp-customers.cron "$CUSTOMERS_CRON"
 install -o root -g root -m 0644 ops/clock-erp-customers.logrotate "$CUSTOMERS_LOGROTATE"
 install -o root -g root -m 0644 ops/clock-erp-sms.cron "$SMS_CRON"
 install -o root -g root -m 0644 ops/clock-erp-sms.logrotate "$SMS_LOGROTATE"
+install -o root -g root -m 0644 ops/clock-erp-mail.cron "$MAIL_CRON"
+install -o root -g root -m 0644 ops/clock-erp-mail.logrotate "$MAIL_LOGROTATE"
 
 if [[ -f "$BITRIX_ENDPOINT_SOURCE" && -f "$BITRIX_ENDPOINT_TARGET" ]]; then
     /opt/php81/bin/php -l "$BITRIX_ENDPOINT_SOURCE" >/dev/null
@@ -444,7 +475,7 @@ if [[ -f "$BITRIX_ORDERS_EXPORT_SOURCE" ]]; then
     BITRIX_ORDERS_EXPORT_UPDATED=1
 fi
 
-if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" || "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
+if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1" || "$PURCHASES_MIGRATION_REQUIRED" == "1" || "$CUSTOMERS_MIGRATION_REQUIRED" == "1" || "$SMS_MIGRATION_REQUIRED" == "1" || "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
     printf 'PRODUCTION MIGRATION: stop service, backup, apply verified migrations\n'
     FAILURE_STAGE="PRODUCTION MIGRATION"
     systemctl stop "$SERVICE_NAME"
@@ -507,6 +538,17 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
         fi
         SMS_MIGRATION_STARTED=1
     fi
+    if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+    if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+        if [[ -f instance/mail.db ]]; then
+            MAIL_DATABASE_EXISTED=1
+            MAIL_ROLLBACK_BACKUP="$rollback_directory/mail-before.db"
+            sqlite3 instance/mail.db ".backup '$MAIL_ROLLBACK_BACKUP'"
+            chmod 600 "$MAIL_ROLLBACK_BACKUP"
+            sqlite3 "$MAIL_ROLLBACK_BACKUP" "PRAGMA quick_check;" | grep -qx "ok"
+        fi
+        MAIL_MIGRATION_STARTED=1
+    fi
     if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" ]]; then
         "$PYTHON_BIN" scripts/migration_preflight.py apply \
             --database instance/catalog.db \
@@ -544,6 +586,11 @@ if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" || "$DOMAIN_MIGRATION_REQUIRED" == "1
             --database instance/sms.db
         PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py verify \
             --database instance/sms.db
+    fi
+    if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+    if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py apply --database instance/mail.db
+        PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
     fi
     DATA_SNAPSHOT_AFTER="$($PYTHON_BIN scripts/data_safety_snapshot.py --instance-dir instance)"
     if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
@@ -610,6 +657,10 @@ fi
 if [[ "$SMS_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_sms.py verify \
         --database instance/sms.db
+fi
+if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
+    PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
 fi
 systemctl is-active --quiet "$SERVICE_NAME"
 if journalctl -u "$SERVICE_NAME" --since "-2 minutes" \
