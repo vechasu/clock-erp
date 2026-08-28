@@ -15,7 +15,7 @@ from app.domain_schema_migrations import validate_orders_database
 from app.services.customer_identity import link_order_safely
 
 
-PAGE_SIZES = (20, 50, 100, 200)
+PAGE_SIZES = (20, 50, 100, 200, "all")
 DATE_QUERY = re.compile(r"^(\d{2})\.(\d{2})\.(\d{2}|\d{4})$")
 AMOUNT_QUERY = re.compile(r"^[\d\s.,₽]+$")
 PHONE_QUERY = re.compile(r"^[+\d\s()\-]+$")
@@ -96,6 +96,22 @@ def order_item_units(order):
     return int(total) if total == total.to_integral_value() else float(total)
 
 
+def _extra_search(order):
+    """Flatten list-safe order details once so list search stays one SQL query."""
+    values = [
+        order.get("source"), order.get("source_name"), order.get("email"),
+        order.get("payment"), order.get("payment_system"), order.get("delivery"),
+        order.get("country"), order.get("region"), order.get("city"),
+        order.get("address"), order.get("delivery_address"), order.get("comment"),
+    ]
+    for product in order.get("items") or order.get("products") or []:
+        values.extend(product.get(key) for key in (
+            "name", "model", "article", "sku", "barcode", "xml_id",
+            "brand", "category", "PRODUCT_NAME", "NAME", "ARTICLE", "SKU",
+        ))
+    return " ".join(_text(value) for value in values if _text(value)).casefold()
+
+
 class OrdersSnapshotStore:
     def __init__(self, path=None):
         configured = path or os.getenv("ORDERS_DATABASE_PATH")
@@ -164,6 +180,7 @@ class OrdersSnapshotStore:
                 order_id = _text(order.get("id") or order.get("ID"))
                 if not order_id:
                     continue
+                incoming_has_items = bool(order.get("items") or order.get("products"))
                 preserved_row = preserved.get(order_id)
                 detail_loaded = int(
                     preserved_row["detail_loaded"] if preserved_row else 0
@@ -171,11 +188,16 @@ class OrdersSnapshotStore:
                 if preserved_row:
                     previous = json.loads(preserved_row["payload_json"])
                     order = dict(order)
-                    for field in ("customer", "phone", "email", "country", "region", "city"):
+                    for field in (
+                        "customer", "phone", "email", "country", "region", "city",
+                        "updated_at", "payment", "payment_system", "paid", "delivery",
+                        "address", "delivery_address", "comment", "items", "products",
+                        "products_count",
+                    ):
                         if not order.get(field) and previous.get(field):
                             order[field] = previous[field]
                 item_units = order_item_units(order)
-                if item_units is None and preserved_row:
+                if preserved_row and not incoming_has_items:
                     item_units = preserved_row["item_units"]
                 customer_id = preserved_row["customer_id"] if preserved_row else None
                 if customer_id is None:
@@ -200,7 +222,7 @@ class OrdersSnapshotStore:
                         position,
                         _text(order.get("number") or order_id).casefold(),
                         _text(order.get("customer")).casefold(),
-                        "",
+                        _extra_search(order),
                         _phone_digits(order.get("phone")),
                         _amount_search(total),
                         _date_search(created),
@@ -333,7 +355,10 @@ class OrdersSnapshotStore:
             payload = json.loads(row["payload_json"])
             for field in (
                 "number", "customer", "phone", "email", "country", "region", "city", "order_total", "price",
-                "created_at", "date", "status", "status_name",
+                "created_at", "date", "updated_at", "status", "status_name",
+                "source", "source_name", "payment", "payment_system", "paid",
+                "delivery", "address", "delivery_address", "comment", "items",
+                "products", "products_count",
             ):
                 value = detail.get(field)
                 if value not in (None, ""):
@@ -347,12 +372,13 @@ class OrdersSnapshotStore:
             )
             cursor = connection.execute(
                 "UPDATE orders_snapshot SET number_fold = ?, customer_fold = ?, "
-                "phone_digits = ?, amount_search = ?, date_search = ?, "
+                "extra_fold = ?, phone_digits = ?, amount_search = ?, date_search = ?, "
                 "created_sort = ?, status = ?, item_units = ?, detail_loaded = 1, "
                 "payload_json = ? WHERE order_id = ?",
                 (
                     _text(payload.get("number") or order_id).casefold(),
                     _text(payload.get("customer")).casefold(),
+                    _extra_search(payload),
                     _phone_digits(payload.get("phone")),
                     _amount_search(total),
                     _date_search(created),
@@ -390,12 +416,16 @@ class OrdersSnapshotStore:
         status = _text(args.get("status") or "all").upper()
         source = _text(args.get("source") or "all").casefold()
         period = _text(args.get("period") or "all")
-        try:
-            page_size = int(args.get("page_size") or 20)
-        except (TypeError, ValueError):
-            page_size = 20
-        if page_size not in PAGE_SIZES:
-            page_size = 20
+        raw_page_size = _text(args.get("page_size") or 20).casefold()
+        if raw_page_size == "all":
+            page_size = "all"
+        else:
+            try:
+                page_size = int(raw_page_size)
+            except (TypeError, ValueError):
+                page_size = 20
+            if page_size not in PAGE_SIZES:
+                page_size = 20
         try:
             page = max(1, int(args.get("page") or 1))
         except (TypeError, ValueError):
@@ -462,13 +492,14 @@ class OrdersSnapshotStore:
                 "SELECT COUNT(*) FROM orders_snapshot" + where_sql,
                 parameters,
             ).fetchone()[0])
-            page_count = max(1, int(math.ceil(float(total) / page_size)))
+            effective_page_size = max(total, 1) if page_size == "all" else page_size
+            page_count = max(1, int(math.ceil(float(total) / effective_page_size)))
             page = min(page, page_count)
             rows = connection.execute(
                 "SELECT payload_json, item_units, customer_id FROM orders_snapshot"
                 + where_sql
                 + " ORDER BY source_position ASC, order_id DESC LIMIT ? OFFSET ?",
-                parameters + [page_size, (page - 1) * page_size],
+                parameters + [effective_page_size, (page - 1) * effective_page_size],
             ).fetchall()
             status_rows = connection.execute(
                 "SELECT status, COUNT(*) AS count FROM orders_snapshot "
