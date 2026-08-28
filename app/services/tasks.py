@@ -538,34 +538,129 @@ class TaskStore:
                 connection.commit()
         return rows
 
-    def counts(self, today=None, assignee_id=None):
+    @staticmethod
+    def _view_clause(view, today, alias="t", include_completed_waiting=False):
+        prefix = "{}.".format(alias)
+        if view == "overdue":
+            return "({0}due_date<? OR ({0}status='waiting' AND {0}check_date<?))".format(prefix), [today, today]
+        if view == "today":
+            return "({0}due_date=? OR ({0}status='waiting' AND {0}check_date=?))".format(prefix), [today, today]
+        if view == "plans":
+            return "{}due_date>?".format(prefix), [today]
+        if view == "waiting":
+            if include_completed_waiting:
+                return "({0}status='waiting' OR ({0}status='completed' AND {0}check_date IS NOT NULL))".format(prefix), []
+            return "{}status='waiting'".format(prefix), []
+        if view in {"inbox", "anytime", "someday"}:
+            return "{0}due_date IS NULL AND {0}section=?".format(prefix), [view]
+        raise TaskValidationError("Неизвестное представление.", "view")
+
+    @staticmethod
+    def _structural_clauses(assignee_id=None, priority="", entity_type="", status="", due="",
+                            only_mine=None, scope="all", current_user_id=None, today=None):
+        clauses, parameters = [], []
+        if assignee_id or only_mine:
+            clauses.append("t.assignee_id=?")
+            parameters.append(int(assignee_id or only_mine))
+        if scope not in {"mine", "created", "team", "all"}:
+            raise TaskValidationError("Неизвестная область задач.", "scope")
+        if scope == "mine":
+            clauses.append("t.assignee_id=?")
+            parameters.append(int(current_user_id))
+        elif scope == "created":
+            clauses.append("t.author_id=?")
+            parameters.append(int(current_user_id))
+        if priority:
+            if priority not in PRIORITIES:
+                raise TaskValidationError("Неизвестный приоритет.", "priority")
+            clauses.append("t.priority=?")
+            parameters.append(priority)
+        if status:
+            if status not in STATUSES:
+                raise TaskValidationError("Неизвестный статус.", "status")
+            clauses.append("t.status=?")
+            parameters.append(status)
+        if entity_type:
+            if entity_type not in ENTITY_TYPES:
+                raise TaskValidationError("Неизвестный тип связи.", "entity_type")
+            clauses.append("EXISTS(SELECT 1 FROM task_links le WHERE le.task_id=t.id AND le.entity_type=?)")
+            parameters.append(entity_type)
+        if due in {"none", "today", "overdue", "future"}:
+            if due == "none":
+                clauses.append("t.due_date IS NULL")
+            elif due == "today":
+                clauses.append("t.due_date=?")
+                parameters.append(today)
+            elif due == "overdue":
+                clauses.append("t.due_date<?")
+                parameters.append(today)
+            else:
+                clauses.append("t.due_date>?")
+                parameters.append(today)
+        return clauses, parameters
+
+    @staticmethod
+    def _search_clauses(query):
+        query = _text(query, 200)
+        if not query:
+            return [], []
+        folded = "%{}%".format(query.casefold())
+        digit_value = "".join(character for character in query if character.isdigit())
+        digits = "%{}%".format(digit_value) if digit_value else "__no_phone_match__"
+        clause = (
+            "(erp_casefold(t.title) LIKE ? OR erp_casefold(t.description) LIKE ? OR "
+            "erp_casefold(t.source_comment) LIKE ? OR erp_casefold(t.completion_result) LIKE ? OR "
+            "erp_casefold(t.contact_name) LIKE ? OR erp_casefold(t.contact_phone) LIKE ? OR "
+            "erp_casefold(t.contact_email) LIKE ? OR erp_digits(t.contact_phone) LIKE ? OR EXISTS("
+            "SELECT 1 FROM task_links l WHERE l.task_id=t.id AND "
+            "(erp_casefold(l.entity_label) LIKE ? OR erp_casefold(l.entity_id) LIKE ?)))"
+        )
+        return [clause], [folded] * 7 + [digits] + [folded] * 2
+
+    def counts(self, today=None, assignee_id=None, priority="", entity_type="", status="", due="",
+               only_mine=None, scope="all", current_user_id=None, selected_view=None, query=""):
         today = today or moscow_today()
-        clauses = "status IN ('new','in_progress','waiting')"
-        params = []
-        if assignee_id:
-            clauses += " AND assignee_id=?"
-            params.append(int(assignee_id))
+        clauses, params = self._structural_clauses(
+            assignee_id=assignee_id, priority=priority, entity_type=entity_type, status=status,
+            due=due, only_mine=only_mine, scope=scope, current_user_id=current_user_id,
+            today=today,
+        )
+        cases, case_params = [], []
+        active = "t.status IN ('new','in_progress','waiting')"
+        for view in ("inbox", "overdue", "today", "plans", "waiting", "anytime", "someday"):
+            condition, values = self._view_clause(view, today)
+            cases.append("SUM(CASE WHEN {0} AND ({1}) THEN 1 ELSE 0 END)".format(active, condition))
+            case_params.extend(values)
+        cases.append("SUM(CASE WHEN {0} AND (t.due_date<=? OR (t.status='waiting' AND t.check_date<=?)) THEN 1 ELSE 0 END)".format(active))
+        case_params.extend([today, today])
+        statistics_offset = None
+        if selected_view and selected_view != "logbook":
+            if selected_view not in VIEWS:
+                raise TaskValidationError("Неизвестное представление.", "view")
+            view_clause, view_params = self._view_clause(selected_view, today, include_completed_waiting=True)
+            search_clauses, search_params = self._search_clauses(query)
+            selected = " AND ".join(search_clauses + [view_clause])
+            statistics_offset = len(cases)
+            for status_clause in (
+                active,
+                "t.status='completed'",
+                "t.status IN ('new','in_progress','waiting','completed')",
+            ):
+                cases.append("SUM(CASE WHEN {0} AND ({1}) THEN 1 ELSE 0 END)".format(status_clause, selected))
+                case_params.extend(search_params + view_params)
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT "
-                "SUM(CASE WHEN due_date IS NULL AND section='inbox' THEN 1 ELSE 0 END),"
-                "SUM(CASE WHEN (due_date<? OR (status='waiting' AND check_date<?)) THEN 1 ELSE 0 END),"
-                "SUM(CASE WHEN due_date=? OR (status='waiting' AND check_date=?) THEN 1 ELSE 0 END),"
-                "SUM(CASE WHEN due_date>? THEN 1 ELSE 0 END),"
-                "SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END),"
-                "SUM(CASE WHEN due_date IS NULL AND section='anytime' THEN 1 ELSE 0 END),"
-                "SUM(CASE WHEN due_date IS NULL AND section='someday' THEN 1 ELSE 0 END),"
-                "SUM(CASE WHEN (due_date<=? OR (status='waiting' AND check_date<=?)) THEN 1 ELSE 0 END) "
-                "FROM tasks WHERE " + clauses,
-                [today, today, today, today, today, today, today] + params,
+                "SELECT " + ",".join(cases) + " FROM tasks t WHERE " + (" AND ".join(clauses) or "1=1"),
+                case_params + params,
             ).fetchone()
-            journal = int(connection.execute(
-                "SELECT COUNT(*) FROM tasks WHERE status IN ('completed','cancelled')" +
-                (" AND assignee_id=?" if assignee_id else ""), params
-            ).fetchone()[0])
         keys = ("inbox", "overdue", "today", "plans", "waiting", "anytime", "someday", "active")
         result = {key: int(row[index] or 0) for index, key in enumerate(keys)}
-        result["logbook"] = journal
+        if statistics_offset is not None:
+            result["statistics"] = {
+                "remaining": int(row[statistics_offset] or 0),
+                "completed": int(row[statistics_offset + 1] or 0),
+                "total": int(row[statistics_offset + 2] or 0),
+            }
         return result
 
     def list(self, view="today", query="", assignee_id=None, priority="", entity_type="",
@@ -579,20 +674,9 @@ class TaskStore:
             clauses.append("t.status IN ('completed','cancelled')")
         else:
             clauses.append("t.status IN ('new','in_progress','waiting')")
-            if view == "overdue":
-                clauses.append("(t.due_date<? OR (t.status='waiting' AND t.check_date<?))")
-                parameters.extend((today, today))
-            elif view == "today":
-                clauses.append("(t.due_date=? OR (t.status='waiting' AND t.check_date=?))")
-                parameters.extend((today, today))
-            elif view == "plans":
-                clauses.append("t.due_date>?")
-                parameters.append(today)
-            elif view == "waiting":
-                clauses.append("t.status='waiting'")
-            else:
-                clauses.append("t.due_date IS NULL AND t.section=?")
-                parameters.append(view)
+            view_clause, view_parameters = self._view_clause(view, today)
+            clauses.append(view_clause)
+            parameters.extend(view_parameters)
         query = _text(query, 200)
         if query:
             folded = "%{}%".format(query.casefold())

@@ -51,8 +51,10 @@ button:disabled { cursor: wait; opacity: .58; }
 }
 .tasks-views button:hover { background: var(--erp-surface-muted); }
 .tasks-views button.active { background: color-mix(in srgb, var(--erp-primary) 11%, var(--erp-surface)); color: var(--erp-primary); }
-.tasks-views button span:not(:empty) { min-width: 22px; padding: 4px 6px; border-radius: 999px; background: var(--erp-surface-muted); text-align: center; font-size: 11px; }
+.tasks-views button span:not(:empty) { box-sizing: border-box; width: 38px; padding: 4px 3px; border-radius: 999px; background: color-mix(in srgb, var(--erp-primary) 7%, var(--erp-surface-muted)); color: var(--erp-muted); text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; }
 .tasks-views button[data-view="overdue"] span:not(:empty) { background: #fee2e2; color: #b91c1c; }
+.tasks-views button[data-view="today"] span:not(:empty) { background: color-mix(in srgb, var(--erp-primary) 13%, var(--erp-surface)); color: var(--erp-primary); }
+.tasks-views button[data-view="waiting"] span:not(:empty) { background: #fef3c7; color: #92400e; }
 
 .tasks-workspace {
     min-width: 0;
@@ -250,7 +252,9 @@ fieldset legend { padding: 0 6px; color: var(--erp-text); font-size: 13px; font-
 .tasks-page :is(button, input, select, textarea, a):focus-visible { outline: 3px solid color-mix(in srgb, var(--erp-primary) 38%, transparent); outline-offset: 2px; }
 .tasks-page [hidden] { display: none !important; }
 
-.tasks-mode-switch { display: inline-flex; width: max-content; margin-bottom: 12px; padding: 3px; border: 1px solid var(--erp-border); border-radius: 10px; background: var(--erp-surface-muted); }
+.tasks-workspace-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.tasks-mode-switch { display: inline-flex; width: max-content; padding: 3px; border: 1px solid var(--erp-border); border-radius: 10px; background: var(--erp-surface-muted); }
+.tasks-section-stats { margin: 0; color: var(--erp-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tasks-mode-switch button, .calendar-kind-switch button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--erp-muted); font: 750 12px var(--erp-font-family); cursor: pointer; }
 .tasks-mode-switch button.active, .calendar-kind-switch button.active { background: var(--erp-primary); color: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, .16); }
 .tasks-calendar { min-width: 0; }
@@ -266,7 +270,9 @@ fieldset legend { padding: 0 6px; color: var(--erp-text); font-size: 13px; font-
 .calendar-undated-empty { align-self: center; color: var(--erp-muted); font-size: 12px; }
 .calendar-grid { min-height: 520px; border: 1px solid var(--erp-border); border-radius: 12px; overflow: clip; background: var(--erp-surface); transition: opacity .15s; }
 .calendar-grid.loading, .calendar-grid.saving { opacity: .55; pointer-events: none; }
-.calendar-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.calendar-month { min-height: 0; overflow: hidden; }
+.calendar-weekdays, .calendar-month-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.calendar-month-scroll { height: 220px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scroll-behavior: auto; }
 .calendar-weekday { padding: 9px 7px; border-bottom: 1px solid var(--erp-border); background: var(--erp-surface-muted); color: var(--erp-muted); text-align: center; font-size: 11px; font-weight: 800; }
 .calendar-day { min-width: 0; min-height: 126px; padding: 6px; border-right: 1px solid var(--erp-border); border-bottom: 1px solid var(--erp-border); cursor: pointer; }
 .calendar-day:nth-child(7n) { border-right: 0; }
@@ -310,12 +316,15 @@ fieldset legend { padding: 0 6px; color: var(--erp-text); font-size: 13px; font-
 }
 
 @media (max-width: 600px) {
-    .tasks-mode-switch { margin-bottom: 8px; }
+    .tasks-workspace-summary { align-items: flex-start; margin-bottom: 8px; }
+    .tasks-section-stats { max-width: 160px; white-space: normal; text-align: right; }
     .calendar-toolbar { grid-template-columns: auto auto minmax(90px, 1fr) auto; margin-top: 8px; }
     .calendar-toolbar h2 { font-size: 14px; }
     .calendar-kind-switch, .calendar-completed { grid-column: span 2; }
     .calendar-completed { justify-self: stretch; }
     .calendar-month { display: block; border: 0; background: transparent; }
+    .calendar-month-week { display: block; }
+    .calendar-month-scroll { height: min(54vh, 440px); min-height: 330px; padding-right: 2px; }
     .calendar-weekday { display: none; }
     .calendar-day { min-height: 58px; margin-bottom: 7px; padding: 7px; border: 1px solid var(--erp-border); border-radius: 9px; background: var(--erp-surface); }
     .calendar-day.outside { display: none; }
