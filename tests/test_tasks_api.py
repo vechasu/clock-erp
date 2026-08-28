@@ -121,9 +121,34 @@ class TasksApiTest(unittest.TestCase):
         self.assertIn("Ожидаю", page)
         self.assertIn("Название, описание, клиент, заказ или товар", page)
         self.assertIn('aria-controls="advancedFilters"', page)
-        self.assertIn("tasks.css?v=3", page)
-        self.assertIn("tasks.js?v=3", page)
+        self.assertIn("tasks.css?v=4", page)
+        self.assertIn("tasks.js?v=4", page)
+        self.assertIn("Календарь", page)
         self.assertNotIn("<script>alert(1)</script>", page)
+
+    def test_calendar_api_range_reschedule_and_permission(self):
+        self.login()
+        headers = {"X-CSRF-Token": "tasks-csrf", "Idempotency-Key": "calendar-one"}
+        created = self.client.post("/api/v1/tasks", json={
+            "title": "Календарная", "assignee_id": self.user_id,
+            "due_date": "2026-08-28", "due_time": "10:15",
+        }, headers=headers).get_json()["data"]
+        calendar = self.client.get(
+            "/api/v1/tasks/calendar?start=2026-08-24&end=2026-08-30&scope=mine"
+        )
+        self.assertEqual(calendar.status_code, 200)
+        self.assertEqual(calendar.get_json()["data"]["rows"][0]["id"], created["id"])
+        self.assertTrue(calendar.get_json()["data"]["rows"][0]["can_edit"])
+        moved = self.client.post(
+            "/api/v1/tasks/{}/calendar-reschedule".format(created["id"]),
+            json={"due_date": "2026-08-29", "due_time": "14:00", "version": created["version"]},
+            headers={"X-CSRF-Token": "tasks-csrf"},
+        )
+        self.assertEqual(moved.status_code, 200)
+        self.assertEqual((moved.get_json()["data"]["due_date"], moved.get_json()["data"]["due_time"]),
+                         ("2026-08-29", "14:00"))
+        invalid = self.client.get("/api/v1/tasks/calendar?start=2026-01-01&end=2026-12-31")
+        self.assertEqual(invalid.status_code, 422)
 
 
 if __name__ == "__main__":

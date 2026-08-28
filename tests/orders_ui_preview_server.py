@@ -5,10 +5,12 @@ import tempfile
 from pathlib import Path
 
 from app import web
+from app.domain_schema_migrations import apply_domain_migrations
 
 
 PREVIEW_ROOT = Path(tempfile.mkdtemp(prefix="clock-erp-orders-preview-"))
 os.environ["ORDERS_DATABASE_PATH"] = str(PREVIEW_ROOT / "orders.db")
+apply_domain_migrations(PREVIEW_ROOT / "orders.db", "orders", "orders-ui-preview")
 
 
 def fixture_orders():
@@ -18,7 +20,11 @@ def fixture_orders():
         order_id = str(22000 + index)
         rows.append({
             "id": order_id,
-            "number": order_id,
+            "number": (
+                "211260000000000000000001" if index == 0
+                else "7" if index == 1
+                else order_id
+            ),
             "status": statuses[index % len(statuses)],
             "status_name": web.STATUS_NAMES[statuses[index % len(statuses)]],
             "customer": (
@@ -111,7 +117,9 @@ web.load_order_product_mappings = lambda _order_id: {}
 web.build_catalog_product_order_counts = lambda *args, **kwargs: {}
 web.build_order_product_mapping_context = mapping_context
 web.get_order_conducted_sale = lambda _order_id: None
-web.bulk_conducted_order_sales = lambda _order_ids, database=None: {}
+web.bulk_conducted_order_sales = lambda _order_ids, database=None: {
+    ORDERS[0]["id"]: "preview-sale-1",
+}
 web.has_legacy_order_stock_writeoff = lambda _order_id: False
 
 

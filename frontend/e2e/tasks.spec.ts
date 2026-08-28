@@ -95,3 +95,83 @@ test('tasks page has no page-level overflow at required viewports', async ({ pag
     expect(dimensions.bodyScrollWidth, JSON.stringify(viewport)).toBeLessThanOrEqual(dimensions.bodyClientWidth);
   }
 });
+
+test('calendar mode round-trips URL, navigation, week and existing drawer', async ({ page }) => {
+  await page.goto('/app/tasks?view=plans&scope=all', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Календарь', exact: true }).click();
+  await expect(page).toHaveURL(/view=plans.*mode=calendar/);
+  await expect(page.locator('#calendarGrid')).toBeVisible();
+  await expect(page.locator('.calendar-task')).not.toHaveCount(0);
+  const title = await page.locator('#calendarTitle').textContent();
+  await page.locator('#calendarNext').click();
+  await expect(page.locator('#calendarTitle')).not.toHaveText(title || '');
+  await page.locator('#calendarToday').click();
+  await page.getByRole('button', { name: 'Неделя' }).click();
+  await expect(page).toHaveURL(/calendar=week/);
+  await expect(page.locator('.calendar-week-day')).toHaveCount(7);
+  await page.locator('.calendar-task').first().click();
+  await expect(page.locator('#taskModal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Список', exact: true }).click();
+  await expect(page).toHaveURL(/view=plans.*mode=list/);
+});
+
+test('calendar creates with a prefilled day and shows completed and undated tasks', async ({ page }) => {
+  await page.goto('/app/tasks?mode=calendar&calendar=month', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#undatedCount')).not.toHaveText('0');
+  const day = page.locator('.calendar-day:not(.outside)').first();
+  await day.click({ position: { x: 10, y: 10 } });
+  await expect(page.locator('#taskModal')).toBeVisible();
+  await expect(page.locator('#taskForm input[name="due_date"]')).not.toHaveValue('');
+  await page.locator('#closeTask').click();
+  await expect(page.locator('#taskModal')).toBeHidden();
+  const before = await page.locator('.calendar-task.completed').count();
+  await page.locator('#calendarCompleted').check();
+  await expect.poll(() => page.locator('.calendar-task.completed').count()).toBeGreaterThan(before);
+});
+
+test('calendar drag saves and failed drag rolls back', async ({ page }) => {
+  await page.goto('/app/tasks?mode=calendar&calendar=month', { waitUntil: 'domcontentloaded' });
+  const source = page.locator('#calendarGrid .calendar-task[draggable="true"]').first();
+  const sourceId = await source.getAttribute('data-task-id');
+  let scheduleRequests = 0;
+  await page.route(`**/api/v1/tasks/${sourceId}/calendar-reschedule`, (route) => {
+    scheduleRequests += 1;
+    return route.fulfill({
+      status: scheduleRequests === 1 ? 200 : 409,
+      contentType: 'application/json',
+      body: JSON.stringify(scheduleRequests === 1 ? { data: {} } : { message: 'Проверка отката' }),
+    });
+  });
+  const dragToDay = (targetIndex: number) => page.evaluate(({ taskId, index }) => {
+    const sourceNode = document.querySelector(`.calendar-task[data-task-id="${taskId}"]`);
+    const targetNode = document.querySelectorAll('.calendar-day:not(.outside)')[index];
+    if (!sourceNode || !targetNode) throw new Error('Drag fixture is unavailable');
+    const transfer = new DataTransfer();
+    sourceNode.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: transfer }));
+    targetNode.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    targetNode.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    sourceNode.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: transfer }));
+  }, { taskId: sourceId, index: targetIndex });
+  await dragToDay(10);
+  await expect.poll(() => scheduleRequests).toBe(1);
+  await expect(page.locator('#taskModal')).toBeHidden();
+  await dragToDay(12);
+  await expect.poll(() => scheduleRequests).toBe(2);
+  await expect(page.locator('#calendarStatus')).toContainText(/задач/);
+  await expect(page.locator(`.calendar-task[data-task-id="${sourceId}"]`)).toHaveCount(1);
+});
+
+test('calendar remains readable and keyboard reachable on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/tasks?mode=calendar&calendar=month', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('.calendar-day.outside').first()).toBeHidden();
+  await page.locator('.calendar-day:not(.outside)').first().focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#taskModal')).toBeVisible();
+  const dimensions = await page.locator('html').evaluate((root) => ({
+    scrollWidth: root.scrollWidth,
+    clientWidth: root.clientWidth,
+  }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+});
