@@ -1,0 +1,3 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/5 * * * * root cd /opt/clock-erp && flock -n /run/lock/clock-erp-sms-sync.lock venv/bin/flask --app app.web sms-sync-statuses >> /var/log/clock-erp-sms.log 2>&1

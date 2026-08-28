@@ -44,6 +44,7 @@ from app.catalog_db import CatalogDatabase  # noqa: E402
 from app.schema_migrations import apply_migrations  # noqa: E402
 from app.purchases_migrations import migrate_database as migrate_purchases  # noqa: E402
 from app.customer_registry_migrations import migrate_database as migrate_customers  # noqa: E402
+from app.sms_migrations import migrate_database as migrate_sms  # noqa: E402
 from app.mail_migrations import migrate_database as migrate_mail  # noqa: E402
 
 
@@ -136,6 +137,7 @@ def main():
         tasks_path = test_root / "tasks.db"
         purchases_path = test_root / "purchases.db"
         customers_path = test_root / "customers.db"
+        sms_path = test_root / "sms.db"
         mail_path = test_root / "mail.db"
         isolated_environment = {
             "CATALOG_DATABASE_PATH": str(catalog_path),
@@ -144,6 +146,7 @@ def main():
             "ERP_TASKS_DATABASE": str(tasks_path),
             "ERP_PURCHASES_DATABASE": str(purchases_path),
             "CUSTOMERS_DATABASE_PATH": str(customers_path),
+            "ERP_SMS_DATABASE": str(sms_path),
             "ERP_MAIL_DATABASE": str(mail_path),
             "ERP_MAIL_ATTACHMENT_ROOT": str(test_root / "mail-attachments"),
             "ERP_MAIL_SECRET_KEY": "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s=",
@@ -169,6 +172,7 @@ def main():
             apply_domain_migrations(tasks_path, "tasks", "test-suite")
             migrate_purchases(purchases_path)
             migrate_customers(customers_path)
+            migrate_sms(sms_path)
             migrate_mail(mail_path)
             suite = unittest.defaultTestLoader.discover(
                 arguments.start_directory,

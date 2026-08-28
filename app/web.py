@@ -29,6 +29,12 @@ from functools import lru_cache, wraps
 from urllib.parse import parse_qsl, urlencode, urlsplit
 from app.time_ranking import erp_timestamp, parse_erp_datetime, receipt_business_timestamp
 from app.clients.moysklad import MoySkladClient
+from app.clients.smsbliss import (
+    SmsBlissClient,
+    SmsBlissError,
+    SmsBlissNotConfigured,
+    SmsBlissSecurityError,
+)
 from app.catalog_db import CatalogDatabase
 from app.clients.bitrix_catalog import (
     BitrixCatalogClient,
@@ -168,6 +174,20 @@ from app.services.tasks import (
     TaskValidationError,
     moscow_today,
 )
+from app.services.sms import (
+    MAX_TEXT_LENGTH as SMS_MAX_TEXT_LENGTH,
+    PAGE_SIZES as SMS_PAGE_SIZES,
+    PROVIDER_STATUS_LABELS as SMS_PROVIDER_STATUS_LABELS,
+    STATUS_LABELS as SMS_STATUS_LABELS,
+    SmsService,
+    SmsStore,
+    SmsValidationError,
+    mask_phone as mask_sms_phone,
+    new_client_message_id,
+    render_template_text,
+    sms_segments,
+    status_label as sms_status_label,
+)
 from app.services.mail import (
     MailConnectionError,
     MailError,
@@ -276,6 +296,11 @@ app.config.setdefault(
     or str(PROJECT_ROOT / "instance" / "purchases.db"),
 )
 app.config.setdefault(
+    "SMS_DATABASE",
+    os.getenv("ERP_SMS_DATABASE", "").strip()
+    or str(PROJECT_ROOT / "instance" / "sms.db"),
+)
+app.config.setdefault(
     "SERVICES_DATABASE",
     os.getenv("ERP_SERVICES_DATABASE", "").strip()
     or str(PROJECT_ROOT / "instance" / "services.db"),
@@ -284,6 +309,7 @@ app.config.setdefault(
 # Gunicorn imports this module once per worker. Pay the one required schema
 # verification during worker startup so the first ERP screen never inherits it.
 CatalogDatabase().initialize()
+SmsStore(app.config["SMS_DATABASE"]).verify()
 
 
 LEGACY_FRONTEND_REDIRECTS = {
@@ -1396,6 +1422,8 @@ def customer_detail_page(customer_id):
         mail_threads=mail_threads,
         contacts=contacts, duplicates=duplicates, timeline=timeline,
         can_manage_customers=(not auth_is_enabled() or (current_auth_user() or {}).get("role") == "admin"),
+        customer_sms=(sms_store().list({"customer_id": customer_id, "per_page": 20})["rows"] if sms_permissions().get("view") else []),
+        can_send_sms=sms_permissions().get("send"),
         csrf=csrf_token(),
     )
 
@@ -17274,6 +17302,19 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/customers"],
     },
     {
+        "key": "sms",
+        "label": "SMS",
+        "description": "Сервисные сообщения клиентам через SmsBliss.",
+        "icon": "sms",
+        "href": "/app/sms",
+        "mobile_href": "/app/sms",
+        "position": 9,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/sms", "/api/v1/sms"],
+    },
+    {
         "key": "purchases",
         "label": "Закупки",
         "description": "Запросы клиентов, план закупки и заказы поставщикам.",
@@ -17579,6 +17620,8 @@ def inject_sidebar_navigation():
             "online_count": sum(1 for user in team if user["online"]),
             "users": [user for user in team if user["online"]],
         },
+        "sms_status_label": sms_status_label,
+        "sms_permissions": sms_permissions(),
     }
 
 
@@ -17587,7 +17630,8 @@ SECTION_LABELS = {
     "sales": "Продажи", "analytics": "Аналитика",
     "inventory": "Инвентаризация", "receipts": "Приход",
     "journal": "Журнал", "inbox": "Входящие", "repair": "Ремонты", "customers": "Клиенты",
-    "purchases": "Закупки", "team": "Команда", "services": "Сервисы", "settings": "Настройки",
+    "sms": "SMS", "purchases": "Закупки", "team": "Команда",
+    "services": "Сервисы", "settings": "Настройки",
 }
 
 
@@ -17907,6 +17951,7 @@ JOURNAL_ENTITY_LABELS = {
     "repair": "Ремонт",
     "order": "Заказы", "customer": "Клиенты", "task": "Задачи",
     "purchase": "Закупки", "settings": "Настройки", "user": "Команда",
+    "sms": "SMS",
     "service": "Сервисы",
 }
 JOURNAL_ACTION_LABELS = {
@@ -22750,6 +22795,409 @@ def api_inbox_read(event_id):
 def api_inbox_read_all():
     user = current_auth_user() or {}
     return api_success({"updated": _collaboration_store().mark_all_read(user["id"])})
+
+
+# -----------------------------
+# SMS center
+# -----------------------------
+
+SMS_PERMISSIONS = (
+    "view", "send", "manage_templates", "view_integration", "manage_integration",
+)
+
+
+def sms_permissions(user=None):
+    if not auth_is_enabled():
+        return {permission: True for permission in SMS_PERMISSIONS}
+    user = current_auth_user() if user is None else user
+    role = str((user or {}).get("role") or "")
+    if role == "admin":
+        return {permission: True for permission in SMS_PERMISSIONS}
+    return {
+        "view": role == "employee",
+        "send": role == "employee",
+        "manage_templates": False,
+        "view_integration": False,
+        "manage_integration": False,
+    }
+
+
+def require_sms_permission(permission):
+    if not sms_permissions().get(permission):
+        abort(403)
+
+
+def sms_store():
+    return SmsStore(app.config["SMS_DATABASE"])
+
+
+def sms_client():
+    return SmsBlissClient()
+
+
+def sms_actor():
+    user = current_auth_user() or {}
+    name = " ".join(
+        str(user.get(field) or "").strip() for field in ("first_name", "last_name")
+    ).strip() or str(user.get("email") or "").split("@", 1)[0] or "Система"
+    return {"id": str(user.get("id") or "system"), "name": name}
+
+
+def record_sms_template_audit(template_id, name, action, actor):
+    try:
+        AuditJournal().record(
+            "sms", "template:{}".format(template_id), action,
+            "Шаблон SMS «{}»".format(str(name or "")[:120]),
+            metadata={"template_id": int(template_id)},
+            actor_id=actor["id"], actor_name=actor["name"],
+            status="template", source="ERP",
+        )
+    except Exception:
+        app.logger.exception("SMS template audit failed template_id=%s", template_id)
+
+
+def serialize_sms_message(message, include_text=True):
+    item = dict(message)
+    item["phone_masked"] = mask_sms_phone(item.get("normalized_phone"))
+    item["status_label"] = sms_status_label(item.get("status"), item.get("provider_status"))
+    item["text_preview"] = str(item.get("message_text") or "")[:80]
+    if not include_text:
+        item.pop("message_text", None)
+        item.pop("source_phone", None)
+        item.pop("normalized_phone", None)
+    return item
+
+
+def sms_cached_integration(store, client, can_view):
+    configured = client.configured
+    result = {
+        "configured": configured,
+        "connected": False,
+        "state_label": "Не настроен" if not configured else "Ожидает проверки",
+        "masked_login": client.masked_login if can_view else "",
+        "balance": None,
+        "balance_updated_at": "",
+        "senders": [],
+        "last_success_at": "",
+    }
+    if not can_view:
+        return result
+    balance = store.cache_get("balance")
+    senders = store.cache_get("senders")
+    version = store.cache_get("version")
+    if balance and balance.get("success"):
+        values = (balance.get("value") or {}).get("balance") or []
+        result["balance"] = next((row for row in values if str(row.get("type") or "").upper() == "RUB"), values[0] if values else None)
+        result["balance_updated_at"] = balance.get("updated_at") or ""
+    if senders and senders.get("success"):
+        result["senders"] = [
+            row for row in ((senders.get("value") or {}).get("senders") or [])
+            if str(row.get("status") or "").casefold() in {"active", "default"}
+        ]
+    if configured and version and version.get("success"):
+        result["connected"] = True
+        result["state_label"] = "SmsBliss подключён"
+        result["last_success_at"] = version.get("updated_at") or ""
+    return result
+
+
+def sms_compose_defaults():
+    defaults = {
+        "customer_id": "", "customer_name": "", "phone": "", "order_id": "",
+        "order_number": "", "order_status": "", "amount": "", "repair_id": "",
+        "repair_number": "",
+    }
+    customer_id = request.args.get("customer_id")
+    if str(customer_id or "").isdigit():
+        try:
+            customer = customer_store().get(int(customer_id)) or {}
+        except sqlite3.Error:
+            customer = {}
+        if customer:
+            defaults.update({"customer_id": customer["id"], "customer_name": customer.get("name") or "", "phone": customer.get("phone") or ""})
+    order_id = str(request.args.get("order_id") or "").strip()
+    if order_id:
+        order = None
+        try:
+            order = OrdersSnapshotStore().get(order_id)
+        except sqlite3.Error:
+            order = None
+        if order:
+            defaults.update({
+                "order_id": order_id, "order_number": order.get("number") or order_id,
+                "order_status": order.get("status_name") or order.get("status") or "",
+                "amount": order.get("order_total") or "", "phone": order.get("phone") or defaults["phone"],
+                "customer_name": order.get("customer") or defaults["customer_name"],
+                "customer_id": order.get("customer_id") or defaults["customer_id"],
+            })
+    repair_id = str(request.args.get("repair_id") or "").strip()
+    if repair_id:
+        case = find_api_repair(repair_id, load_repair_cases())
+        if case:
+            defaults.update({
+                "repair_id": repair_id, "repair_number": case.get("repair_number") or repair_id,
+                "phone": case.get("client_phone") or defaults["phone"],
+                "customer_name": case.get("client_name") or defaults["customer_name"],
+                "order_id": case.get("order_id") or defaults["order_id"],
+                "order_number": case.get("order_number") or defaults["order_number"],
+            })
+    return defaults
+
+
+def validated_sms_payload(values):
+    payload = dict(values or {})
+    customer = None
+    operations = []
+    customer_id = str(payload.get("customer_id") or "").strip()
+    if customer_id:
+        if not customer_id.isdigit():
+            raise SmsValidationError("Некорректная связь с клиентом")
+        customer = customer_store().get(int(customer_id))
+        if not customer:
+            raise SmsValidationError("Клиент не найден")
+        payload["customer_id"] = int(customer_id)
+        payload["customer_name"] = customer.get("name") or ""
+        operations = customer_store().operations(int(customer_id), page=1, per_page=200)["rows"]
+    order_id = str(payload.get("order_id") or "").strip()
+    if order_id:
+        operation = next((row for row in operations if row.get("operation_type") == "order" and str(row.get("external_id") or "") == order_id), None)
+        if customer and operation is None:
+            raise SmsValidationError("Заказ не принадлежит выбранному клиенту")
+        if operation is None:
+            try:
+                operation = OrdersSnapshotStore().get(order_id)
+            except sqlite3.Error:
+                operation = None
+        if not operation:
+            raise SmsValidationError("Связанный заказ не найден")
+        payload["order_number"] = operation.get("number") or operation.get("external_id") or order_id
+        payload["order_status"] = operation.get("status_name") or operation.get("status") or ""
+        payload["amount"] = operation.get("order_total") if operation.get("order_total") is not None else operation.get("amount") or ""
+    repair_id = str(payload.get("repair_id") or "").strip()
+    if repair_id:
+        operation = next((row for row in operations if row.get("operation_type") == "repair" and repair_id in {str(row.get("external_id") or ""), str(row.get("local_ref") or "")}), None)
+        case = find_api_repair(repair_id, load_repair_cases())
+        if customer and operation is None:
+            raise SmsValidationError("Ремонт не принадлежит выбранному клиенту")
+        if operation is None and case is None:
+            raise SmsValidationError("Связанный ремонт не найден")
+        payload["repair_number"] = (case or {}).get("repair_number") or (operation or {}).get("external_id") or repair_id
+    return payload
+
+
+def refresh_sms_integration(store, client):
+    checks = (("version", client.version), ("balance", client.balance), ("senders", client.senders))
+    result = {}
+    for key, callback in checks:
+        value = callback()
+        store.cache_set(key, value, True)
+        result[key] = value
+    return result
+
+
+def sms_cache_is_stale(store, key, seconds=300):
+    cached = store.cache_get(key)
+    if not cached or not cached.get("updated_at"):
+        return True
+    try:
+        updated = datetime.strptime(cached["updated_at"][:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    return (datetime.now(timezone.utc) - updated).total_seconds() >= seconds
+
+
+@app.get("/app/sms")
+def sms_page():
+    require_sms_permission("view")
+    store = sms_store()
+    permissions = sms_permissions()
+    listing = store.list(request.args)
+    for row in listing["rows"]:
+        row.update(serialize_sms_message(row))
+    pagination = build_erp_pagination(
+        "sms_page", listing["total"], listing["page"], listing["per_page"],
+        per_page_options=SMS_PAGE_SIZES,
+    )
+    client_error = ""
+    try:
+        client = sms_client()
+    except SmsBlissSecurityError:
+        client = SmsBlissClient(base_url="https://api.smsbliss.net/messages/v2", login="", password="")
+        client_error = "Настроен небезопасный адрес SmsBliss. Интеграция отключена."
+    if permissions["view_integration"] and client.configured and sms_cache_is_stale(store, "balance"):
+        try:
+            refresh_sms_integration(store, client)
+        except SmsBlissError:
+            client_error = "SmsBliss временно недоступен; локальная история продолжает работать."
+    integration = sms_cached_integration(store, client, True)
+    if not permissions["view_integration"]:
+        integration["masked_login"] = ""
+        integration["balance"] = None
+        integration["balance_updated_at"] = ""
+        integration["last_success_at"] = ""
+    if client_error:
+        integration["state_label"] = "Отключено: небезопасный адрес"
+    return render_template(
+        "sms.html", messages=listing["rows"], messages_total=listing["total"],
+        pagination=pagination, summary=store.summary(),
+        templates=store.templates(), active_templates=store.templates(active_only=True),
+        sms_actors=store.actors(),
+        integration=integration, permissions=permissions, filters=request.args,
+        status_labels=SMS_STATUS_LABELS, provider_status_labels=SMS_PROVIDER_STATUS_LABELS,
+        compose=sms_compose_defaults(), client_message_id=new_client_message_id(),
+        csrf=csrf_token(), max_text_length=SMS_MAX_TEXT_LENGTH,
+        integration_error=client_error,
+    )
+
+
+@app.get("/api/v1/sms/messages/<int:message_id>")
+def sms_message_detail(message_id):
+    require_sms_permission("view")
+    store = sms_store()
+    message = store.get(message_id=message_id)
+    if not message:
+        return api_error("SMS_NOT_FOUND", "SMS не найдено.", 404)
+    return api_success({
+        "message": serialize_sms_message(message),
+        "history": [dict(row, status_label=sms_status_label(row.get("status"), row.get("provider_status"))) for row in store.history(message_id)],
+    })
+
+
+@app.post("/api/v1/sms/messages")
+def sms_message_send():
+    require_sms_permission("send")
+    try:
+        payload = validated_sms_payload(request.get_json(silent=True) or {})
+    except (SmsValidationError, sqlite3.Error) as error:
+        return api_error("SMS_INVALID", str(error), 422)
+    actor = sms_actor()
+    template_id = payload.get("template_id")
+    if template_id:
+        template = next((row for row in sms_store().templates(active_only=True) if str(row["id"]) == str(template_id)), None)
+        if not template:
+            return api_error("SMS_TEMPLATE_INVALID", "Шаблон недоступен.", 422)
+        try:
+            payload["text"] = render_template_text(
+                template["message_text"],
+                {key: payload.get(key) for key in (
+                    "client_name", "order_number", "order_status", "amount", "repair_number",
+                )},
+            )
+        except SmsValidationError as error:
+            return api_error("SMS_INVALID", str(error), 422)
+    try:
+        client = sms_client()
+        if not client.configured:
+            return api_error("SMS_NOT_CONFIGURED", "SmsBliss не настроен. Укажите SMSBLISS_LOGIN и SMSBLISS_PASSWORD.", 503)
+        if client.configured:
+            cached = sms_cached_integration(sms_store(), client, True)
+            active_senders = {str(row.get("name") or "") for row in cached["senders"]}
+            if active_senders and str(payload.get("sender") or "") not in active_senders:
+                return api_error("SMS_SENDER_INVALID", "Выберите доступную подпись отправителя.", 422)
+        message, submitted = SmsService(sms_store(), client, AuditJournal()).send(payload, actor)
+    except (SmsValidationError, sqlite3.IntegrityError) as error:
+        return api_error("SMS_INVALID", str(error), 422)
+    except SmsBlissSecurityError:
+        return api_error("SMS_INSECURE_ENDPOINT", "Отправка заблокирована: SmsBliss должен использовать HTTPS.", 503)
+    return api_success(serialize_sms_message(message), duplicate=not submitted)
+
+
+@app.post("/api/v1/sms/statuses/sync")
+def sms_status_sync_api():
+    require_sms_permission("send")
+    try:
+        result = SmsService(sms_store(), sms_client()).sync_statuses(sms_actor())
+    except SmsBlissNotConfigured:
+        return api_error("SMS_NOT_CONFIGURED", "SmsBliss не настроен.", 503)
+    except SmsBlissError:
+        return api_error("SMS_PROVIDER_UNAVAILABLE", "SmsBliss временно недоступен.", 503)
+    return api_success(result)
+
+
+@app.post("/api/v1/sms/integration/check")
+def sms_integration_check_api():
+    require_sms_permission("manage_integration")
+    try:
+        refresh_sms_integration(sms_store(), sms_client())
+    except SmsBlissNotConfigured:
+        return api_error("SMS_NOT_CONFIGURED", "Укажите SMSBLISS_LOGIN и SMSBLISS_PASSWORD.", 503)
+    except SmsBlissSecurityError:
+        return api_error("SMS_INSECURE_ENDPOINT", "Разрешён только HTTPS endpoint SmsBliss.", 503)
+    except SmsBlissError:
+        return api_error("SMS_PROVIDER_UNAVAILABLE", "SmsBliss временно недоступен.", 503)
+    return api_success(sms_cached_integration(sms_store(), sms_client(), True))
+
+
+@app.get("/api/v1/sms/customers")
+def sms_customer_search_api():
+    require_sms_permission("send")
+    try:
+        rows = customer_store().list(query=request.args.get("q", ""), per_page=20)["rows"]
+    except sqlite3.Error:
+        return api_error("CUSTOMERS_UNAVAILABLE", "Поиск клиентов временно недоступен.", 503)
+    return api_success([{"id": row["id"], "name": row.get("name") or "Без имени", "phone": row.get("phone") or ""} for row in rows])
+
+
+@app.get("/api/v1/sms/customers/<int:customer_id>/relations")
+def sms_customer_relations_api(customer_id):
+    require_sms_permission("send")
+    try:
+        customer = customer_store().get(customer_id)
+        if not customer:
+            return api_error("CUSTOMER_NOT_FOUND", "Клиент не найден.", 404)
+        operations = customer_store().operations(customer_id, page=1, per_page=200)["rows"]
+    except sqlite3.Error:
+        return api_error("CUSTOMERS_UNAVAILABLE", "Связи клиента временно недоступны.", 503)
+    return api_success({
+        "orders": [{"id": row["external_id"], "number": row["external_id"], "status": row.get("status") or "", "amount": row.get("amount") or ""} for row in operations if row.get("operation_type") == "order"],
+        "repairs": [{"id": row.get("local_ref") or row["external_id"], "number": row["external_id"]} for row in operations if row.get("operation_type") == "repair"],
+    })
+
+
+@app.post("/api/v1/sms/templates")
+def sms_template_create_api():
+    require_sms_permission("manage_templates")
+    payload = request.get_json(silent=True) or {}
+    try:
+        actor = sms_actor()
+        template = sms_store().save_template(None, payload.get("name"), payload.get("text"), payload.get("active", True), actor)
+    except (SmsValidationError, sqlite3.IntegrityError) as error:
+        return api_error("SMS_TEMPLATE_INVALID", str(error), 422)
+    record_sms_template_audit(template["id"], template["name"], "created", actor)
+    return api_success(template, status=201)
+
+
+@app.route("/api/v1/sms/templates/<int:template_id>", methods=["PUT", "DELETE"])
+def sms_template_item_api(template_id):
+    require_sms_permission("manage_templates")
+    store = sms_store()
+    if request.method == "DELETE":
+        existing = next((row for row in store.templates() if row["id"] == template_id), None)
+        if not existing:
+            return api_error("SMS_TEMPLATE_NOT_FOUND", "Шаблон не найден.", 404)
+        deleted = store.delete_template(template_id)
+        record_sms_template_audit(template_id, existing["name"], "deleted" if deleted else "updated", sms_actor())
+        return api_success({"id": template_id, "deleted": deleted, "deactivated": not deleted})
+    payload = request.get_json(silent=True) or {}
+    try:
+        actor = sms_actor()
+        template = store.save_template(template_id, payload.get("name"), payload.get("text"), payload.get("active", True), actor)
+    except (SmsValidationError, sqlite3.IntegrityError) as error:
+        return api_error("SMS_TEMPLATE_INVALID", str(error), 422)
+    record_sms_template_audit(template["id"], template["name"], "updated", actor)
+    return api_success(template)
+
+
+@app.cli.command("sms-sync-statuses")
+def sms_sync_statuses_command():
+    """Refresh non-terminal SmsBliss statuses without sending messages."""
+    try:
+        result = SmsService(sms_store(), sms_client()).sync_statuses()
+    except SmsBlissNotConfigured as error:
+        raise click.ClickException(str(error))
+    except SmsBlissError:
+        raise click.ClickException("SmsBliss is temporarily unavailable")
+    click.echo("checked={} updated={}".format(result["checked"], result["updated"]))
 
 
 def _mail_store():

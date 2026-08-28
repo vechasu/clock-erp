@@ -485,7 +485,7 @@ class AuditJournalUiTest(unittest.TestCase):
             labels = [item["label"] for item in web.get_navigation_items()]
         self.assertEqual(labels, [
             "Заказы", "Задачи", "Почта", "Товары", "Продажи", "Аналитика", "Инвентаризация", "Приход",
-            "Журнал", "Входящие", "Ремонт", "Клиенты", "Закупки", "Команда", "Сервисы", "Настройки",
+            "Журнал", "Входящие", "Ремонт", "Клиенты", "SMS", "Закупки", "Команда", "Сервисы", "Настройки",
         ])
         self.assertEqual(self.client.post("/api/journal").status_code, 405)
         self.assertEqual(self.client.delete("/api/journal/1").status_code, 405)

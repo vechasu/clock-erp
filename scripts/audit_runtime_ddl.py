@@ -192,6 +192,7 @@ def worker(worker_id, root, queue):
         os.environ["CATALOG_DATABASE_PATH"] = str(root / "catalog.db")
         os.environ["ORDERS_DATABASE_PATH"] = str(root / "orders.db")
         os.environ["ERP_AUTH_DATABASE"] = str(root / "auth.db")
+        os.environ["ERP_SMS_DATABASE"] = str(root / "sms.db")
         os.environ["ERP_SESSION_COOKIE_SECURE"] = "0"
         sqlite3.connect = traced_connect
         socket.socket.connect = blocked_connect
@@ -265,7 +266,7 @@ def parse_arguments():
 def main():
     arguments = parse_arguments()
     root = Path(arguments.copy_root).resolve()
-    required = [root / name for name in ("catalog.db", "orders.db", "auth.db")]
+    required = [root / name for name in ("catalog.db", "orders.db", "auth.db", "sms.db")]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise SystemExit("Missing rehearsal copies: {}".format(", ".join(missing)))

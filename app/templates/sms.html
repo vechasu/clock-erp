@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Vechasu ERP — Центр SMS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/sms.css') }}">
+</head>
+<body class="sms-page" data-compose-open="{{ 1 if request.args.get('compose') == '1' else 0 }}">
+{% from "_pagination.html" import render_erp_pagination %}
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="sms-main" id="main-content" tabindex="-1">
+        <div class="sms-shell">
+            <header class="sms-header erp-workspace-header">
+                <div class="erp-workspace-heading">
+                    <h1>Центр SMS</h1>
+                    <p>Ручные сервисные сообщения клиентам через защищённый сервер ERP.</p>
+                </div>
+                {% if permissions.send %}<button class="sms-button primary" type="button" data-open-compose>Новое SMS</button>{% endif %}
+            </header>
+
+            <section class="sms-kpis" aria-label="Сводка SMS">
+                <article><span>Подключение</span><strong class="sms-connection {{ 'ok' if integration.connected else 'muted' }}"><i></i>{{ integration.state_label }}</strong></article>
+                {% if permissions.view_integration %}<article><span>Баланс</span><strong>{% if integration.balance %}{{ integration.balance.balance }} {{ integration.balance.type }}{% else %}—{% endif %}</strong><small>{{ integration.balance_updated_at[:16].replace('T',' ') if integration.balance_updated_at else 'Не обновлялся' }}</small></article>{% endif %}
+                <article><span>Отправлено сегодня</span><strong>{{ summary.sent }}</strong></article>
+                <article><span>Доставлено сегодня</span><strong class="positive">{{ summary.delivered }}</strong></article>
+                <article><span>С ошибкой</span><strong class="negative">{{ summary.failed }}</strong></article>
+            </section>
+
+            {% if integration_error %}<div class="sms-alert error" role="alert" aria-atomic="true">{{ integration_error }}</div>{% endif %}
+            {% if not integration.configured %}<div class="sms-alert" role="status" aria-atomic="true"><strong>SmsBliss не настроен.</strong> Для активации нужны серверные переменные <code>SMSBLISS_LOGIN</code>, <code>SMSBLISS_PASSWORD</code>, <code>SMSBLISS_API_BASE_URL</code> и <code>SMSBLISS_STATUS_QUEUE_NAME</code>. История и шаблоны доступны; отправка останется безопасно заблокированной.</div>{% endif %}
+            <div class="sms-alert consent" role="note">Рекламные сообщения нельзя отправлять без зафиксированного согласия клиента.</div>
+
+            <div class="sms-tabs" role="tablist" aria-label="SMS">
+                <button class="active" type="button" role="tab" aria-selected="true" data-sms-tab="messages">Сообщения <span>{{ messages_total }}</span></button>
+                <button type="button" role="tab" aria-selected="false" data-sms-tab="templates">Шаблоны <span>{{ templates|length }}</span></button>
+                {% if permissions.view_integration %}<button type="button" role="tab" aria-selected="false" data-sms-tab="integration">Интеграция</button>{% endif %}
+            </div>
+
+            <section data-sms-panel="messages">
+                <form class="sms-filters" method="get" id="smsFilters">
+                    <div class="sms-search">
+                        <input type="search" name="q" value="{{ filters.get('q','') }}" placeholder="Клиент, телефон, заказ или текст" aria-label="Поиск SMS" autocomplete="off">
+                        {% if filters.get('q') %}<a href="{{ url_for('sms_page') }}" aria-label="Очистить поиск">×</a>{% endif %}
+                    </div>
+                    <select name="status" aria-label="Статус"><option value="">Все статусы</option>{% for value,label in status_labels.items() %}<option value="{{ value }}"{% if filters.get('status')==value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                    <select name="actor" aria-label="Сотрудник"><option value="">Все сотрудники</option>{% for actor in sms_actors %}<option value="{{ actor.created_by_id }}"{% if filters.get('actor')==actor.created_by_id %} selected{% endif %}>{{ actor.created_by_name }}</option>{% endfor %}</select>
+                    <select name="relation" aria-label="Связанный объект"><option value="">Все связи</option><option value="customer"{% if filters.get('relation')=='customer' %} selected{% endif %}>Клиенты</option><option value="order"{% if filters.get('relation')=='order' %} selected{% endif %}>Заказы</option><option value="repair"{% if filters.get('relation')=='repair' %} selected{% endif %}>Ремонты</option><option value="none"{% if filters.get('relation')=='none' %} selected{% endif %}>Без связи</option></select>
+                    <label>С <input type="date" name="date_from" value="{{ filters.get('date_from','') }}"></label>
+                    <label>По <input type="date" name="date_to" value="{{ filters.get('date_to','') }}"></label>
+                    <button class="sms-button" type="submit">Применить</button>
+                    {% if permissions.send %}<button class="sms-button" type="button" data-sync-statuses>Обновить статусы</button>{% endif %}
+                </form>
+                <div class="sms-table-wrap">
+                    <table class="sms-table" aria-label="История SMS">
+                        <thead><tr><th scope="col">Клиент / получатель</th><th scope="col">Телефон</th><th scope="col">Текст</th><th scope="col">Связь</th><th scope="col">Дата и время</th><th scope="col">Сотрудник</th><th scope="col">SMS</th><th scope="col">Стоимость</th><th scope="col">Статус</th></tr></thead>
+                        <tbody>{% for message in messages %}<tr tabindex="0" data-message-id="{{ message.id }}" aria-label="Открыть SMS">
+                            <td><strong>{{ message.customer_name or 'Получатель' }}</strong></td><td>{{ message.phone_masked }}</td><td class="sms-preview">{{ message.text_preview }}{% if message.message_text|length>80 %}…{% endif %}</td>
+                            <td>{% if message.order_number %}<a href="/order/{{ message.order_id }}">Заказ №{{ message.order_number }}</a>{% elif message.repair_number %}<a href="/app/repairs?repair_id={{ message.repair_id }}">Ремонт №{{ message.repair_number }}</a>{% elif message.customer_id %}<a href="/app/customers/{{ message.customer_id }}">Клиент</a>{% else %}—{% endif %}</td>
+                            <td><time>{{ message.created_at[:16].replace('T',' ') }}</time></td><td>{{ message.created_by_name }}</td><td>{{ message.segments or '—' }}</td><td>{{ (message.cost ~ ' ' ~ (message.currency or '')) if message.cost is not none else '—' }}</td><td><span class="sms-status is-{{ message.status }}">{{ message.status_label }}</span></td>
+                        </tr>{% else %}<tr><td colspan="9"><div class="sms-empty" role="status" aria-atomic="true"><strong>Сообщений пока нет</strong><span>Создайте первое сервисное SMS или измените фильтры.</span></div></td></tr>{% endfor %}</tbody>
+                    </table>
+                </div>
+                {% if pagination %}{{ render_erp_pagination(pagination,'Страницы SMS') }}{% endif %}
+            </section>
+
+            <section data-sms-panel="templates" hidden>
+                <div class="sms-section-head"><div><h2>Шаблоны</h2><p>Переменные: <code>{client_name}</code>, <code>{order_number}</code>, <code>{order_status}</code>, <code>{amount}</code>, <code>{repair_number}</code>.</p></div>{% if permissions.manage_templates %}<button class="sms-button" type="button" data-new-template>Новый шаблон</button>{% endif %}</div>
+                <div class="sms-template-grid">{% for template in templates %}<article class="sms-template-card {{ 'inactive' if not template.active }}" data-template-card data-id="{{ template.id }}" data-name="{{ template.name|e }}" data-text="{{ template.message_text|e }}" data-active="{{ template.active }}"><header><strong>{{ template.name }}</strong><span>{{ 'Активен' if template.active else 'Отключён' }}</span></header><p>{{ template.message_text }}</p><footer><small>Использован: {{ template.use_count }}</small>{% if permissions.manage_templates %}<button type="button" data-edit-template>Изменить</button><button type="button" data-delete-template>{{ 'Отключить' if template.use_count else 'Удалить' }}</button>{% endif %}</footer></article>{% endfor %}</div>
+            </section>
+
+            {% if permissions.view_integration %}<section data-sms-panel="integration" hidden>
+                <div class="sms-integration-card"><div><span>Состояние</span><strong>{{ integration.state_label }}</strong></div><div><span>Логин</span><strong>{{ integration.masked_login }}</strong></div><div><span>HTTPS API</span><strong>{{ 'Доступен' if integration.connected else 'Не проверен' }}</strong></div><div><span>Последняя связь</span><strong>{{ integration.last_success_at[:16].replace('T',' ') if integration.last_success_at else '—' }}</strong></div><div><span>Подписи</span><strong>{{ integration.senders|map(attribute='name')|join(', ') or '—' }}</strong></div>{% if permissions.manage_integration %}<button class="sms-button" type="button" data-check-integration>Проверить подключение</button>{% endif %}</div>
+            </section>{% endif %}
+        </div>
+    </main>
+</div>
+
+<div class="sms-backdrop" data-sms-backdrop hidden></div>
+<dialog class="sms-dialog sms-compose" data-compose-dialog aria-labelledby="smsComposeTitle">
+    <form method="dialog" class="sms-dialog-head"><div><h2 id="smsComposeTitle">Новое SMS</h2><p>Сообщение отправится только после одного подтверждения.</p></div><button aria-label="Закрыть">×</button></form>
+    <form id="smsComposeForm" class="sms-compose-form">
+        <input type="hidden" name="client_message_id" value="{{ client_message_id }}">
+        <input type="hidden" name="customer_id" value="{{ compose.customer_id }}"><input type="hidden" name="customer_name" value="{{ compose.customer_name }}"><input type="hidden" name="order_id" value="{{ compose.order_id }}"><input type="hidden" name="order_number" value="{{ compose.order_number }}"><input type="hidden" name="repair_id" value="{{ compose.repair_id }}"><input type="hidden" name="repair_number" value="{{ compose.repair_number }}">
+        <section><h3>Получатель</h3><label>Найти клиента<input type="search" name="customer_search" value="{{ compose.customer_name }}" placeholder="Имя или телефон" autocomplete="off"><div class="sms-customer-results" data-customer-results hidden></div></label><label>Телефон<input type="tel" name="phone" value="{{ compose.phone }}" placeholder="+7 900 000-00-00" required autocomplete="tel"></label><div class="sms-compose-row"><label>Связанный заказ<select name="order_relation"><option value="{{ compose.order_id }}" data-number="{{ compose.order_number }}" data-status="{{ compose.order_status }}" data-amount="{{ compose.amount }}">{{ ('Заказ №' ~ compose.order_number) if compose.order_number else 'Без заказа' }}</option></select></label><label>Связанный ремонт<select name="repair_relation"><option value="{{ compose.repair_id }}" data-number="{{ compose.repair_number }}">{{ ('Ремонт №' ~ compose.repair_number) if compose.repair_number else 'Без ремонта' }}</option></select></label></div></section>
+        <section><h3>Сообщение</h3><div class="sms-compose-row"><label>Шаблон<select name="template_id"><option value="">Без шаблона</option>{% for template in active_templates %}<option value="{{ template.id }}" data-body="{{ template.message_text|e }}">{{ template.name }}</option>{% endfor %}</select></label><label>Подпись<select name="sender"><option value="">Без подписи</option>{% for sender in integration.senders %}<option value="{{ sender.name }}">{{ sender.name }}</option>{% endfor %}</select></label></div><label>Текст<textarea name="text" maxlength="{{ max_text_length }}" rows="7" required></textarea></label><div class="sms-counter"><span data-character-count>0 символов</span><span data-segment-count>0 SMS · GSM-7</span></div><div class="sms-long-warning" data-long-warning hidden>Длинное сообщение будет тарифицироваться несколькими SMS.</div></section>
+        <section><h3>Предпросмотр</h3><div class="sms-phone-preview"><strong>{{ compose.customer_name or 'Получатель' }}</strong><p data-message-preview>Текст сообщения появится здесь.</p></div><label class="sms-schedule"><input type="checkbox" data-schedule-toggle> Отложить отправку</label><label data-schedule-field hidden>Дата и время<input type="datetime-local" name="scheduled_at"></label></section>
+        <p class="sms-form-error" role="alert" aria-atomic="true" data-compose-error hidden></p>
+        <footer><button class="sms-button" type="button" data-close-compose>Отмена</button><button class="sms-button primary" type="submit" data-send-sms{% if not integration.configured %} disabled title="SmsBliss не настроен"{% endif %}>{{ 'Отправить сейчас' if integration.configured else 'SmsBliss не настроен' }}</button></footer>
+    </form>
+</dialog>
+
+<dialog class="sms-dialog sms-detail" data-detail-dialog aria-labelledby="smsDetailTitle"><form method="dialog" class="sms-dialog-head"><h2 id="smsDetailTitle">Карточка SMS</h2><button aria-label="Закрыть">×</button></form><div data-detail-content class="sms-detail-content"></div></dialog>
+<dialog class="sms-dialog sms-template-dialog" data-template-dialog aria-labelledby="smsTemplateTitle"><form method="dialog" class="sms-dialog-head"><h2 id="smsTemplateTitle">Шаблон SMS</h2><button aria-label="Закрыть">×</button></form><form data-template-form><input type="hidden" name="id"><label>Название<input name="name" maxlength="120" required></label><label>Текст<textarea name="text" maxlength="{{ max_text_length }}" rows="7" required></textarea></label><label><input type="checkbox" name="active" checked> Активен</label><p class="sms-form-error" role="alert" aria-atomic="true" data-template-error hidden></p><footer><button class="sms-button" type="button" data-close-template>Отмена</button><button class="sms-button primary">Сохранить</button></footer></form></dialog>
+<div class="sms-toast" role="status" aria-live="polite" aria-atomic="true" data-sms-toast hidden></div>
+<script>window.SMS_BOOTSTRAP={csrf:{{ csrf|tojson }},compose:{{ compose|tojson }}};</script>
+<script src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sms.js') }}"></script>
+</body></html>

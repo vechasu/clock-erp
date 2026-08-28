@@ -138,6 +138,14 @@ jobs:
       - name: Product lifecycle Playwright regression
         run: pnpm run test:e2e:products
 
+      - name: SMS responsive Playwright smoke
+        env:
+          ERP_TEST_MODE: "1"
+          ERP_AUTH_ENABLED: "0"
+          SMSBLISS_LOGIN: ""
+          SMSBLISS_PASSWORD: ""
+        run: pnpm exec playwright test e2e/sms.spec.ts --project=desktop-1440
+
       - name: Playwright/Axe accessibility gate
         env:
           CI: "true"
