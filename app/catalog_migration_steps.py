@@ -966,7 +966,7 @@ CREATE INDEX IF NOT EXISTS idx_erp_inventory_items_product
 CREATE TABLE IF NOT EXISTS erp_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK (
-        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair')
+        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair', 'order', 'customer', 'task', 'purchase', 'settings', 'user')
     ),
     entity_id TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -1002,7 +1002,7 @@ def apply_fresh_catalog_schema(connection, ddl_observer=None):
     if ddl_observer is not None:
         ddl_observer("CATALOG_SCHEMA_SQL")
     connection.executescript(CATALOG_SCHEMA_SQL)
-    _apply_audit_entity_constraints(connection)
+    apply_audit_identity_constraints(connection)
     _apply_excel_receipt_constraints(connection)
     _apply_excel_cardinality_columns(connection)
     _apply_excel_import_draft_schema(connection)
@@ -1023,7 +1023,7 @@ def migration_source_checksum():
     """Bind the immutable migration checksum to every schema-changing step."""
     steps = [
         apply_fresh_catalog_schema,
-        _apply_audit_entity_constraints,
+        apply_audit_identity_constraints,
         _apply_excel_receipt_constraints,
         _apply_excel_cardinality_columns,
         _apply_excel_import_draft_schema,
@@ -1046,12 +1046,14 @@ def migration_source_checksum():
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def _apply_audit_entity_constraints(connection):
+def apply_audit_identity_constraints(connection):
     row = connection.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table' "
         "AND name = 'erp_audit_events'"
     ).fetchone()
-    if row is None or "'repair'" in (row["sql"] or ""):
+    # The legacy table already contains the word 'user' in actor_type.
+    # Detect a value that only exists in the expanded entity_type constraint.
+    if row is None or "'settings'" in (row["sql"] or ""):
         return
     connection.commit()
     connection.execute("PRAGMA foreign_keys = OFF")
@@ -1062,7 +1064,8 @@ def _apply_audit_entity_constraints(connection):
             "CREATE TABLE erp_audit_events ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "entity_type TEXT NOT NULL CHECK (entity_type IN "
-            "('product','sale','receipt','brand','category','inventory','repair')), "
+            "('product','sale','receipt','brand','category','inventory','repair',"
+            "'order','customer','task','purchase','settings','user')), "
             "entity_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT, "
             "actor_type TEXT NOT NULL DEFAULT 'user' CHECK (actor_type IN "
             "('user','system','external')), "

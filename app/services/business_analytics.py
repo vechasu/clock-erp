@@ -72,7 +72,7 @@ SECTIONS = (
 )
 
 SOURCE_LABELS = {
-    "tictactoy": "Tictactoy",
+    "tictactoy": "TicTacToy",
     "wildberries": "Wildberries",
     "amazon": "Amazon",
     "ziiiro": "Ziro",
@@ -105,12 +105,18 @@ def _change(current, previous):
         }
     absolute = float(current or 0) - float(previous or 0)
     percent = None if not previous else absolute / float(previous) * 100
+    label = "Без изменений"
+    if previous == 0 and current > 0:
+        label = "Новый показатель"
+    elif percent is not None:
+        label = "{:+.1f}%".format(percent)
     return {
         "absolute": absolute,
         "absolute_display": _number(absolute),
         "percent": percent,
         "percent_display": "—" if percent is None else "{:+.1f}%".format(percent),
         "direction": "up" if absolute > 0 else "down" if absolute < 0 else "flat",
+        "label": label,
     }
 
 
@@ -147,10 +153,10 @@ def parse_filters(arguments, today=None):
         "stock_state": choice("stock_state", {"all", "out", "positive"}, "all"),
         "recommendation": choice("recommendation", {"all", "urgent", "plan", "ordered", "stale", "enough", "insufficient"}, "all"),
         "confidence": choice("confidence", {"all", "high", "medium", "low"}, "all"),
-        "sort": choice("sort", {"urgency", "demand", "stock", "age", "name"}, "urgency"),
+        "sort": choice("sort", {"urgency", "demand", "stock", "age", "name", "sales", "units", "revenue", "change", "last_sale"}, "urgency"),
         "page": max(1, bounded_int("page", 1)),
         "per_page": bounded_int("per_page", 50, STOCK_PAGE_SIZES),
-        "signal_type": choice("signal_type", {"all", "stockout", "low_cover", "stale", "sales_decline", "inventory"}, "all"),
+        "signal_type": choice("signal_type", {"all", "stockout", "low_cover", "stale", "sales_decline"}, "all"),
         "urgency": choice("urgency", {"all", "critical", "high", "medium", "low"}, "all"),
     }
 
@@ -219,6 +225,8 @@ class BusinessAnalytics(object):
             "average_order": revenue / sales if revenue is not None and sales else (0 if not sales else None),
             "average_unit": revenue / units if revenue is not None and units else (0 if not units else None),
             "discounts": float(row["discounts"] or 0),
+            "revenue_complete": not int(row["unknown_prices"] or 0),
+            "unknown_price_lines": int(row["unknown_prices"] or 0),
         }
 
     @staticmethod
@@ -232,7 +240,7 @@ class BusinessAnalytics(object):
         previous["to"] = previous_end.isoformat()
         return previous
 
-    def _breakdown(self, connection, filters, expression, limit=30):
+    def _breakdown(self, connection, filters, expression, limit=30, revenue_complete=None):
         where, values = self._sale_where(filters)
         rows = connection.execute(
             "SELECT " + expression + " label, count(DISTINCT CASE WHEN i.quantity-i.returned_quantity>0 THEN s.id END) sales, "
@@ -243,14 +251,20 @@ class BusinessAnalytics(object):
             + " ORDER BY revenue DESC, sales DESC LIMIT ?",
             values + [int(limit)],
         ).fetchall()
-        complete = all(not int(row["unknown_prices"] or 0) for row in rows)
+        complete = (all(not int(row["unknown_prices"] or 0) for row in rows)
+                    if revenue_complete is None else bool(revenue_complete))
         total = sum(float(row["revenue"] or 0) for row in rows) if complete else None
+        total_sales = sum(int(row["sales"] or 0) for row in rows)
+        total_units = sum(float(row["units"] or 0) for row in rows)
         return [{
             "label": str(row["label"] or "Неизвестно"),
+            "display_label": SOURCE_LABELS.get(str(row["label"] or "").casefold(), str(row["label"] or "Неизвестно")),
             "sales": int(row["sales"] or 0),
             "units": float(row["units"] or 0),
-            "revenue": None if int(row["unknown_prices"] or 0) else float(row["revenue"] or 0),
+            "revenue": float(row["revenue"] or 0) if complete else None,
             "share": float(row["revenue"] or 0) / total * 100 if total else None,
+            "sales_share": int(row["sales"] or 0) / float(total_sales) * 100 if total_sales else 0,
+            "units_share": float(row["units"] or 0) / total_units * 100 if total_units else 0,
         } for row in rows]
 
     def _catalog_options(self, connection):
@@ -266,6 +280,11 @@ class BusinessAnalytics(object):
 
     def context(self, section, filters):
         section = section if section in dict(SECTIONS) else "summary"
+        filters = dict(filters)
+        if section == "products" and filters["sort"] not in {"name", "sales", "units", "revenue", "change", "last_sale"}:
+            filters["sort"] = "sales"
+        if section == "stock" and filters["sort"] not in {"urgency", "demand", "stock", "age", "name"}:
+            filters["sort"] = "urgency"
         with self.database.connect() as connection:
             current = self._metrics(connection, filters)
             previous_filters = self._comparison_filters(filters)
@@ -286,12 +305,12 @@ class BusinessAnalytics(object):
                 "metric_registry": METRIC_REGISTRY,
             }
             if section in ("summary", "sales"):
-                result["daily"] = self._breakdown(connection, filters, "date(s.created_at)", 800)
+                result["daily"] = self._breakdown(connection, filters, "date(s.created_at)", 800, current["revenue_complete"])
                 result["daily_max"] = max(
                     [row["revenue"] for row in result["daily"] if row["revenue"] is not None] or [0]
                 )
-                result["channels"] = self._breakdown(connection, filters, "lower(s.source)", 20)
-                result["brands_rows"] = self._breakdown(connection, filters, "coalesce(b.name,p.excel_brand,'Без бренда')", 20)
+                result["channels"] = self._breakdown(connection, filters, "lower(s.source)", 20, current["revenue_complete"])
+                result["brands_rows"] = self._breakdown(connection, filters, "coalesce(b.name,p.excel_brand,'Без бренда')", 20, current["revenue_complete"])
                 result["forecast"] = None
                 today = date.today()
                 end = _date(filters["to"], today)
@@ -302,9 +321,16 @@ class BusinessAnalytics(object):
                     result["forecast"] = current["revenue"] / elapsed * month_end.day
                 result["attention"] = self._attention(connection, filters, current, previous)
             elif section == "products":
-                result["rows"] = self._product_rows(connection, filters)
+                result.update(self._product_rows(connection, filters, current["revenue_complete"]))
             elif section == "channels":
-                result["rows"] = self._breakdown(connection, filters, "lower(s.source)", 20)
+                rows = self._breakdown(connection, filters, "lower(s.source)", 100, current["revenue_complete"])
+                previous_rows = {row["label"]: row for row in self._breakdown(connection, previous_filters, "lower(s.source)", 100, previous["revenue_complete"])}
+                for row in rows:
+                    before = previous_rows.get(row["label"], {"sales": 0, "units": 0, "revenue": 0 if current["revenue_complete"] and previous["revenue_complete"] else None})
+                    row["sales_change"] = _change(row["sales"], before["sales"])
+                    row["units_change"] = _change(row["units"], before["units"])
+                    row["revenue_change"] = _change(row["revenue"], before["revenue"])
+                result["rows"] = rows
             elif section == "stock":
                 stock = self._stock_rows(connection, filters)
                 result.update(stock)
@@ -314,6 +340,9 @@ class BusinessAnalytics(object):
                 result["rows"] = [dict(row) for row in connection.execute(
                     "SELECT erp_status label,count(*) value FROM erp_order_statuses GROUP BY erp_status ORDER BY value DESC"
                 ).fetchall()]
+                order_labels = {"unconfirmed": "Не подтверждён", "confirmed": "Подтверждён", "assembled": "Собран"}
+                for row in result["rows"]:
+                    row["display_label"] = order_labels.get(row["label"], row["label"])
                 result["source_note"] = "Показаны только фактические локальные этапы ERP: не подтверждён, подтверждён, собран. Оплата, отправка и доставка не моделируются."
             elif section == "profit":
                 coverage = connection.execute(
@@ -329,17 +358,48 @@ class BusinessAnalytics(object):
                 )
             return result
 
-    def _product_rows(self, connection, filters):
+    def _product_rows(self, connection, filters, revenue_complete):
         where, values = self._sale_where(filters)
-        return [dict(row) for row in connection.execute(
-            "SELECT p.id, p.excel_name_raw name, coalesce(b.name,p.excel_brand,'Без бренда') brand, "
+        if filters["q"]:
+            where += " AND (p.excel_name_raw LIKE ? OR coalesce(p.excel_article,'') LIKE ? OR coalesce(b.name,p.excel_brand,'') LIKE ?)"
+            pattern = "%{}%".format(filters["q"])
+            values += [pattern, pattern, pattern]
+        rows = [dict(row) for row in connection.execute(
+            "SELECT p.id, p.excel_name_raw name, coalesce(p.excel_article,'') article, coalesce(p.bitrix_thumbnail_url,p.bitrix_primary_image_url,'') image_url, coalesce(b.name,p.excel_brand,'Без бренда') brand, "
             "coalesce(c.name,p.excel_category,'Без категории') category, coalesce(m.name,p.model,'—') model, "
-            "p.stock, count(DISTINCT s.id) sales, coalesce(sum(max(i.quantity-i.returned_quantity,0)),0) units, "
+            "p.stock, count(DISTINCT CASE WHEN i.quantity-i.returned_quantity>0 THEN s.id END) sales, coalesce(sum(max(i.quantity-i.returned_quantity,0)),0) units, "
             "coalesce(sum(max(i.quantity-i.returned_quantity,0)*coalesce(i.unit_price,0)),0) revenue, "
             "sum(CASE WHEN i.quantity-i.returned_quantity>0 AND i.unit_price IS NULL THEN 1 ELSE 0 END) unknown_prices, max(s.created_at) last_sale "
-            + self._joins() + " WHERE " + where + " GROUP BY p.id ORDER BY revenue DESC LIMIT 200",
+            + self._joins() + " WHERE " + where + " GROUP BY p.id",
             values,
         ).fetchall()]
+        previous_filters = self._comparison_filters(filters)
+        previous_where, previous_values = self._sale_where(previous_filters)
+        previous_rows = {int(row["id"]): dict(row) for row in connection.execute(
+            "SELECT p.id,count(DISTINCT CASE WHEN i.quantity-i.returned_quantity>0 THEN s.id END) sales,coalesce(sum(max(i.quantity-i.returned_quantity,0)),0) units,"
+            "coalesce(sum(max(i.quantity-i.returned_quantity,0)*coalesce(i.unit_price,0)),0) revenue "
+            + self._joins() + " WHERE " + previous_where + " GROUP BY p.id", previous_values).fetchall()}
+        total_sales = sum(int(row["sales"] or 0) for row in rows)
+        total_units = sum(float(row["units"] or 0) for row in rows)
+        for row in rows:
+            before = previous_rows.get(int(row["id"]), {"sales": 0, "units": 0, "revenue": 0})
+            row["revenue"] = float(row["revenue"] or 0) if revenue_complete else None
+            row["sales_share"] = row["sales"] / float(total_sales) * 100 if total_sales else 0
+            row["units_share"] = row["units"] / total_units * 100 if total_units else 0
+            row["sales_change"] = _change(row["sales"], before["sales"])
+            row["units_change"] = _change(row["units"], before["units"])
+            row["revenue_change"] = _change(row["revenue"], before["revenue"] if revenue_complete else None)
+        reverse = filters["sort"] != "name"
+        keys = {"name": lambda item: (item["name"] or "").casefold(), "sales": lambda item: item["sales"],
+                "units": lambda item: item["units"], "revenue": lambda item: item["revenue"] or 0,
+                "change": lambda item: item["sales_change"]["absolute"] or 0,
+                "last_sale": lambda item: item["last_sale"] or ""}
+        rows.sort(key=keys.get(filters["sort"], keys["sales"]), reverse=reverse)
+        total = len(rows)
+        start = (filters["page"] - 1) * filters["per_page"]
+        return {"rows": rows[start:start + filters["per_page"]], "product_all_rows": rows,
+                "pagination": {"page": filters["page"], "per_page": filters["per_page"], "total": total,
+                               "pages": max(1, (total + filters["per_page"] - 1) // filters["per_page"])}}
 
     def _purchase_state(self):
         state = {}
@@ -490,11 +550,15 @@ class BusinessAnalytics(object):
 
     @staticmethod
     def _inventory_rows(connection):
-        return [dict(row) for row in connection.execute(
-            "SELECT id,coalesce(scope_brand_name,'Весь каталог') scope,status,started_at,completed_at,"
+        rows = [dict(row) for row in connection.execute(
+            "SELECT s.id,coalesce(n.document_number,'Инвентаризация') document_label,coalesce(s.scope_brand_name,'Весь каталог') scope,s.status,s.started_at,s.completed_at,"
             "checked_positions,adjusted_positions,missing_positions,total_delta "
-            "FROM erp_inventory_sessions ORDER BY started_at DESC LIMIT 100"
+            "FROM erp_inventory_sessions s LEFT JOIN erp_inventory_document_numbers n ON n.session_id=s.id ORDER BY s.started_at DESC LIMIT 100"
         ).fetchall()]
+        labels = {"draft": "Черновик", "active": "В работе", "completed": "Завершена", "cancelled": "Отменена"}
+        for row in rows:
+            row["status_label"] = labels.get(row["status"], row["status"])
+        return rows
 
     def _attention(self, connection, filters, current, previous):
         events = []
@@ -543,16 +607,6 @@ class BusinessAnalytics(object):
                            "evidence": "Сигнал создаётся только при минимум 3 продажах бренда в базе сравнения.", "quantity": difference,
                            "money_impact": None, "updated_at": updated_at,
                            "href": "/app/analytics?section=sales&from={}&to={}&channel={}&brand={}".format(filters["from"], filters["to"], quote(filters["channel"]), quote(label))})
-        inventory = connection.execute(
-            "SELECT count(*) sessions,coalesce(sum(adjusted_positions+missing_positions),0) discrepancies,max(completed_at) updated_at "
-            "FROM erp_inventory_sessions WHERE completed_at IS NOT NULL AND adjusted_positions+missing_positions>0"
-        ).fetchone()
-        if int(inventory["sessions"] or 0) >= 2:
-            events.append({"type": "inventory", "urgency": "high", "confidence": "high", "title": "Повторяющиеся расхождения инвентаризаций",
-                           "detail": "Расхождения зафиксированы в {} завершённых сессиях.".format(inventory["sessions"]),
-                           "evidence": "Суммарно {} скорректированных или отсутствующих позиций.".format(inventory["discrepancies"]),
-                           "quantity": int(inventory["discrepancies"] or 0), "money_impact": None,
-                           "updated_at": inventory["updated_at"] or updated_at, "href": "/app/analytics?section=inventory"})
         stale = connection.execute("SELECT max(finished_at) FROM catalog_sync_runs WHERE status='completed'").fetchone()[0]
         if stale:
             last = _date(stale, date.today())
@@ -572,7 +626,11 @@ class BusinessAnalytics(object):
         if section == "customers":
             return context.get("customer_analytics", {}).get("top", [])
         if section in ("products", "channels", "stock", "inventory", "orders"):
-            return context.get("stock_all_rows", []) if section == "stock" else context.get("rows", [])
+            if section == "stock":
+                return context.get("stock_all_rows", [])
+            if section == "products":
+                return context.get("product_all_rows", [])
+            return context.get("rows", [])
         if section in ("summary", "sales"):
             return context.get("daily", [])
         return []

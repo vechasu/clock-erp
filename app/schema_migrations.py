@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.catalog_migration_steps import (
+    apply_audit_identity_constraints,
     apply_order_comment_constraints,
     apply_fresh_catalog_schema,
     migration_source_checksum,
@@ -152,6 +153,12 @@ END;
 INVENTORY_CONTROL_MIGRATION_CHECKSUM = hashlib.sha256(
     (INVENTORY_CONTROL_MIGRATION_ID + "\n" + INVENTORY_CONTROL_SQL).encode("utf-8")
 ).hexdigest()
+AUDIT_IDENTITY_MIGRATION_ID = "2026-08-28-audit-identity-v1"
+AUDIT_IDENTITY_MIGRATION_NAME = "Audit identity and business entity coverage"
+AUDIT_IDENTITY_MIGRATION_CHECKSUM = hashlib.sha256(
+    (AUDIT_IDENTITY_MIGRATION_ID + "\n" + AUDIT_IDENTITY_MIGRATION_NAME + "\n" +
+     "order,customer,task,purchase,settings,user;constraint-detection-v2").encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -179,6 +186,13 @@ MIGRATIONS = (
         "id": CATALOG_RUNTIME_BASELINE_ID,
         "name": CATALOG_RUNTIME_BASELINE_NAME,
         "checksum": CATALOG_RUNTIME_BASELINE_CHECKSUM,
+        "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
+    {
+        "id": AUDIT_IDENTITY_MIGRATION_ID,
+        "name": AUDIT_IDENTITY_MIGRATION_NAME,
+        "checksum": AUDIT_IDENTITY_MIGRATION_CHECKSUM,
         "transactional": True,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
@@ -941,6 +955,13 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                     try:
                         verify_complete_catalog_contract(connection)
                         require_integrity(connection, migration["id"])
+                    finally:
+                        connection.close()
+                elif migration["id"] == AUDIT_IDENTITY_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    connection.row_factory = sqlite3.Row
+                    try:
+                        apply_audit_identity_constraints(connection)
                     finally:
                         connection.close()
                 else:

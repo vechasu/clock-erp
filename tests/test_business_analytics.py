@@ -113,6 +113,85 @@ class BusinessAnalyticsTest(unittest.TestCase):
         self.assertIsNone(result["current"]["revenue"])
         self.assertIsNone(result["current"]["average_order"])
 
+    def test_revenue_contract_is_identical_across_summary_products_and_channels(self):
+        second = self.catalog.create_product(
+            name="Price missing", article="T-3", brand="Brand B",
+            category="Watch", stock=5,
+        )
+        self.sales.create_sale(
+            {"source": "manual", "created_at": "2026-08-16T12:00:00+03:00"},
+            self.product["id"], 2, 100,
+        )
+        self.sales.create_sale(
+            {"source": "wildberries", "created_at": "2026-08-17T12:00:00+03:00"},
+            second["id"], 1, None,
+        )
+        service = BusinessAnalytics(self.database)
+        summary = service.context("summary", self.filters())
+        products = service.context("products", self.filters(sort="revenue"))
+        channels = service.context("channels", self.filters())
+        self.assertIsNone(summary["current"]["revenue"])
+        self.assertTrue(all(row["revenue"] is None for row in products["rows"]))
+        self.assertTrue(all(row["revenue"] is None and row["share"] is None for row in channels["rows"]))
+        self.assertEqual(sum(row["sales"] for row in channels["rows"]), summary["current"]["sales"])
+        self.assertEqual(sum(row["units"] for row in channels["rows"]), summary["current"]["units"])
+
+    def test_products_are_searchable_sortable_and_server_paginated(self):
+        for index in range(28):
+            product = self.catalog.create_product(
+                name="Analytics item {:02d}".format(index), article="A-{:02d}".format(index),
+                brand="Brand A", category="Watch", stock=index + 1,
+            )
+            self.sales.create_sale(
+                {"source": "manual", "created_at": "2026-08-20T12:00:00+03:00"},
+                product["id"], 1, 10 + index,
+            )
+        result = BusinessAnalytics(self.database).context(
+            "products", self.filters(q="Analytics item", sort="name", per_page="25", page="2")
+        )
+        self.assertEqual((result["pagination"]["total"], result["pagination"]["pages"], len(result["rows"])), (28, 2, 3))
+        self.assertEqual(result["rows"][0]["name"], "Analytics item 25")
+
+    def test_inventory_discrepancies_never_create_attention_signals(self):
+        with self.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO erp_inventory_sessions(id,brand_id,status,started_at,updated_at,checked_positions,adjusted_positions,missing_positions,total_delta) "
+                "VALUES('inventory-alert-test',1,'completed','2026-08-01','2026-08-02',10,8,2,999)"
+            )
+            connection.commit()
+        result = BusinessAnalytics(self.database).context("summary", self.filters(signal_type="inventory"))
+        self.assertNotEqual(result["filters"]["signal_type"], "inventory")
+        self.assertFalse(any(event["type"] == "inventory" for event in result["attention"]))
+
+    def test_frontend_lifecycle_has_one_owner_abort_and_stale_response_guard(self):
+        script = (Path(__file__).resolve().parents[1] / "app/static/js/analytics.js").read_text(encoding="utf-8")
+        self.assertIn("window.__vechasuAnalyticsOwner", script)
+        self.assertIn("controller.abort()", script)
+        self.assertIn("currentRequest !== requestId", script)
+        self.assertEqual(script.count("addEventListener('popstate'"), 1)
+        self.assertNotIn("document.write", script)
+
+    def test_query_budget_stays_bounded_for_summary_and_products(self):
+        statements = []
+        original_connect = self.database.connect
+
+        def traced_connect():
+            connection = original_connect()
+            connection.set_trace_callback(
+                lambda statement: statements.append(statement)
+                if statement.lstrip().upper().startswith("SELECT") else None
+            )
+            return connection
+
+        self.database.connect = traced_connect
+        service = BusinessAnalytics(self.database)
+        service.context("summary", self.filters())
+        summary_count = len(statements)
+        statements[:] = []
+        service.context("products", self.filters())
+        self.assertLessEqual(summary_count, 20)
+        self.assertLessEqual(len(statements), 10)
+
     def test_stock_signal_requires_repeat_demand_and_exposes_formula_inputs(self):
         self.sales.create_sale(
             {"source": "manual", "created_at": "2026-08-10T12:00:00+03:00"},

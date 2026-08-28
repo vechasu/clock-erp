@@ -198,15 +198,18 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException
 from app.auth import (
+    PRESENCE_TIMEOUT_SECONDS,
     auth_is_enabled,
     configure_auth,
     csrf_token,
     current_auth_user,
+    get_auth_store,
     require_csrf_when_authenticated,
     settings_invitation_context,
 )
@@ -1346,7 +1349,19 @@ def _require_customer_manage():
 @app.post("/app/customers/<int:customer_id>/notes")
 def customer_note_create(customer_id):
     _require_customer_manage()
-    customer_store().add_note(customer_id, request.form.get("body"), (current_auth_user() or {}).get("id", "system"))
+    store = customer_store()
+    body = request.form.get("body")
+    store.add_note(customer_id, body, (current_auth_user() or {}).get("id", "system"))
+    try:
+        customer = store.get(customer_id) or {}
+        AuditJournal().record(
+            "customer", str(customer_id), "comment_added",
+            customer.get("name") or "Клиент №{}".format(customer_id),
+            metadata={"text_snapshot": str(body or "")[:500]},
+            **current_audit_actor()
+        )
+    except Exception:
+        app.logger.exception("Customer note audit failed customer_id=%s", customer_id)
     return redirect(url_for("customer_detail_page", customer_id=customer_id))
 
 
@@ -2905,7 +2920,7 @@ def order_tracking_update(order_id):
     save_order_overrides(rows)
     try:
         AuditJournal(CatalogDatabase()).record(
-            "sale", "bitrix-order:{}".format(order_id), "updated", "Заказ #{}".format(order_id),
+            "order", str(order_id), "updated", "Заказ #{}".format(order_id),
             "Изменён трекинг",
             before={"tracking": previous.get("tracking") or ""},
             after={"tracking": tracking},
@@ -7704,6 +7719,21 @@ def current_audit_actor():
         "actor_name": name,
         "actor_type": "user" if user else "system",
     }
+
+
+def record_login_audit(user):
+    display_name = " ".join(
+        str(user.get(field) or "").strip()
+        for field in ("first_name", "last_name")
+    ).strip() or str(user.get("email") or "").split("@", 1)[0]
+    AuditJournal().record(
+        "user", str(user["id"]), "logged_in", display_name,
+        actor_id=str(user["id"]), actor_name=display_name,
+        metadata={"event": "authentication"}, source="ERP",
+    )
+
+
+app.extensions["audit_login"] = record_login_audit
 
 
 def get_automatic_sales_overrides_path():
@@ -17155,6 +17185,19 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/purchases"],
     },
     {
+        "key": "team",
+        "label": "Команда",
+        "description": "Сотрудники и присутствие в ERP.",
+        "icon": "team",
+        "href": "/app/team",
+        "mobile_href": "/app/team",
+        "position": 10,
+        "group": "system",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/team"],
+    },
+    {
         "key": "settings",
         "label": "Настройки",
         "description": "Настройки ERP.",
@@ -17202,13 +17245,111 @@ def get_navigation_items(include_disabled=False):
 
 @app.context_processor
 def inject_sidebar_navigation():
+    team = []
+    if current_auth_user():
+        try:
+            team = _team_presence_now()
+        except (MigrationRequiredError, sqlite3.Error):
+            team = []
     return {
         "sidebar_navigation_items": get_navigation_items(),
         "sidebar_brand": {
             "title": "TTT",
             "subtitle": "Внутренняя система",
         },
+        "presence_summary": {
+            "online_count": sum(1 for user in team if user["online"]),
+            "users": [user for user in team if user["online"]],
+        },
     }
+
+
+SECTION_LABELS = {
+    "orders": "Заказы", "tasks": "Задачи", "products": "Товары",
+    "sales": "Продажи", "analytics": "Аналитика",
+    "inventory": "Инвентаризация", "receipts": "Приход",
+    "journal": "Журнал", "repair": "Ремонты", "customers": "Клиенты",
+    "purchases": "Закупки", "team": "Команда", "settings": "Настройки",
+}
+
+
+def _team_presence_now(now=None):
+    now = int(now if now is not None else time.time())
+    users = get_auth_store().list_team_presence(now)
+    current = current_auth_user() or {}
+    for user in users:
+        if user["id"] == current.get("id"):
+            user["online"] = True
+            user["last_activity_at"] = now
+            user["current_section"] = str(session.get("current_section") or "")
+            break
+    return users
+
+
+@app.before_request
+def track_authenticated_section():
+    if not current_auth_user() or request.endpoint == "static":
+        return None
+    key = get_active_navigation_key(request.path)
+    if key:
+        session["current_section"] = SECTION_LABELS.get(key, key)
+    return None
+
+
+def _presence_time(value, now=None):
+    if value is None:
+        return "—"
+    now = int(now if now is not None else time.time())
+    value = int(value)
+    difference = max(0, now - value)
+    local = datetime.fromtimestamp(value)
+    if difference < 60:
+        return "сейчас"
+    if difference < 3600:
+        return "{} мин назад".format(max(1, difference // 60))
+    today = datetime.fromtimestamp(now).date()
+    if local.date() == today:
+        return local.strftime("%H:%M")
+    if (today - local.date()).days == 1:
+        return "Вчера, {}".format(local.strftime("%H:%M"))
+    return local.strftime("%d.%m.%Y, %H:%M")
+
+
+def serialize_team_user(user, now=None):
+    item = dict(user)
+    initials = "".join(
+        part[:1] for part in item["display_name"].split()[:2]
+    ).upper()
+    item["initials"] = initials or item["login"][:2].upper()
+    item["last_activity_display"] = _presence_time(item["last_activity_at"], now)
+    return item
+
+
+@app.get("/app/team")
+def team_page():
+    now = int(time.time())
+    users = [serialize_team_user(user, now) for user in _team_presence_now(now)]
+    return render_template(
+        "team.html",
+        team_users=users,
+        active_count=sum(1 for user in users if user["active"]),
+        online_count=sum(1 for user in users if user["online"]),
+    )
+
+
+@app.post("/api/v1/presence/heartbeat")
+def presence_heartbeat():
+    payload = request.get_json(silent=True) or {}
+    requested = str(payload.get("section") or "")
+    if requested in SECTION_LABELS.values():
+        session["current_section"] = requested
+    now = int(time.time())
+    users = _team_presence_now(now)
+    return api_success({
+        "online_count": sum(1 for user in users if user["online"]),
+        "users": [serialize_team_user(user, now) for user in users if user["online"]],
+        "timeout_seconds": PRESENCE_TIMEOUT_SECONDS,
+    })
 
 
 JOURNAL_ENTITY_LABELS = {
@@ -17219,6 +17360,8 @@ JOURNAL_ENTITY_LABELS = {
     "receipt": "Приход",
     "inventory": "Инвентаризация",
     "repair": "Ремонт",
+    "order": "Заказы", "customer": "Клиенты", "task": "Задачи",
+    "purchase": "Закупки", "settings": "Настройки", "user": "Команда",
 }
 JOURNAL_ACTION_LABELS = {
     "created": "Создано",
@@ -17234,6 +17377,9 @@ JOURNAL_ACTION_LABELS = {
     "comment_added": "Комментарий добавлен",
     "restored": "Восстановлено",
     "archived": "Перемещено в архив",
+    "logged_in": "Вошёл в систему",
+    "started": "Начато",
+    "completed": "Завершено",
 }
 JOURNAL_FIELD_LABELS = {
     "name": "Название", "article": "Артикул", "brand": "Бренд",
@@ -17488,7 +17634,10 @@ def serialize_journal_event(event):
 
 def journal_query_arguments():
     entity_type = str(request.args.get("entity_type") or "").strip()
-    if entity_type not in {"product", "brand", "category", "sale", "receipt", "inventory", "repair"}:
+    if entity_type not in {
+        "product", "brand", "category", "sale", "receipt", "inventory", "repair",
+        "order", "customer", "task", "purchase", "settings", "user",
+    }:
         entity_type = ""
     return {
         "entity_type": entity_type,
@@ -21669,6 +21818,23 @@ def _task_api_error(error):
     raise error
 
 
+def _record_task_audit(task, action="updated"):
+    try:
+        AuditJournal().record(
+            "task", str(task["id"]), action,
+            str(task.get("title") or "Задача №{}".format(task["id"])),
+            after={
+                "title": task.get("title"), "status": task.get("status"),
+                "assignee_id": task.get("assignee_id"),
+                "due_date": task.get("due_date"), "priority": task.get("priority"),
+            },
+            metadata={"section": task.get("section")},
+            **current_audit_actor()
+        )
+    except Exception:
+        app.logger.exception("Task audit failed task_id=%s action=%s", task.get("id"), action)
+
+
 @app.get("/app/tasks")
 def tasks_page():
     return render_template("tasks.html", task_users=_task_users(), csrf=csrf_token())
@@ -21704,6 +21870,8 @@ def api_tasks_collection_post():
         )
     except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
+    if created:
+        _record_task_audit(task, "created")
     return api_success(_serialize_tasks([task])[0], 201 if created else 200,
                        duplicate=not created)
 
@@ -21720,6 +21888,8 @@ def api_task_resource(task_id):
             )
     except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
+    if request.method != "GET":
+        _record_task_audit(task)
     return api_success(_serialize_tasks([task])[0])
 
 
@@ -21732,6 +21902,7 @@ def api_task_complete(task_id):
         )
     except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
+    _record_task_audit(task, "completed")
     return api_success(_serialize_tasks([task])[0])
 
 
@@ -21741,6 +21912,7 @@ def api_task_reopen(task_id):
         task = _tasks_store().set_status(task_id, "new", current_auth_user()["id"])
     except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
+    _record_task_audit(task, "status_changed")
     return api_success(_serialize_tasks([task])[0])
 
 
@@ -21751,6 +21923,7 @@ def api_task_move(task_id):
         task = _tasks_store().move(task_id, str(payload.get("section") or ""), current_auth_user()["id"])
     except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
+    _record_task_audit(task)
     return api_success(_serialize_tasks([task])[0])
 
 
@@ -21764,6 +21937,7 @@ def api_task_status(task_id):
         )
     except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
+    _record_task_audit(task, "status_changed")
     return api_success(_serialize_tasks([task])[0])
 
 
@@ -21775,6 +21949,7 @@ def api_task_reschedule(task_id):
         )
     except (TaskValidationError, TaskNotFoundError) as error:
         return _task_api_error(error)
+    _record_task_audit(task)
     return api_success(_serialize_tasks([task])[0])
 
 

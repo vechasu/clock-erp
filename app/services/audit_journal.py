@@ -9,6 +9,7 @@ from app.catalog_db import CatalogDatabase
 
 ENTITY_TYPES = {
     "product", "sale", "receipt", "brand", "category", "inventory", "repair",
+    "order", "customer", "task", "purchase", "settings", "user",
 }
 ACTION_TYPES = {
     "created",
@@ -24,6 +25,9 @@ ACTION_TYPES = {
     "system_created",
     "restored",
     "archived",
+    "logged_in",
+    "started",
+    "completed",
 }
 FIELD_WHITELISTS = {
     "product": {
@@ -44,6 +48,12 @@ FIELD_WHITELISTS = {
     "category": {"name"},
     "inventory": {"stock"},
     "repair": {"archive_status", "archived_at", "archived_by", "source_repair_id"},
+    "order": {"status", "tracking", "comment", "customer"},
+    "customer": {"name", "phone", "email", "comment"},
+    "task": {"title", "status", "assignee_id", "due_date", "priority"},
+    "purchase": {"status", "quantity", "price", "comment"},
+    "settings": {"value"},
+    "user": {"last_login_at"},
 }
 SENSITIVE_MARKERS = {
     "password", "passwd", "secret", "token", "authorization", "credential",
@@ -215,13 +225,13 @@ class AuditJournal:
             parameters.append(action)
         if actor:
             conditions.append(
-                "(actor_display_name_snapshot = ? OR (entity_type = 'inventory' AND EXISTS ("
+                "(actor_id = ? OR actor_display_name_snapshot = ? OR (entity_type = 'inventory' AND EXISTS ("
                 "SELECT 1 FROM erp_inventory_sessions ais WHERE ais.id = entity_id AND "
                 "(? IN (COALESCE(ais.started_by,''), COALESCE(ais.completed_by,''), "
                 "COALESCE(ais.cancelled_by,'')) OR EXISTS (SELECT 1 FROM erp_inventory_items aii "
                 "WHERE aii.session_id = ais.id AND aii.confirmed_by = ?)))))"
             )
-            parameters.extend([str(actor), str(actor), str(actor)])
+            parameters.extend([str(actor), str(actor), str(actor), str(actor)])
         if status and entity_type == "sale":
             conditions.append("status_snapshot = ?")
             parameters.append(str(status))
