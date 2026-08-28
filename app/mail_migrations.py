@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = "mail-v1-2026-08-28"
+SCHEMA_VERSION = "mail-v2-2026-08-28"
 
 TABLES = (
     """CREATE TABLE mail_schema_meta (
@@ -20,6 +20,8 @@ TABLES = (
         imap_host TEXT NOT NULL, imap_port INTEGER NOT NULL,
         smtp_host TEXT NOT NULL, smtp_port INTEGER NOT NULL,
         security TEXT NOT NULL CHECK (security IN ('ssl','starttls')),
+        imap_security TEXT NOT NULL DEFAULT 'ssl' CHECK (imap_security IN ('ssl','starttls')),
+        smtp_security TEXT NOT NULL DEFAULT 'ssl' CHECK (smtp_security IN ('ssl','starttls')),
         login TEXT NOT NULL, encrypted_password TEXT NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL,
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
@@ -151,6 +153,25 @@ def migrate_database(path):
             name = statement.split("CREATE TABLE ", 1)[1].split(" ", 1)[0]
             if name not in existing:
                 connection.execute(statement)
+        account_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(mail_accounts)")
+        }
+        if "imap_security" not in account_columns:
+            connection.execute(
+                "ALTER TABLE mail_accounts ADD COLUMN "
+                "imap_security TEXT NOT NULL DEFAULT 'ssl'"
+            )
+            connection.execute(
+                "UPDATE mail_accounts SET imap_security=security"
+            )
+        if "smtp_security" not in account_columns:
+            connection.execute(
+                "ALTER TABLE mail_accounts ADD COLUMN "
+                "smtp_security TEXT NOT NULL DEFAULT 'ssl'"
+            )
+            connection.execute(
+                "UPDATE mail_accounts SET smtp_security=security"
+            )
         for statement in INDEXES:
             name = statement.split("CREATE INDEX ", 1)[1].split(" ", 1)[0]
             exists = connection.execute(
@@ -181,6 +202,11 @@ def validate_database(path):
             "SELECT value FROM mail_schema_meta WHERE key='schema_version'"
         ).fetchone()
         if not row or row[0] != SCHEMA_VERSION:
+            raise MailMigrationRequiredError("Mail database migration is required")
+        account_columns = {
+            item[1] for item in connection.execute("PRAGMA table_info(mail_accounts)")
+        }
+        if not {"imap_security", "smtp_security"}.issubset(account_columns):
             raise MailMigrationRequiredError("Mail database migration is required")
         if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise MailMigrationRequiredError("Mail database integrity check failed")

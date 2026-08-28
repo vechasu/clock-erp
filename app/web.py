@@ -12,6 +12,7 @@ import base64
 import binascii
 import csv
 import hashlib
+import hmac
 import io
 import json
 import math
@@ -177,6 +178,7 @@ from app.services.mail import (
     MailTransport,
     MailValidationError,
     SecretBox,
+    validated_connection_settings,
     safe_error as safe_mail_error,
 )
 from app.domain_schema_migrations import MigrationRequiredError
@@ -22772,10 +22774,56 @@ def _mail_account_public(account):
         return None
     allowed = (
         "id", "mailbox_name", "sender_name", "email", "imap_host", "imap_port",
-        "smtp_host", "smtp_port", "security", "login", "enabled",
+        "smtp_host", "smtp_port", "security", "imap_security",
+        "smtp_security", "login", "enabled",
         "last_sync_at", "last_sync_status", "last_sync_error", "initial_sync_complete",
     )
-    return {key: account.get(key) for key in allowed}
+    public = {key: account.get(key) for key in allowed}
+    public["password_saved"] = bool(account.get("encrypted_password"))
+    return public
+
+
+def _mail_connection_credentials(payload):
+    store = _mail_store()
+    existing = store.account()
+    clean = validated_connection_settings(payload, existing)
+    password = str(payload.get("password") or "")
+    if not password and existing:
+        password = SecretBox().decrypt(existing["encrypted_password"])
+    if not password:
+        raise MailValidationError("Введите пароль приложения.")
+    return existing, clean, password
+
+
+def _mail_connection_proof(clean, password, actor_id, expires_at):
+    body = json.dumps(
+        {
+            "actor_id": int(actor_id),
+            "expires_at": int(expires_at),
+            "settings": clean,
+            "password": password,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    signature = hmac.new(
+        SecretBox().mac_key,
+        b"vechasu-mail-connection-proof-v1\0" + body,
+        hashlib.sha256,
+    ).hexdigest()
+    return "{}.{}".format(int(expires_at), signature)
+
+
+def _mail_connection_proof_valid(proof, clean, password, actor_id):
+    try:
+        expires_at = int(str(proof or "").split(".", 1)[0])
+    except (TypeError, ValueError):
+        return False
+    if expires_at < int(time.time()) or expires_at > int(time.time()) + 600:
+        return False
+    expected = _mail_connection_proof(clean, password, actor_id, expires_at)
+    return hmac.compare_digest(str(proof or ""), expected)
 
 
 def _mail_audit(thread_id, action, label, after=None, metadata=None):
@@ -22967,22 +23015,26 @@ def api_mail_settings_test():
     require_csrf_when_authenticated()
     try:
         payload = api_json_payload()
-        existing = _mail_store().account()
-        password = str(payload.get("password") or "")
-        if not password and existing:
-            password = SecretBox().decrypt(existing["encrypted_password"])
-        account = {
-            "imap_host": str(payload.get("imap_host") or (existing or {}).get("imap_host") or "").strip(),
-            "imap_port": int(payload.get("imap_port") or (existing or {}).get("imap_port") or 993),
-            "smtp_host": str(payload.get("smtp_host") or (existing or {}).get("smtp_host") or "").strip(),
-            "smtp_port": int(payload.get("smtp_port") or (existing or {}).get("smtp_port") or 465),
-            "security": str(payload.get("security") or (existing or {}).get("security") or "ssl"),
-            "login": str(payload.get("login") or (existing or {}).get("login") or "").strip(),
-        }
-        if not password:
-            raise MailValidationError("Введите пароль приложения.")
-        MailTransport(account, password, timeout=10).test()
-        return api_success({"connected": True})
+        unused, account, password = _mail_connection_credentials(payload)
+        del unused
+        results = MailTransport(account, password, timeout=8).check()
+        if not results["connected"]:
+            return api_error(
+                "MAIL_CONNECTION_FAILED",
+                "Подключение не удалось. Проверьте параметры ящика.",
+                422,
+                fields={
+                    "imap": results["imap"],
+                    "smtp": results["smtp"],
+                    "tls": results["tls"],
+                },
+            )
+        expires_at = int(time.time()) + 300
+        results["proof"] = _mail_connection_proof(
+            account, password, _mail_actor_id(), expires_at
+        )
+        results["expires_at"] = expires_at
+        return api_success(results)
     except Exception as error:
         if isinstance(error, MailError):
             return _mail_error_response(error)
@@ -22994,9 +23046,31 @@ def api_mail_settings_save():
     _mail_owner_required()
     require_csrf_when_authenticated()
     try:
-        account = _mail_store().save_account(api_json_payload(), _mail_actor_id(), SecretBox())
-        _mail_audit("account", "connected", account["mailbox_name"])
-        return api_success(_mail_account_public(account))
+        payload = api_json_payload()
+        existing, clean, password = _mail_connection_credentials(payload)
+        if not _mail_connection_proof_valid(
+            payload.get("connection_proof"), clean, password, _mail_actor_id()
+        ):
+            raise MailValidationError(
+                "Сначала успешно проверьте IMAP и SMTP."
+            )
+        account = _mail_store().save_account(
+            payload, _mail_actor_id(), SecretBox()
+        )
+        try:
+            _mail_store().request_sync(_mail_actor_id())
+        except MailValidationError:
+            pass
+        action = "updated" if existing and existing.get("enabled") else "connected"
+        _mail_audit("account", action, account["mailbox_name"])
+        return api_success({
+            "account": _mail_account_public(account),
+            "sync": "pending",
+            "message": (
+                "Настройки подключения обновлены"
+                if action == "updated" else "Почта успешно подключена"
+            ),
+        })
     except MailError as error:
         return _mail_error_response(error)
 
