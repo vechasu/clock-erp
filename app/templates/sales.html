@@ -21,6 +21,10 @@
             overflow-x: hidden;
         }
 
+        html {
+            scrollbar-gutter: stable;
+        }
+
         body {
             margin: 0;
             background: #f4f6f8;
@@ -1551,12 +1555,44 @@
     <script defer src="{{ url_for('static', filename='js/table-scroll-hint.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-modal-shell.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/erp-focus-mode.js') }}"></script>
+    {% if config.TESTING and request.args.get("sales_layout_shift_e2e") == "1" %}
+        <script>
+            try {
+                localStorage.setItem("ttt-erp-sidebar-collapsed", "1");
+                localStorage.setItem("sales_all", JSON.stringify({
+                    version: 6,
+                    widths: {product_name: 360},
+                    customWidths: ["product_name"],
+                }));
+            } catch (error) {
+                // Проверка продолжится с настройками по умолчанию.
+            }
+            window.salesLayoutShiftMetric = {value: 0};
+            try {
+                new PerformanceObserver((list) => {
+                    list.getEntries().forEach((entry) => {
+                        const touchesSalesWorkspace = entry.sources?.some(
+                            (source) => source.node?.closest?.(
+                                ".sales-data-card"
+                            )
+                        );
+                        if (!entry.hadRecentInput && touchesSalesWorkspace) {
+                            window.salesLayoutShiftMetric.value += entry.value;
+                        }
+                    });
+                }).observe({type: "layout-shift", buffered: true});
+            } catch (error) {
+                window.salesLayoutShiftMetric.unsupported = true;
+            }
+        </script>
+    {% endif %}
     {% if config.TESTING and request.args.get("sales_focus_mode_e2e") == "1" %}
         <script defer src="{{ url_for('static', filename='js/sales-focus-mode-e2e.js') }}"></script>
     {% endif %}
     {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
         <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
     {% endif %}
+    <noscript><style>.sales-table-card-initializing { visibility: visible !important; }</style></noscript>
 </head>
 
 <body class="sales-page sales-list-page">
@@ -1570,6 +1606,16 @@
     data-focus-mode-hide=".sales-page-header,.sales-tabs-scroll,.erp-workspace-metrics,#appSidebar,.mobile-erp-navigation,.mobile-erp-more-sheet,.mobile-erp-more-backdrop,#sidebarTooltip"
     data-focus-mode-overlays=".modal.is-open,.sales-viewport-popover:not([hidden]),.sales-product-combobox-menu:not([hidden]),.catalog-create-modal:not([hidden]),.mobile-erp-more-sheet.is-open,.sales-action-menu[open],.sales-secondary-menu[open]"
 >
+    <script>
+        try {
+            document.currentScript.parentElement.classList.toggle(
+                "sidebar-collapsed",
+                localStorage.getItem("ttt-erp-sidebar-collapsed") === "1",
+            );
+        } catch (error) {
+            // Боковая панель останется развёрнутой.
+        }
+    </script>
     {% include "_sidebar.html" %}
 
     <main class="main" id="main-content" tabindex="-1">
@@ -2153,7 +2199,9 @@
                 hidden
             ></div>
 
-            <section class="table-card erp-table-card erp-table-shell">
+            <script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
+            <script src="{{ url_for('static', filename='js/sales-table-initial-layout.js') }}"></script>
+            <section class="table-card erp-table-card erp-table-shell sales-table-card-initializing" style="visibility: hidden">
                 <div
                     class="table-wrap sales-table-wrap erp-table-scroll erp-scroll-hint"
                     data-erp-scroll-hint
@@ -2398,7 +2446,6 @@
                 <div
                     id="salesHorizontalScrollbar"
                     class="sales-horizontal-scrollbar"
-                    hidden
                 >
                     <input
                         id="salesHorizontalScrollControl"
@@ -2410,6 +2457,14 @@
                         aria-label="Горизонтальная прокрутка таблицы продаж"
                     >
                 </div>
+                <script>
+                    window.salesInitialTableLayoutView = (
+                        window.SalesTableInitialLayout.apply(
+                            document.querySelector(".sales-table"),
+                            {{ sales_columns | tojson }},
+                        )
+                    );
+                </script>
             </section>
 
             <section
@@ -3376,7 +3431,6 @@
 <script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
 <script src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
 <script src="{{ url_for('static', filename='js/period-picker.js') }}"></script>
-<script src="{{ url_for('static', filename='js/erp-table-layout.js') }}"></script>
 <script>
     const activeSalesSource = {{ active_source | tojson }};
     const tictactoyLocationData = (
@@ -5535,7 +5589,9 @@
             settingsPopover.close({returnFocus});
         }
 
-        const view = readView();
+        const view = window.salesInitialTableLayoutView
+            ? normalizeView(window.salesInitialTableLayoutView)
+            : readView();
         applyView();
         saveView();
         renderSettingsList();
@@ -9075,6 +9131,26 @@
             root.dataset.salesCancelE2eError = error.message;
         }
     });
+</script>
+{% endif %}
+{% if config.TESTING and request.args.get("sales_layout_shift_e2e") == "1" %}
+<script>
+    window.addEventListener("load", () => {
+        window.setTimeout(() => {
+            const table = document.querySelector(".sales-table");
+            const metric = window.salesLayoutShiftMetric || {};
+            const passed = (
+                table?.dataset.initialLayoutReady === "true"
+                && (metric.unsupported || metric.value <= 0.001)
+            );
+            document.documentElement.dataset.salesLayoutShiftE2e = (
+                passed ? "pass" : "fail"
+            );
+            document.documentElement.dataset.salesLayoutShiftValue = String(
+                metric.value || 0
+            );
+        }, 250);
+    }, {once: true});
 </script>
 {% endif %}
 </body>
