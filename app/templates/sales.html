@@ -6866,7 +6866,7 @@
                 );
             }
             reloadSalesWithNotice(
-                result.message || "Изменения сохранены"
+                result.message || `Продажа №${manualSaleForm.elements.sale_id.value} сохранена`
             );
         } catch (error) {
             setSaleFormError(

@@ -68,8 +68,41 @@
 }
 
 .erp-toast-title,
-.erp-toast-detail {
+.erp-toast-detail,
+.erp-toast-meta {
     overflow-wrap: anywhere;
+}
+
+.erp-toast-meta {
+    margin-top: 6px;
+    color: var(--theme-text-muted, #64748b);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.erp-background-activity {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--theme-border, #e2e8f0);
+    border-radius: var(--theme-control-radius, 8px);
+    background: var(--theme-surface-muted, #f8fafc);
+    color: var(--theme-text, #172033);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.erp-background-activity:empty {
+    display: none;
+}
+
+.erp-background-activity small {
+    color: var(--theme-text-muted, #64748b);
+}
+
+.erp-background-activity a {
+    color: var(--theme-link, #1d4ed8);
 }
 
 .erp-toast-title {

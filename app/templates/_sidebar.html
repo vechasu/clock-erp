@@ -16,7 +16,16 @@
     href="{{ url_for('static', filename='css/erp-states.css') }}"
 >
 <link rel="stylesheet" href="{{ url_for('static', filename='css/collaboration.css') }}">
-<script>window.COLLABORATION_BOOTSTRAP={csrf:{{ csrf_token()|tojson }},users:{{ collaboration_users|tojson }}};</script>
+<script>
+window.COLLABORATION_BOOTSTRAP={csrf:{{ csrf_token()|tojson }},users:{{ collaboration_users|tojson }}};
+window.ERP_NOTIFICATION_CONTEXT={
+    actor:{
+        id:{{ (current_user.id if current_user else '')|string|tojson }},
+        name:{{ (((current_user.first_name ~ ' ' ~ current_user.last_name)|trim or current_user.email) if current_user else 'Система')|tojson }}
+    },
+    section:{{ (session.get('current_section', '') or 'ERP')|tojson }}
+};
+</script>
 <script async src="{{ url_for('static', filename='js/collaboration.js') }}"></script>
 <a class="erp-skip-link" href="#main-content">
     Перейти к основному содержимому
@@ -285,7 +294,7 @@
         try {
             const response = await fetch("/api/v1/presence/heartbeat", {
                 method: "POST",
-                headers: {"Content-Type": "application/json", "X-CSRF-Token": {{ csrf_token()|tojson }}},
+                headers: {"Content-Type": "application/json", "X-CSRF-Token": {{ csrf_token()|tojson }}, "X-Vechasu-Notify": "off"},
                 body: JSON.stringify({section: root.dataset.section || ""}),
                 credentials: "same-origin",
             });

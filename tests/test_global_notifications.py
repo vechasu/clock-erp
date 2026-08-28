@@ -49,9 +49,9 @@ class GlobalNotificationSystemTest(unittest.TestCase):
 
     def test_mutations_only_report_success_after_backend_response(self):
         script = self.source("app/static/js/notifications.js")
-        loading_index = script.index('show("loading"')
+        loading_index = script.index("const notificationId =")
         fetch_index = script.index("response = await originalFetch")
-        success_index = script.index('update(notificationId, {kind: "success"')
+        success_index = script.index('kind: "success"', fetch_index)
         self.assertLess(loading_index, fetch_index)
         self.assertLess(fetch_index, success_index)
         self.assertIn("if (!response.ok || (payload && payload.error))", script)
@@ -59,6 +59,30 @@ class GlobalNotificationSystemTest(unittest.TestCase):
         self.assertIn("controller.abort()", script)
         self.assertIn('activeButton.disabled = true', script)
         self.assertIn('activeButton.disabled = priorDisabled', script)
+
+    def test_generic_and_background_requests_cannot_create_false_success(self):
+        script = self.source("app/static/js/notifications.js")
+        sidebar = self.source("app/templates/_sidebar.html")
+        states = self.source("app/static/js/erp-states.js")
+        self.assertNotIn('"Операция выполняется…"', script)
+        self.assertNotIn('"Данные сохранены"', script)
+        self.assertNotIn('"Изменения сохранены"', script)
+        self.assertIn('if (!match) return null', script)
+        self.assertIn('notifyMode === "background"', script)
+        self.assertIn('changedCount(payload) === null || changedCount(payload) === 0', script)
+        self.assertIn('"X-Vechasu-Notify": "off"', sidebar)
+        self.assertNotIn('"Операция выполняется…"', states)
+
+    def test_notification_context_and_operation_id_are_diagnostic(self):
+        script = self.source("app/static/js/notifications.js")
+        web = self.source("app/web.py")
+        sidebar = self.source("app/templates/_sidebar.html")
+        for marker in ("occurredAt", "section", "object", "actor", "operationId"):
+            self.assertIn(marker, script)
+        self.assertIn("Посмотреть в журнале", script)
+        self.assertIn("ERP_NOTIFICATION_CONTEXT", sidebar)
+        self.assertIn('response.headers["X-Operation-ID"]', web)
+        self.assertIn("erp_operation operation_id=%s", web)
 
     def test_errors_are_humanized_and_internal_details_are_filtered(self):
         script = self.source("app/static/js/notifications.js")

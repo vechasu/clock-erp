@@ -238,6 +238,7 @@ from flask import (
     Flask,
     Response,
     abort,
+    g,
     jsonify,
     make_response,
     redirect,
@@ -263,6 +264,30 @@ from app.static_assets import register_static_asset_versioning
 
 app = Flask(__name__)
 register_static_asset_versioning(app)
+
+
+@app.before_request
+def assign_operation_id():
+    """Give every request one safe correlation id shared by response and logs."""
+    supplied = str(request.headers.get("X-Operation-ID") or "").strip()
+    g.operation_id = supplied if re.fullmatch(r"[A-Za-z0-9._:-]{8,96}", supplied) else uuid.uuid4().hex
+
+
+@app.after_request
+def expose_operation_id(response):
+    operation_id = str(getattr(g, "operation_id", "") or uuid.uuid4().hex)
+    response.headers["X-Operation-ID"] = operation_id
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        actor = current_auth_user() or {}
+        app.logger.info(
+            "erp_operation operation_id=%s method=%s endpoint=%s actor_id=%s status=%s",
+            operation_id,
+            request.method,
+            request.path,
+            actor.get("id") or "system",
+            response.status_code,
+        )
+    return response
 try:
     TRUSTED_PROXY_COUNT = max(
         0,
@@ -9734,7 +9759,9 @@ def manual_sale_update():
                 notice="error",
                 status_code=500,
             )
-        return respond_to_sales_action("Изменения сохранены")
+        return respond_to_sales_action(
+            "Продажа №{} сохранена".format(managed_sale_id)
+        )
 
     sale_id = (request.form.get("sale_id") or "").strip()
     product_name = (request.form.get("product_name") or "").strip()
@@ -9979,7 +10006,7 @@ def manual_sale_update():
         save_manual_sales(sales)
 
     return respond_to_sales_action(
-        "Изменения сохранены",
+        "Продажа №{} сохранена".format(sale_id),
     )
 
 
@@ -10178,7 +10205,9 @@ def automatic_sale_update():
             return respond_to_sales_action(
                 str(error), notice="error", status_code=409
             )
-        return respond_to_sales_action("Изменения сохранены")
+        return respond_to_sales_action(
+            "Продажа №{} сохранена".format(managed_operation_id)
+        )
 
     operation_id = (
         request.form.get("operation_id") or ""
@@ -10370,7 +10399,7 @@ def automatic_sale_update():
     save_automatic_sales_overrides(overrides)
 
     return respond_to_sales_action(
-        "Изменения сохранены",
+        "Продажа №{} сохранена".format(operation_id),
     )
 
 
@@ -17759,7 +17788,7 @@ def api_services_update(service_id):
         require_csrf_when_authenticated()
         payload = _service_payload()
         _service_vault().update(service_id, payload, current_auth_user(), _service_icon_upload())
-        _record_service_audit(service_id, "updated", payload.get("name"), metadata={"text_snapshot": "Изменения сохранены"})
+        _record_service_audit(service_id, "updated", payload.get("name"), metadata={"text_snapshot": "Сервис сохранён"})
         if payload.get("permissions") is not None:
             _record_service_audit(service_id, "permissions_changed", payload.get("name"),
                                   metadata={"text_snapshot": "Права доступа изменены"})
@@ -18414,7 +18443,7 @@ app.add_url_rule(
 
 def api_success(data, status=200, **meta):
     response_meta = {
-        "request_id": uuid.uuid4().hex,
+        "request_id": str(getattr(g, "operation_id", "") or uuid.uuid4().hex),
         "csrf_token": csrf_token(),
         **meta,
     }
@@ -18429,7 +18458,7 @@ def api_error(code, message, status=400, fields=None):
     payload = {
         "code": code,
         "message": message,
-        "request_id": uuid.uuid4().hex,
+        "request_id": str(getattr(g, "operation_id", "") or uuid.uuid4().hex),
     }
     if fields:
         payload["fields"] = fields
