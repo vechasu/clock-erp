@@ -34,6 +34,7 @@ ORDERS_MIGRATION_ID = "2026-08-26-orders-customers-baseline-v1"
 TASKS_MIGRATION_ID = "2026-08-27-internal-tasks-v1"
 TASKS_V2_MIGRATION_ID = "2026-08-27-tasks-center-v2"
 TASKS_V3_MIGRATION_ID = "2026-08-28-collaboration-responsibility-v1"
+TASKS_V4_MIGRATION_ID = "2026-08-28-task-soft-delete-v1"
 
 
 class DomainMigrationError(RuntimeError):
@@ -371,6 +372,15 @@ TASKS_V3_INDEX_STATEMENTS = (
     "CREATE INDEX idx_inbox_recipient_created ON inbox_events(recipient_user_id, created_at, id)",
 )
 
+TASKS_V4_TABLE_STATEMENTS = (
+    "ALTER TABLE tasks ADD COLUMN deleted_at TEXT",
+    "ALTER TABLE tasks ADD COLUMN deleted_by INTEGER",
+)
+
+TASKS_V4_INDEX_STATEMENTS = (
+    "CREATE INDEX idx_tasks_deleted ON tasks(deleted_at, id)",
+)
+
 ORDERS_LEGACY_COLUMNS = (
     ("order_id", "TEXT", 0, None, 1),
     ("source_position", "INTEGER", 1, None, 0),
@@ -445,10 +455,18 @@ TASKS_V3_MIGRATION = {
         + TASKS_V3_TABLE_STATEMENTS + TASKS_V3_INDEX_STATEMENTS
     ),
 }
+TASKS_V4_MIGRATION = {
+    "id": TASKS_V4_MIGRATION_ID,
+    "name": "Soft deletion for tasks",
+    "checksum": _digest(
+        (TASKS_V4_MIGRATION_ID, "task-soft-delete-v1")
+        + TASKS_V4_TABLE_STATEMENTS + TASKS_V4_INDEX_STATEMENTS
+    ),
+}
 DOMAIN_MIGRATIONS = {
     "auth": AUTH_PREFERENCES_MIGRATION,
     "orders": ORDERS_MIGRATION,
-    "tasks": TASKS_V3_MIGRATION,
+    "tasks": TASKS_V4_MIGRATION,
 }
 
 
@@ -548,6 +566,7 @@ TASKS_EXPECTED_COLUMNS = {
         ("cancelled_at", "TEXT", 0, None, 0), ("cancelled_by", "INTEGER", 0, None, 0),
         ("idempotency_key", "TEXT", 0, None, 0), ("next_occurrence_key", "TEXT", 0, None, 0),
         ("version", "INTEGER", 1, "1", 0),
+        ("deleted_at", "TEXT", 0, None, 0), ("deleted_by", "INTEGER", 0, None, 0),
     ),
     "task_links": (
         ("id", "INTEGER", 0, None, 1), ("task_id", "INTEGER", 1, None, 0),
@@ -627,6 +646,7 @@ TASKS_INDEXES = {
     "idx_assignment_history_entity": (0, ("entity_type", "entity_id", "id")),
     "idx_inbox_recipient_unread_created": (0, ("recipient_user_id", "read_at", "created_at", "id")),
     "idx_inbox_recipient_created": (0, ("recipient_user_id", "created_at", "id")),
+    "idx_tasks_deleted": (0, ("deleted_at", "id")),
 }
 
 
@@ -910,10 +930,13 @@ def _verify_tasks_ledger(connection):
         "SELECT migration_id,name,checksum,state FROM " + LEDGER_TABLE + " ORDER BY migration_id"
     ).fetchall()
     expected = {
-        migration["id"]: migration for migration in (TASKS_MIGRATION, TASKS_V2_MIGRATION, TASKS_V3_MIGRATION)
+        migration["id"]: migration for migration in (
+            TASKS_MIGRATION, TASKS_V2_MIGRATION, TASKS_V3_MIGRATION,
+            TASKS_V4_MIGRATION,
+        )
     }
     if len(rows) != len(expected):
-        raise MigrationRequiredError("migration required: collaboration responsibility v1")
+        raise MigrationRequiredError("migration required: task soft deletion v1")
     for row in rows:
         migration = expected.get(str(row[0]))
         if not migration:
@@ -942,6 +965,11 @@ def _create_tasks_v3(connection, observer):
         _execute(connection, statement, observer)
 
 
+def _create_tasks_v4(connection, observer):
+    for statement in TASKS_V4_TABLE_STATEMENTS + TASKS_V4_INDEX_STATEMENTS:
+        _execute(connection, statement, observer)
+
+
 def _apply_tasks_v2_migrations(path, app_commit, observer):
     with DomainMigrationLock(path, "tasks"):
         connection = sqlite3.connect(str(path), timeout=30, isolation_level=None)
@@ -956,7 +984,11 @@ def _apply_tasks_v2_migrations(path, app_commit, observer):
                     _create_tasks_v2(connection, observer)
                     now = _utc_now()
                     _create_tasks_v3(connection, observer)
-                    for migration in (TASKS_MIGRATION, TASKS_V2_MIGRATION, TASKS_V3_MIGRATION):
+                    _create_tasks_v4(connection, observer)
+                    for migration in (
+                        TASKS_MIGRATION, TASKS_V2_MIGRATION,
+                        TASKS_V3_MIGRATION, TASKS_V4_MIGRATION,
+                    ):
                         connection.execute(
                             "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
                             "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
@@ -975,13 +1007,40 @@ def _apply_tasks_v2_migrations(path, app_commit, observer):
                     ledger_ids = {str(row[0]) for row in connection.execute(
                         "SELECT migration_id FROM " + LEDGER_TABLE
                     ).fetchall()}
-                if TASKS_V3_MIGRATION_ID in ledger_ids:
+                if TASKS_V4_MIGRATION_ID in ledger_ids:
                     verify_tasks_schema(connection)
+                elif TASKS_V3_MIGRATION_ID in ledger_ids:
+                    connection.execute("BEGIN IMMEDIATE")
+                    try:
+                        _create_tasks_v4(connection, observer)
+                        migration = TASKS_V4_MIGRATION
+                        connection.execute(
+                            "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                            "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
+                            (migration["id"], migration["name"], migration["checksum"], _utc_now(),
+                             str(app_commit or "") or None,
+                             json.dumps({"source_state": "tasks-v3", "transactional": True}, sort_keys=True)),
+                        )
+                        verify_tasks_schema(connection)
+                        _require_integrity(connection, "tasks-v4-migration")
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
                 elif TASKS_V2_MIGRATION_ID in ledger_ids:
                     connection.execute("BEGIN IMMEDIATE")
                     try:
                         _create_tasks_v3(connection, observer)
+                        _create_tasks_v4(connection, observer)
                         migration = TASKS_V3_MIGRATION
+                        connection.execute(
+                            "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                            "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
+                            (migration["id"], migration["name"], migration["checksum"], _utc_now(),
+                             str(app_commit or "") or None,
+                             json.dumps({"source_state": "tasks-v2", "transactional": True}, sort_keys=True)),
+                        )
+                        migration = TASKS_V4_MIGRATION
                         connection.execute(
                             "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
                             "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
@@ -1013,11 +1072,20 @@ def _apply_tasks_v2_migrations(path, app_commit, observer):
                             "FROM tasks_v1"
                         )
                         _create_tasks_v3(connection, observer)
+                        _create_tasks_v4(connection, observer)
                         collaboration = TASKS_V3_MIGRATION
                         connection.execute(
                             "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
                             "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
                             (collaboration["id"], collaboration["name"], collaboration["checksum"], _utc_now(),
+                             str(app_commit or "") or None,
+                            json.dumps({"source_state": "tasks-v1", "transactional": True}, sort_keys=True)),
+                        )
+                        soft_delete = TASKS_V4_MIGRATION
+                        connection.execute(
+                            "INSERT INTO {} (migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                            "VALUES (?,?,?,'applied',?,?,?)".format(LEDGER_TABLE),
+                            (soft_delete["id"], soft_delete["name"], soft_delete["checksum"], _utc_now(),
                              str(app_commit or "") or None,
                              json.dumps({"source_state": "tasks-v1", "transactional": True}, sort_keys=True)),
                         )

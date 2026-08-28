@@ -15,6 +15,8 @@ from app.domain_schema_migrations import (
 )
 from app.services.tasks import (
     MOSCOW_TIMEZONE,
+    TaskConflictError,
+    TaskNotFoundError,
     TaskStore,
     TaskPermissionError,
     TaskValidationError,
@@ -253,6 +255,40 @@ class TaskStoreTest(unittest.TestCase):
         second = self.store.generate_notifications(2, "2026-08-27")
         self.assertEqual(first, second)
         self.assertEqual(len(self.store.notifications(2)), 2)
+
+    def test_soft_delete_preserves_audit_and_excludes_task_everywhere(self):
+        task = self.create(
+            title="Удаляемая задача", assignee_id=2, due_date="2026-08-27",
+            entity_type="order", entity_id="1",
+        )
+        with self.assertRaises(TaskPermissionError):
+            self.store.soft_delete(task["id"], 3)
+        deleted = self.store.soft_delete(task["id"], 2)
+        self.assertEqual(deleted["id"], task["id"])
+        self.assertEqual(deleted["author_id"], task["author_id"])
+        self.assertEqual(deleted["created_at"], task["created_at"])
+        self.assertEqual(deleted["deleted_by"], 2)
+        self.assertTrue(deleted["deleted_at"])
+        self.assertEqual(deleted["history"][0]["event_type"], "deleted")
+        with self.assertRaises(TaskNotFoundError):
+            self.store.get(task["id"])
+        with self.assertRaises(TaskConflictError):
+            self.store.soft_delete(task["id"], 2)
+        self.assertEqual(self.store.list("today", today="2026-08-27")["total"], 0)
+        self.assertEqual(self.store.calendar(
+            "2026-08-24", "2026-08-30", current_user_id=2
+        )["rows"], [])
+        self.assertEqual(self.store.for_entity("order", "1"), [])
+        self.assertEqual(self.store.counts("2026-08-27", assignee_id=2)["active"], 0)
+
+    def test_soft_delete_allows_author_and_administrator(self):
+        authored = self.create(title="Автор удаляет", assignee_id=2)
+        self.assertEqual(self.store.soft_delete(authored["id"], 1)["deleted_by"], 1)
+        administered = self.create(title="Администратор удаляет", assignee_id=2)
+        self.assertEqual(
+            self.store.soft_delete(administered["id"], 3, actor_role="admin")["deleted_by"],
+            3,
+        )
 
     def test_v1_migration_preserves_task_and_relation(self):
         legacy = Path(self.temporary.name) / "legacy.db"

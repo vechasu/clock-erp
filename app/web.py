@@ -1315,7 +1315,8 @@ def customers_page():
         with _tasks_store().connect() as connection:
             attention_ids = [int(item[0]) for item in connection.execute(
                 "SELECT DISTINCT l.entity_id FROM tasks t JOIN task_links l ON l.task_id=t.id "
-                "WHERE l.entity_type='customer' AND t.status IN ('new','in_progress','waiting') "
+                "WHERE l.entity_type='customer' AND t.deleted_at IS NULL "
+                "AND t.status IN ('new','in_progress','waiting') "
                 "AND t.due_date IS NOT NULL AND t.due_date<date('now') AND l.entity_id GLOB '[0-9]*'"
             ).fetchall()]
     except (OSError, sqlite3.Error, RuntimeError):
@@ -1397,7 +1398,7 @@ def customer_detail_page(customer_id):
         with _tasks_store().connect() as connection:
             tasks = [dict(row) for row in connection.execute(
                 "SELECT t.* FROM tasks t JOIN task_links l ON l.task_id=t.id "
-                "WHERE l.entity_type='customer' AND l.entity_id=? "
+                "WHERE l.entity_type='customer' AND l.entity_id=? AND t.deleted_at IS NULL "
                 "ORDER BY t.status IN ('new','in_progress','waiting') DESC,t.due_date,t.id DESC LIMIT 200",
                 (str(customer_id),),
             ).fetchall()]
@@ -22400,6 +22401,9 @@ def _task_entity(entity_type, entity_id):
 
 def _serialize_tasks(rows):
     users = {int(user["id"]): user for user in _task_users()}
+    current = current_auth_user() or {}
+    current_id = int(current.get("id") or 0)
+    is_admin = current.get("role") == "admin"
     result = []
     for task in rows:
         item = dict(task)
@@ -22408,6 +22412,13 @@ def _serialize_tasks(rows):
         item["assignee_name"] = full_name or user.get("email") or "Сотрудник"
         author = users.get(int(item["author_id"])) or {}
         item["author_name"] = " ".join(str(author.get(key) or "").strip() for key in ("first_name", "last_name")).strip() or author.get("email") or "Сотрудник"
+        item["can_delete"] = bool(
+            not item.get("deleted_at") and (
+                is_admin or current_id in {
+                    int(item["author_id"]), int(item["assignee_id"])
+                }
+            )
+        )
         for event in item.get("history", []):
             actor = users.get(int(event["actor_id"])) or {}
             event["actor_name"] = " ".join(str(actor.get(key) or "").strip() for key in ("first_name", "last_name")).strip() or actor.get("email") or "Сотрудник"
@@ -22437,6 +22448,8 @@ def _record_task_audit(task, action="updated"):
                 "title": task.get("title"), "status": task.get("status"),
                 "assignee_id": task.get("assignee_id"),
                 "due_date": task.get("due_date"), "priority": task.get("priority"),
+                "deleted_at": task.get("deleted_at"),
+                "deleted_by": task.get("deleted_by"),
             },
             metadata={"section": task.get("section")},
             **current_audit_actor()
@@ -22550,6 +22563,19 @@ def api_task_resource(task_id):
         return _task_api_error(error)
     if request.method != "GET":
         _record_task_audit(task)
+    return api_success(_serialize_tasks([task])[0])
+
+
+@app.delete("/api/v1/tasks/<int:task_id>")
+def api_task_delete(task_id):
+    user = current_auth_user() or {}
+    try:
+        task = _tasks_store().soft_delete(
+            task_id, user.get("id"), user.get("role", "employee")
+        )
+    except (TaskNotFoundError, TaskConflictError, TaskPermissionError) as error:
+        return _task_api_error(error)
+    _record_task_audit(task, "deleted")
     return api_success(_serialize_tasks([task])[0])
 
 

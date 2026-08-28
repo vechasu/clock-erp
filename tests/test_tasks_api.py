@@ -25,6 +25,24 @@ class TasksApiTest(unittest.TestCase):
                 "'anna@example.test','anna@example.test','hash','employee',1,?,?,?,1)",
                 (now, now, now),
             ).lastrowid
+            self.owner_id = connection.execute(
+                "INSERT INTO users(first_name,last_name,email,email_normalized,password_hash,role,active,"
+                "created_at,email_verified_at,updated_at,session_version) VALUES('Олег','Владелец',"
+                "'owner@example.test','owner@example.test','hash','employee',1,?,?,?,1)",
+                (now, now, now),
+            ).lastrowid
+            self.outsider_id = connection.execute(
+                "INSERT INTO users(first_name,last_name,email,email_normalized,password_hash,role,active,"
+                "created_at,email_verified_at,updated_at,session_version) VALUES('Игорь','Посторонний',"
+                "'outsider@example.test','outsider@example.test','hash','employee',1,?,?,?,1)",
+                (now, now, now),
+            ).lastrowid
+            self.admin_id = connection.execute(
+                "INSERT INTO users(first_name,last_name,email,email_normalized,password_hash,role,active,"
+                "created_at,email_verified_at,updated_at,session_version) VALUES('Ада','Админ',"
+                "'admin@example.test','admin@example.test','hash','admin',1,?,?,?,1)",
+                (now, now, now),
+            ).lastrowid
         web.app.config.update(
             TESTING=True, AUTH_TESTING=True, AUTH_DATABASE=str(self.auth_path),
             TASKS_DATABASE=str(self.tasks_path), SESSION_COOKIE_SECURE=False,
@@ -36,9 +54,9 @@ class TasksApiTest(unittest.TestCase):
         web.app.config.update(self.original_config)
         self.temporary.cleanup()
 
-    def login(self):
+    def login(self, user_id=None):
         with self.client.session_transaction() as session:
-            session["user_id"] = self.user_id
+            session["user_id"] = user_id or self.user_id
             session["session_version"] = 1
             session["_csrf_token"] = "tasks-csrf"
 
@@ -149,6 +167,52 @@ class TasksApiTest(unittest.TestCase):
                          ("2026-08-29", "14:00"))
         invalid = self.client.get("/api/v1/tasks/calendar?start=2026-01-01&end=2026-12-31")
         self.assertEqual(invalid.status_code, 422)
+
+    def test_task_soft_delete_api_permissions_idempotency_and_audit(self):
+        store = web.TaskStore(self.tasks_path)
+        create = lambda title, assignee: store.create(
+            {"title": title, "assignee_id": assignee}, self.user_id,
+            lambda value: True, lambda kind, value: None,
+        )[0]
+        headers = {"X-CSRF-Token": "tasks-csrf"}
+
+        authored = create("Авторская", self.owner_id)
+        self.login(self.outsider_id)
+        forbidden = self.client.delete(
+            "/api/v1/tasks/{}".format(authored["id"]), headers=headers
+        )
+        self.assertEqual(forbidden.status_code, 403)
+
+        self.login(self.owner_id)
+        owned = self.client.delete(
+            "/api/v1/tasks/{}".format(authored["id"]), headers=headers
+        )
+        self.assertEqual(owned.status_code, 200)
+        self.assertEqual(owned.get_json()["data"]["deleted_by"], self.owner_id)
+        repeated = self.client.delete(
+            "/api/v1/tasks/{}".format(authored["id"]), headers=headers
+        )
+        self.assertEqual(repeated.status_code, 409)
+        self.assertEqual(
+            self.client.get("/api/v1/tasks/{}".format(authored["id"])).status_code,
+            404,
+        )
+
+        admin_task = create("Для администратора", self.owner_id)
+        self.login(self.admin_id)
+        deleted = self.client.delete(
+            "/api/v1/tasks/{}".format(admin_task["id"]), headers=headers
+        )
+        self.assertEqual(deleted.status_code, 200)
+        with store.connect() as connection:
+            row = connection.execute(
+                "SELECT author_id,created_at,deleted_by,deleted_at FROM tasks WHERE id=?",
+                (admin_task["id"],),
+            ).fetchone()
+            self.assertEqual(row["author_id"], self.user_id)
+            self.assertEqual(row["deleted_by"], self.admin_id)
+            self.assertTrue(row["created_at"])
+            self.assertTrue(row["deleted_at"])
 
 
 if __name__ == "__main__":
