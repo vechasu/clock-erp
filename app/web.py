@@ -168,6 +168,17 @@ from app.services.tasks import (
     TaskValidationError,
     moscow_today,
 )
+from app.services.mail import (
+    MailConnectionError,
+    MailError,
+    MailSecretError,
+    MailStore,
+    MailSynchronizer,
+    MailTransport,
+    MailValidationError,
+    SecretBox,
+    safe_error as safe_mail_error,
+)
 from app.domain_schema_migrations import MigrationRequiredError
 from app.sales_reporting.application import build_report_context
 from app.sales_reporting.routes import SalesReportingRoutes
@@ -211,6 +222,7 @@ from flask import (
     render_template,
     request,
     session,
+    send_file,
     url_for,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -247,6 +259,16 @@ app.config.setdefault(
     "TASKS_DATABASE",
     os.getenv("ERP_TASKS_DATABASE", "").strip()
     or str(PROJECT_ROOT / "instance" / "tasks.db"),
+)
+app.config.setdefault(
+    "MAIL_DATABASE",
+    os.getenv("ERP_MAIL_DATABASE", "").strip()
+    or str(PROJECT_ROOT / "instance" / "mail.db"),
+)
+app.config.setdefault(
+    "MAIL_ATTACHMENT_ROOT",
+    os.getenv("ERP_MAIL_ATTACHMENT_ROOT", "").strip()
+    or str(PROJECT_ROOT / "instance" / "mail-attachments"),
 )
 app.config.setdefault(
     "PURCHASES_DATABASE",
@@ -1315,7 +1337,7 @@ def customer_detail_page(customer_id):
     if customer is None:
         abort(404)
     requested_tab = str(request.args.get("tab") or "overview")
-    tab = requested_tab if requested_tab in {"overview", "orders", "sales", "repairs", "purchases", "tasks", "contacts", "duplicates"} else "overview"
+    tab = requested_tab if requested_tab in {"overview", "orders", "sales", "repairs", "purchases", "tasks", "mail", "contacts", "duplicates"} else "overview"
     operation_type = {"orders": "order", "sales": "sale", "repairs": "repair"}.get(tab)
     per_page = request.args.get("per_page", 20) if operation_type else 20
     try:
@@ -1353,6 +1375,11 @@ def customer_detail_page(customer_id):
             ).fetchall()]
     except (OSError, sqlite3.Error, RuntimeError):
         app.logger.exception("Customer tasks could not be loaded customer_id=%s", customer_id)
+    mail_threads = []
+    try:
+        mail_threads = _mail_store().threads_for_entity("customer", customer_id)
+    except (OSError, sqlite3.Error, RuntimeError):
+        mail_threads = []
     contacts = store.contacts(customer_id)
     duplicates = store.duplicate_candidates(customer_id)
     timeline = store.timeline(customer_id, request.args.get("event_type", ""))
@@ -1366,6 +1393,7 @@ def customer_detail_page(customer_id):
         "customer_detail.html", customer=customer, tab=tab,
         customer_operations=operations["rows"] if operation_type else operations["rows"][:5],
         pagination=pagination, purchase_requests=purchase_requests, tasks=tasks,
+        mail_threads=mail_threads,
         contacts=contacts, duplicates=duplicates, timeline=timeline,
         can_manage_customers=(not auth_is_enabled() or (current_auth_user() or {}).get("role") == "admin"),
         csrf=csrf_token(),
@@ -17116,6 +17144,19 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/tasks"],
     },
     {
+        "key": "mail",
+        "label": "Почта",
+        "description": "Общий рабочий почтовый ящик компании.",
+        "icon": "mail",
+        "href": "/app/mail",
+        "mobile_href": "/app/mail",
+        "position": 3,
+        "group": "main",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/mail"],
+    },
+    {
         "key": "products",
         "label": "Товары",
         "description": "Каталог товаров.",
@@ -17409,6 +17450,7 @@ def get_navigation_items(include_disabled=False):
     active_key = get_active_navigation_key(request.path)
     task_badge = 0
     inbox_badge = 0
+    mail_badge = 0
     try:
         user = current_auth_user() or {}
         if user.get("id"):
@@ -17416,6 +17458,7 @@ def get_navigation_items(include_disabled=False):
             store.generate_notifications(user["id"])
             task_badge = store.counts(assignee_id=user["id"])["active"]
             inbox_badge = _collaboration_store().unread_count(user["id"])
+            mail_badge = _mail_store().unread_count()
     except (MigrationRequiredError, sqlite3.Error):
         task_badge = 0
     definitions = get_available_navigation_definitions()
@@ -17436,6 +17479,7 @@ def get_navigation_items(include_disabled=False):
             "badge": (
                 task_badge if key == "tasks"
                 else inbox_badge if key == "inbox"
+                else mail_badge if key == "mail"
                 else 0
             ),
         })
@@ -17539,7 +17583,7 @@ def inject_sidebar_navigation():
 
 
 SECTION_LABELS = {
-    "orders": "Заказы", "tasks": "Задачи", "products": "Товары",
+    "orders": "Заказы", "tasks": "Задачи", "mail": "Почта", "products": "Товары",
     "sales": "Продажи", "analytics": "Аналитика",
     "inventory": "Инвентаризация", "receipts": "Приход",
     "journal": "Журнал", "inbox": "Входящие", "repair": "Ремонты", "customers": "Клиенты",
@@ -22706,6 +22750,267 @@ def api_inbox_read(event_id):
 def api_inbox_read_all():
     user = current_auth_user() or {}
     return api_success({"updated": _collaboration_store().mark_all_read(user["id"])})
+
+
+def _mail_store():
+    return MailStore(
+        app.config["MAIL_DATABASE"], app.config["MAIL_ATTACHMENT_ROOT"]
+    )
+
+
+def _mail_owner_required():
+    if auth_is_enabled() and (current_auth_user() or {}).get("role") != "admin":
+        abort(403)
+
+
+def _mail_actor_id():
+    return int((current_auth_user() or {}).get("id") or 0)
+
+
+def _mail_account_public(account):
+    if not account:
+        return None
+    allowed = (
+        "id", "mailbox_name", "sender_name", "email", "imap_host", "imap_port",
+        "smtp_host", "smtp_port", "security", "login", "enabled",
+        "last_sync_at", "last_sync_status", "last_sync_error", "initial_sync_complete",
+    )
+    return {key: account.get(key) for key in allowed}
+
+
+def _mail_audit(thread_id, action, label, after=None, metadata=None):
+    try:
+        action_map = {
+            "connected": "updated", "disconnected": "updated", "sent": "created",
+            "linked": "updated", "assigned": "updated", "opened": "updated",
+            "updated": "updated",
+        }
+        AuditJournal().record(
+            "settings", "mail:{}".format(thread_id or "account"),
+            action_map.get(action, "updated"), str(label or "Почта")[:500],
+            after={"value": str((after or {}).get("status") or action)[:120]},
+            metadata={"module": "mail", "mail_action": action, **(metadata or {})}, source="ERP Mail",
+            **current_audit_actor()
+        )
+    except Exception:
+        app.logger.exception("Mail audit failed action=%s", action)
+
+
+def _mail_error_response(error):
+    code = getattr(error, "code", "MAIL_ERROR")
+    status = 422 if isinstance(error, MailValidationError) else 503
+    return api_error(code, safe_mail_error(error) if not isinstance(error, MailValidationError) else str(error), status)
+
+
+@app.get("/app/mail")
+def mail_page():
+    store = _mail_store()
+    try:
+        account = store.account()
+        migration_error = ""
+    except Exception:
+        account = None
+        migration_error = "Почтовый модуль ожидает безопасную миграцию базы."
+    user = current_auth_user() or {}
+    return render_template(
+        "mail.html", account=_mail_account_public(account),
+        can_manage=(not auth_is_enabled() or user.get("role") == "admin"),
+        users=_task_users(), csrf=csrf_token(), migration_error=migration_error,
+    )
+
+
+@app.get("/api/v1/mail/threads")
+def api_mail_threads():
+    try:
+        listing = _mail_store().list_threads(request.args, _mail_actor_id())
+        account = _mail_store().account()
+        listing["account"] = _mail_account_public(account)
+        listing["unread_count"] = _mail_store().unread_count()
+        return api_success(listing)
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.get("/api/v1/mail/threads/<int:thread_id>")
+def api_mail_thread(thread_id):
+    try:
+        thread = _mail_store().get_thread(
+            thread_id, mark_read_by=_mail_actor_id(),
+            show_images=request.args.get("show_images") == "1",
+        )
+        _mail_audit(thread_id, "opened", thread.get("subject"))
+        return api_success(thread)
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.patch("/api/v1/mail/threads/<int:thread_id>")
+def api_mail_thread_update(thread_id):
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        thread = _mail_store().update_thread(thread_id, payload, _mail_actor_id())
+        action = "assigned" if "assignee_id" in payload else "updated"
+        _mail_audit(thread_id, action, thread.get("subject"), after=payload)
+        return api_success(thread)
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.post("/api/v1/mail/threads/<int:thread_id>/links")
+def api_mail_thread_link(thread_id):
+    require_csrf_when_authenticated()
+    payload = api_json_payload()
+    try:
+        entity_type = str(payload.get("entity_type") or "")
+        entity_id = str(payload.get("entity_id") or "")
+        entity = _collaboration_entity(entity_type, entity_id) if entity_type == "task" else _task_entity(entity_type, entity_id)
+        if not entity:
+            raise MailValidationError("Связанный объект ERP не найден.")
+        _mail_store().replace_link(thread_id, payload["entity_type"], payload["entity_id"], entity["label"], _mail_actor_id())
+        _mail_audit(thread_id, "linked", "Переписка №{}".format(thread_id), metadata={"entity_type": payload["entity_type"], "entity_id": str(payload["entity_id"])})
+        return api_success(_mail_store().get_thread(thread_id))
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.delete("/api/v1/mail/threads/<int:thread_id>/links/<entity_type>/<entity_id>")
+def api_mail_thread_unlink(thread_id, entity_type, entity_id):
+    require_csrf_when_authenticated()
+    try:
+        _mail_store().replace_link(thread_id, entity_type, entity_id, "", _mail_actor_id(), remove=True)
+        _mail_audit(thread_id, "linked", "Переписка №{}".format(thread_id), metadata={"event": "removed", "entity_type": entity_type, "entity_id": entity_id})
+        return api_success({"removed": True})
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.post("/api/v1/mail/threads/<int:thread_id>/tasks")
+def api_mail_create_task(thread_id):
+    require_csrf_when_authenticated()
+    user = current_auth_user() or {}
+    try:
+        thread = _mail_store().get_thread(thread_id)
+        payload = api_json_payload()
+        task_payload = {
+            "title": str(payload.get("title") or thread.get("subject") or "Письмо")[:240],
+            "description": str(payload.get("description") or "Переписка: /app/mail?thread={}".format(thread_id))[:10000],
+            "assignee_id": int(payload.get("assignee_id") or thread.get("assignee_id") or user.get("id")),
+            "due_date": payload.get("due_date"), "section": "inbox", "status": "new", "priority": "other",
+            "links": [], "idempotency_key": request.headers.get("Idempotency-Key") or "mail-task-{}-{}".format(thread_id, uuid.uuid4().hex),
+        }
+        for link in thread.get("links") or []:
+            if link["entity_type"] in TASK_ENTITY_TYPES:
+                task_payload["links"].append({"entity_type": link["entity_type"], "entity_id": link["entity_id"]})
+        task, created = _tasks_store().create(task_payload, user.get("id"), _task_user_exists, _task_entity, collaboration=_collaboration_store(), actor=user)
+        _mail_store().replace_link(thread_id, "task", str(task["id"]), task["title"], _mail_actor_id())
+        if created:
+            _record_task_audit(task, "created")
+        _mail_audit(thread_id, "linked", thread.get("subject"), metadata={"event": "task_created", "task_id": task["id"]})
+        return api_success(_serialize_tasks([task])[0], 201 if created else 200)
+    except (MailError, TaskValidationError, TaskNotFoundError, TaskConflictError) as error:
+        if isinstance(error, MailError):
+            return _mail_error_response(error)
+        return _task_api_error(error)
+
+
+@app.post("/api/v1/mail/outbox")
+def api_mail_outbox():
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        item, created = _mail_store().queue_outbox(
+            payload, _mail_actor_id(), request.headers.get("Idempotency-Key") or payload.get("idempotency_key"),
+            draft=bool(payload.get("draft")),
+        )
+        if created and not payload.get("draft"):
+            _mail_audit(item.get("thread_id") or item["id"], "sent", item.get("subject"), after={"delivery_status": "queued"})
+        return api_success({"id": item["id"], "state": item["state"]}, 201 if created else 200, duplicate=not created)
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.post("/api/v1/mail/sync")
+def api_mail_sync_request():
+    require_csrf_when_authenticated()
+    try:
+        _mail_store().request_sync(_mail_actor_id())
+        return api_success({"state": "pending"}, 202)
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.get("/api/v1/mail/customers")
+def api_mail_customer_search():
+    query = str(request.args.get("q") or "").strip()
+    if len(query) < 2:
+        return api_success([])
+    try:
+        listing = customer_store().list(query=query, page=1, per_page=20)
+        return api_success(listing.get("rows") or [])
+    except (sqlite3.Error, ValueError):
+        return api_success([])
+
+
+@app.get("/api/v1/mail/attachments/<int:attachment_id>")
+def api_mail_attachment(attachment_id):
+    try:
+        item, path = _mail_store().attachment(attachment_id)
+        return send_file(str(path), mimetype=item["content_type"], as_attachment=True, download_name=item["original_name"], max_age=0)
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.post("/api/v1/mail/settings/test")
+def api_mail_settings_test():
+    _mail_owner_required()
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        existing = _mail_store().account()
+        password = str(payload.get("password") or "")
+        if not password and existing:
+            password = SecretBox().decrypt(existing["encrypted_password"])
+        account = {
+            "imap_host": str(payload.get("imap_host") or (existing or {}).get("imap_host") or "").strip(),
+            "imap_port": int(payload.get("imap_port") or (existing or {}).get("imap_port") or 993),
+            "smtp_host": str(payload.get("smtp_host") or (existing or {}).get("smtp_host") or "").strip(),
+            "smtp_port": int(payload.get("smtp_port") or (existing or {}).get("smtp_port") or 465),
+            "security": str(payload.get("security") or (existing or {}).get("security") or "ssl"),
+            "login": str(payload.get("login") or (existing or {}).get("login") or "").strip(),
+        }
+        if not password:
+            raise MailValidationError("Введите пароль приложения.")
+        MailTransport(account, password, timeout=10).test()
+        return api_success({"connected": True})
+    except Exception as error:
+        if isinstance(error, MailError):
+            return _mail_error_response(error)
+        return api_error("MAIL_CONNECTION_FAILED", safe_mail_error(error), 422)
+
+
+@app.post("/api/v1/mail/settings")
+def api_mail_settings_save():
+    _mail_owner_required()
+    require_csrf_when_authenticated()
+    try:
+        account = _mail_store().save_account(api_json_payload(), _mail_actor_id(), SecretBox())
+        _mail_audit("account", "connected", account["mailbox_name"])
+        return api_success(_mail_account_public(account))
+    except MailError as error:
+        return _mail_error_response(error)
+
+
+@app.delete("/api/v1/mail/settings")
+def api_mail_settings_disable():
+    _mail_owner_required()
+    require_csrf_when_authenticated()
+    try:
+        _mail_store().disable(_mail_actor_id())
+        _mail_audit("account", "disconnected", "Общий почтовый ящик")
+        return api_success({"enabled": False})
+    except MailError as error:
+        return _mail_error_response(error)
 
 
 @app.route("/app", defaults={"react_path": ""}, strict_slashes=False)
