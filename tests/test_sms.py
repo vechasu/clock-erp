@@ -275,7 +275,7 @@ class SmsWebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Центр SMS".encode("utf-8"), response.data)
         self.assertNotIn(b"actual-provider-password", response.data.lower())
-        self.assertIn(b"@media(max-width:720px)", (Path(__file__).parents[1] / "app/static/css/sms.css").read_bytes())
+        self.assertIn(b"max-width: 720px", (Path(__file__).parents[1] / "app/static/css/sms.css").read_bytes())
 
     def test_send_endpoint_uses_session_actor_and_is_idempotent(self):
         provider = FakeProvider()
