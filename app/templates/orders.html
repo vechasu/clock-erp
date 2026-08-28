@@ -107,6 +107,8 @@
                             <div class="card-subtitle"><span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>{% if detail_total is not none %} · <strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}</div>
                         </div>
                         <div class="actions">
+                            {% if sms_permissions.send %}<a class="button button-primary" href="{{ url_for('sms_page', order_id=detail_id, compose=1) }}">Отправить SMS</a>{% endif %}
+                            {% if sms_permissions.view %}<a class="button button-secondary" href="{{ url_for('sms_page', order_id=detail_id) }}">История SMS</a>{% endif %}
                             <a class="button button-secondary" href="{{ url_for('tasks_page', entity_type='order', entity_id=detail_id, title='Заказ №' ~ detail_number) }}">Создать задачу</a>
                             {% if is_wb %}<span class="button button-secondary" aria-label="Только чтение">Только чтение</span>{% else %}
                             <form class="status-form" method="post" action="/order/{{ detail_id }}/status" data-status-autosave>

@@ -10,6 +10,7 @@ from app.auth import AuthStore
 from app.domain_schema_migrations import apply_domain_migrations
 from app.schema_migrations import apply_migrations
 from app.services.orders_snapshot import OrdersSnapshotStore
+from app.sms_migrations import migrate_database as migrate_sms
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +31,7 @@ class RuntimeDDLGateTest(unittest.TestCase):
         self.assertEqual(report["tracked_runtime_containers"], 1)
         self.assertEqual(report["tracked_ensure_functions"], 0)
         self.assertEqual(report["tracked_legacy_scripts"], 6)
-        self.assertEqual(report["tracked_migration_modules"], 7)
+        self.assertEqual(report["tracked_migration_modules"], 8)
 
     def test_new_runtime_ddl_container_is_detected(self):
         from scripts import check_runtime_ddl
@@ -52,9 +53,11 @@ class RuntimeDDLGateTest(unittest.TestCase):
             catalog = root / "catalog.db"
             orders = root / "orders.db"
             auth = root / "auth.db"
+            sms = root / "sms.db"
             apply_migrations(catalog, app_commit="runtime-ddl-test")
             apply_domain_migrations(orders, "orders", "runtime-ddl-test")
             apply_domain_migrations(auth, "auth", "runtime-ddl-test")
+            migrate_sms(sms)
             OrdersSnapshotStore(orders).initialize()
             AuthStore(auth)
             environment = dict(os.environ)
