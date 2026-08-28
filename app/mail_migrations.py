@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -139,6 +140,7 @@ def migrate_database(path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(path), timeout=30)
+    os.chmod(str(path), 0o600)
     try:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("BEGIN IMMEDIATE")
