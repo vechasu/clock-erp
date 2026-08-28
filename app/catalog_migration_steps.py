@@ -966,7 +966,7 @@ CREATE INDEX IF NOT EXISTS idx_erp_inventory_items_product
 CREATE TABLE IF NOT EXISTS erp_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK (
-        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair', 'order', 'customer', 'task', 'purchase', 'settings', 'user')
+        entity_type IN ('product', 'sale', 'receipt', 'brand', 'category', 'inventory', 'repair', 'order', 'customer', 'task', 'purchase', 'settings', 'user', 'service')
     ),
     entity_id TEXT NOT NULL,
     action TEXT NOT NULL,

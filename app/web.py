@@ -52,6 +52,15 @@ from app.clients.wildberries_orders import (
 )
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
 from app.services.audit_journal import AuditJournal
+from app.services.service_vault import (
+    ServiceConflictError,
+    ServiceNotFoundError,
+    ServicePermissionError,
+    ServiceVault,
+    ServiceVaultError,
+    VaultKeyError,
+    validate_icon,
+)
 from app.services.collaboration import CollaborationStore, CollaborationValidationError
 from app.services.inventory_journal import InventoryJournal
 from app.services.order_status import (
@@ -242,6 +251,11 @@ app.config.setdefault(
     "PURCHASES_DATABASE",
     os.getenv("ERP_PURCHASES_DATABASE", "").strip()
     or str(PROJECT_ROOT / "instance" / "purchases.db"),
+)
+app.config.setdefault(
+    "SERVICES_DATABASE",
+    os.getenv("ERP_SERVICES_DATABASE", "").strip()
+    or str(PROJECT_ROOT / "instance" / "services.db"),
 )
 
 # Gunicorn imports this module once per worker. Pay the one required schema
@@ -17244,6 +17258,19 @@ NAVIGATION_DEFINITIONS = [
         "active_prefixes": ["/app/team"],
     },
     {
+        "key": "services",
+        "label": "Сервисы",
+        "description": "Рабочие сайты и приложения компании.",
+        "icon": "services",
+        "href": "/app/services",
+        "mobile_href": "/app/services",
+        "position": 10,
+        "group": "system",
+        "mobile_primary": False,
+        "active_exact": [],
+        "active_prefixes": ["/app/services", "/api/services"],
+    },
+    {
         "key": "settings",
         "label": "Настройки",
         "description": "Настройки ERP.",
@@ -17319,7 +17346,7 @@ SECTION_LABELS = {
     "sales": "Продажи", "analytics": "Аналитика",
     "inventory": "Инвентаризация", "receipts": "Приход",
     "journal": "Журнал", "inbox": "Входящие", "repair": "Ремонты", "customers": "Клиенты",
-    "purchases": "Закупки", "team": "Команда", "settings": "Настройки",
+    "purchases": "Закупки", "team": "Команда", "services": "Сервисы", "settings": "Настройки",
 }
 
 
@@ -17344,6 +17371,233 @@ def track_authenticated_section():
     if key:
         session["current_section"] = SECTION_LABELS.get(key, key)
     return None
+
+
+def _service_vault():
+    return ServiceVault(app.config["SERVICES_DATABASE"])
+
+
+def _service_payload():
+    if request.content_type and request.content_type.startswith("multipart/form-data"):
+        try:
+            payload = json.loads(request.form.get("payload") or "{}")
+        except ValueError as error:
+            raise ServiceVaultError("Некорректные данные формы") from error
+    else:
+        payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        raise ServiceVaultError("Некорректные данные формы")
+    return payload
+
+
+def _service_icon_upload():
+    uploaded = request.files.get("icon")
+    if not uploaded or not uploaded.filename:
+        return None
+    return validate_icon(uploaded.read(512 * 1024 + 1), uploaded.mimetype or "")
+
+
+def _service_error(error):
+    if isinstance(error, ServicePermissionError):
+        status = 403
+    elif isinstance(error, ServiceNotFoundError):
+        status = 404
+    elif isinstance(error, ServiceConflictError):
+        status = 409
+    elif isinstance(error, VaultKeyError):
+        status = 503
+    else:
+        status = 400
+    return jsonify({"ok": False, "error": str(error)}), status
+
+
+def _record_service_audit(service_id, action, name, account="", metadata=None):
+    AuditJournal().record(
+        "service", str(service_id), action, str(name or "Сервис"),
+        object_secondary=str(account or ""), metadata=metadata or {},
+        **current_audit_actor()
+    )
+
+
+@app.get("/app/services")
+def services_page():
+    user = current_auth_user() or {}
+    try:
+        vault = _service_vault()
+        items = vault.list_services(user)
+    except (ServiceVaultError, VaultKeyError) as error:
+        app.logger.error("Services vault unavailable: %s", type(error).__name__)
+        return render_template(
+            "services.html", services=[], service_users=[], vault_error=str(error),
+            is_owner=user.get("role") == "admin", can_edit_services=False,
+            csrf=csrf_token(),
+        ), 503
+    can_edit_services = any(item["permissions"]["can_edit"] for item in items)
+    can_manage_services = any(item["permissions"]["can_manage_access"] for item in items)
+    users = get_auth_store().list_team_presence() if (user.get("role") == "admin" or can_manage_services) else []
+    return render_template(
+        "services.html", services=items, service_users=users, vault_error="",
+        is_owner=user.get("role") == "admin", can_edit_services=can_edit_services,
+        csrf=csrf_token(),
+    )
+
+
+@app.get("/api/services")
+def api_services_list():
+    try:
+        archived = request.args.get("archived") == "1"
+        return jsonify({"ok": True, "services": _service_vault().list_services(current_auth_user(), archived)})
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.post("/api/services")
+def api_services_create():
+    try:
+        require_csrf_when_authenticated()
+        payload = _service_payload()
+        service_id = _service_vault().create(payload, current_auth_user(), _service_icon_upload())
+        _record_service_audit(service_id, "created", payload.get("name"), metadata={"text_snapshot": "Сервис добавлен"})
+        for account in payload.get("accounts") or []:
+            _record_service_audit(service_id, "updated", payload.get("name"), account.get("label"),
+                                  {"text_snapshot": "Аккаунт добавлен"})
+        return jsonify({"ok": True, "id": service_id}), 201
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.put("/api/services/<int:service_id>")
+def api_services_update(service_id):
+    try:
+        require_csrf_when_authenticated()
+        payload = _service_payload()
+        _service_vault().update(service_id, payload, current_auth_user(), _service_icon_upload())
+        _record_service_audit(service_id, "updated", payload.get("name"), metadata={"text_snapshot": "Изменения сохранены"})
+        if payload.get("permissions") is not None:
+            _record_service_audit(service_id, "permissions_changed", payload.get("name"),
+                                  metadata={"text_snapshot": "Права доступа изменены"})
+        for account in payload.get("accounts") or []:
+            if account.get("password"):
+                _record_service_audit(service_id, "updated", payload.get("name"), account.get("label"),
+                                      {"text_snapshot": "Пароль изменён"})
+        return jsonify({"ok": True})
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.post("/api/services/<int:service_id>/archive")
+def api_services_archive(service_id):
+    try:
+        require_csrf_when_authenticated()
+        payload = request.get_json(silent=True) or {}
+        archived = bool(payload.get("archived", True))
+        vault = _service_vault()
+        visible = vault.list_services(current_auth_user(), archived=not archived)
+        name = next((item["name"] for item in visible if item["id"] == service_id), "Сервис")
+        vault.set_archived(service_id, archived, current_auth_user())
+        _record_service_audit(service_id, "archived" if archived else "restored", name,
+                              metadata={"text_snapshot": "Сервис перемещён в архив" if archived else "Сервис восстановлен"})
+        return jsonify({"ok": True})
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.post("/api/services/<int:service_id>/favorite")
+def api_services_favorite(service_id):
+    try:
+        require_csrf_when_authenticated()
+        favorite = bool((request.get_json(silent=True) or {}).get("favorite"))
+        vault = _service_vault()
+        name = next((item["name"] for item in vault.list_services(current_auth_user()) if item["id"] == service_id), "Сервис")
+        vault.set_favorite(service_id, favorite, current_auth_user())
+        _record_service_audit(service_id, "favorite_changed", name,
+                              metadata={"text_snapshot": "Добавлен в избранное" if favorite else "Удалён из избранного"})
+        return jsonify({"ok": True})
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.post("/api/services/reorder")
+def api_services_reorder():
+    try:
+        require_csrf_when_authenticated()
+        ordered = (request.get_json(silent=True) or {}).get("ordered_ids") or []
+        _service_vault().reorder(ordered, current_auth_user())
+        _record_service_audit("order", "reordered", "Рабочие сервисы", metadata={"text_snapshot": "Порядок сервисов изменён"})
+        return jsonify({"ok": True})
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.post("/api/services/<int:service_id>/open")
+def api_services_open(service_id):
+    try:
+        require_csrf_when_authenticated()
+        vault = _service_vault()
+        with vault.connect() as connection:
+            service, _rights = vault.require(connection, service_id, current_auth_user(), "can_open")
+            url, name = service["url"], service["name"]
+        _record_service_audit(service_id, "opened", name, metadata={"text_snapshot": "Сервис открыт"})
+        response = jsonify({"ok": True, "url": url})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.get("/api/service-accounts/<int:account_id>/<kind>")
+def api_service_credential(account_id, kind):
+    if kind not in {"login", "password"}:
+        abort(404)
+    try:
+        value, service, account = _service_vault().credential(account_id, current_auth_user(), kind)
+        actor_name = current_audit_actor().get("actor_name") or "Пользователь"
+        text = (
+            "Пользователь {} просмотрел пароль сервиса «{}», аккаунт «{}»".format(
+                actor_name, service["name"], account["label"]
+            ) if kind == "password" else "Логин просмотрен"
+        )
+        _record_service_audit(service["id"], "credential_viewed", service["name"], account["label"],
+                              {"text_snapshot": text})
+        response = jsonify({"ok": True, "value": value})
+        response.headers["Cache-Control"] = "no-store, private, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        return response
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.post("/api/service-accounts/<int:account_id>/copied")
+def api_service_credential_copied(account_id):
+    try:
+        require_csrf_when_authenticated()
+        kind = str((request.get_json(silent=True) or {}).get("kind") or "")
+        if kind not in {"login", "password"}:
+            raise ServiceVaultError("Неизвестный тип реквизита")
+        vault = _service_vault()
+        value, service, account = vault.credential(
+            account_id, current_auth_user(), kind, for_copy=True
+        )
+        _record_service_audit(service["id"], "credential_copied", service["name"], account["label"],
+                              {"text_snapshot": "Пароль скопирован" if kind == "password" else "Логин скопирован"})
+        response = jsonify({"ok": True, "value": value})
+        response.headers["Cache-Control"] = "no-store, private, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        return response
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
+
+
+@app.get("/api/services/<int:service_id>/icon")
+def api_service_icon(service_id):
+    try:
+        content, mime = _service_vault().icon(service_id, current_auth_user())
+        response = Response(content, mimetype=mime)
+        response.headers["Cache-Control"] = "private, max-age=3600"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    except (ServiceVaultError, VaultKeyError) as error:
+        return _service_error(error)
 
 
 def _presence_time(value, now=None):
@@ -17412,6 +17666,7 @@ JOURNAL_ENTITY_LABELS = {
     "repair": "Ремонт",
     "order": "Заказы", "customer": "Клиенты", "task": "Задачи",
     "purchase": "Закупки", "settings": "Настройки", "user": "Команда",
+    "service": "Сервисы",
 }
 JOURNAL_ACTION_LABELS = {
     "created": "Создано",
@@ -17430,6 +17685,12 @@ JOURNAL_ACTION_LABELS = {
     "logged_in": "Вошёл в систему",
     "started": "Начато",
     "completed": "Завершено",
+    "opened": "Сервис открыт",
+    "credential_viewed": "Реквизит просмотрен",
+    "credential_copied": "Реквизит скопирован",
+    "favorite_changed": "Избранное изменено",
+    "reordered": "Порядок изменён",
+    "permissions_changed": "Права изменены",
 }
 JOURNAL_FIELD_LABELS = {
     "name": "Название", "article": "Артикул", "brand": "Бренд",

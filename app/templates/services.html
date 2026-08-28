@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Рабочие сервисы</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/services.css') }}">
+    <script defer src="{{ url_for('static', filename='js/services.js') }}"></script>
+</head>
+<body class="services-page">
+<div class="app">
+    {% include "_sidebar.html" %}
+    <main class="main services-main" id="main-content" tabindex="-1">
+        <header class="services-header">
+            <div><h1>Рабочие сервисы</h1><p>Все сайты и приложения компании в одном месте</p></div>
+            {% if is_owner %}<button class="services-primary" id="addService" type="button">+ Добавить сервис</button>{% endif %}
+        </header>
+        {% if vault_error %}<div class="services-error" role="alert">{{ vault_error }}</div>{% endif %}
+        <section class="services-tools" aria-label="Поиск и фильтры">
+            <label class="services-search"><span aria-hidden="true">⌕</span><input id="serviceSearch" type="search" placeholder="Найти Bitrix, СДЭК или хостинг…" autocomplete="off"></label>
+            <div class="services-filters" id="serviceFilters" role="group" aria-label="Категории">
+                <button type="button" class="is-active" data-filter="all">Все</button>
+                <button type="button" data-filter="favorite">Избранные</button>
+                <button type="button" data-filter="sites">Сайты</button>
+                <button type="button" data-filter="sales">Продажи</button>
+                <button type="button" data-filter="delivery">Доставка</button>
+                <button type="button" data-filter="infrastructure">Инфраструктура</button>
+            </div>
+            <div class="services-result-row"><strong id="serviceCount">0 сервисов</strong>{% if is_owner %}<button type="button" class="services-link" id="archiveToggle">Показать архив</button>{% endif %}</div>
+        </section>
+        <section class="services-grid" id="serviceGrid" aria-live="polite"></section>
+        <div class="services-empty" id="serviceEmpty" hidden><div>◎</div><h2>Сервисы пока не добавлены</h2><p>Добавьте первый рабочий сайт или приложение.</p></div>
+    </main>
+</div>
+
+{% if is_owner or can_edit_services %}
+<dialog class="service-dialog" id="serviceDialog" aria-labelledby="serviceDialogTitle">
+    <form id="serviceForm" method="dialog">
+        <header><div><h2 id="serviceDialogTitle">Добавить сервис</h2><p>Ссылка и реквизиты будут храниться в защищённом каталоге.</p></div><button type="button" class="dialog-close" data-close aria-label="Закрыть">×</button></header>
+        <div class="service-form-body">
+            <input type="hidden" id="serviceId"><input type="hidden" id="serviceVersion">
+            <div class="service-fields two"><label>Название сервиса<input name="name" maxlength="160" required></label><label>Ссылка<input name="url" type="url" placeholder="https://example.com" required></label></div>
+            <label>Описание<textarea name="description" maxlength="1000" rows="3"></textarea></label>
+            <div class="service-fields two"><label>Категория<select name="category"><option value="sites">Сайты</option><option value="sales">Продажи</option><option value="delivery">Доставка</option><option value="infrastructure">Инфраструктура</option></select></label><label>Встроенная иконка<select name="icon"><option value="globe">Сайт</option><option value="cart">Продажи</option><option value="truck">Доставка</option><option value="server">Сервер</option><option value="cloud">Облако</option><option value="lock">Защита</option></select></label></div>
+            <label>Своя иконка <span class="field-hint">PNG, JPEG или WEBP, до 512 КБ</span><input name="icon_file" type="file" accept="image/png,image/jpeg,image/webp"></label>
+            <section class="form-section"><div class="form-section-title"><h3>Аккаунты</h3><button type="button" class="services-link" id="addAccount">+ Добавить аккаунт</button></div><div id="accountFields"></div></section>
+            <section class="form-section" id="permissionsSection"><h3>Кому доступно</h3><div id="permissionFields" class="permission-fields"></div></section>
+            <label class="service-check"><input name="favorite" type="checkbox"> Добавить в избранное</label>
+            <p class="form-status" id="serviceFormStatus" role="alert"></p>
+        </div>
+        <footer><button type="button" class="services-secondary" data-close>Отмена</button><button type="submit" class="services-primary">Сохранить</button></footer>
+    </form>
+</dialog>
+{% endif %}
+<div class="services-toast" id="servicesToast" role="status" aria-live="polite"></div>
+<script>
+window.SERVICES_BOOTSTRAP = {{ {
+    "services": services,
+    "users": service_users,
+    "isOwner": is_owner,
+    "csrf": csrf,
+    "vaultError": vault_error
+}|tojson }};
+</script>
+</body>
+</html>
