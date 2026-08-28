@@ -5,6 +5,7 @@ const python = process.env.ERP_A11Y_PYTHON || 'python3';
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'services.spec.ts',
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
