@@ -6,9 +6,12 @@ from pathlib import Path
 
 from app.auth import AuthStore
 from app.domain_schema_migrations import (
+    AUTH_INDEX_STATEMENTS,
     AUTH_MIGRATION,
     AUTH_MIGRATION_ID,
+    AUTH_TABLE_STATEMENTS,
     DOMAIN_MIGRATIONS,
+    LEDGER_SQL,
     LEDGER_TABLE,
     ORDERS_MIGRATION,
     DomainMigrationError,
@@ -47,6 +50,8 @@ class DomainSchemaMigrationTest(unittest.TestCase):
                 with sqlite3.connect(str(path)) as connection:
                     row = connection.execute(
                         "SELECT migration_id,checksum,state,app_commit FROM " + LEDGER_TABLE
+                        + " WHERE migration_id = ?",
+                        (DOMAIN_MIGRATIONS[kind]["id"],),
                     ).fetchone()
                 migration = DOMAIN_MIGRATIONS[kind]
                 self.assertEqual(row[:3], (
@@ -74,6 +79,42 @@ class DomainSchemaMigrationTest(unittest.TestCase):
                 "SELECT email_normalized,email_verified_at,updated_at,session_version FROM users"
             ).fetchone()
         self.assertEqual(row, ("a@example.test", 123, 123, 1))
+
+    def test_auth_v1_ledger_upgrades_to_user_preferences(self):
+        path = self.root / "auth-v1.db"
+        with sqlite3.connect(str(path)) as connection:
+            connection.execute(LEDGER_SQL)
+            for statement in AUTH_TABLE_STATEMENTS + AUTH_INDEX_STATEMENTS:
+                connection.execute(statement)
+            connection.execute(
+                "INSERT INTO {} "
+                "(migration_id,name,checksum,state,applied_at,app_commit,details_json) "
+                "VALUES (?,?,?,'applied','2026-08-28','old','{{}}')".format(
+                    LEDGER_TABLE
+                ),
+                (
+                    AUTH_MIGRATION["id"],
+                    AUTH_MIGRATION["name"],
+                    AUTH_MIGRATION["checksum"],
+                ),
+            )
+            connection.execute(
+                "INSERT INTO users "
+                "(first_name,last_name,email,email_normalized,password_hash,role,active,created_at,"
+                "email_verified_at,updated_at,session_version) "
+                "VALUES ('A','B','a@example.test','a@example.test','hash','admin',1,1,1,1,1)"
+            )
+        before = domain_snapshot(path, "auth")
+        after = apply_domain_migrations(path, "auth", "upgrade")
+        validate_auth_database(path)
+        self.assertEqual(before["business_counts"], after["business_counts"])
+        with sqlite3.connect(str(path)) as connection:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM user_navigation_preferences"
+                ).fetchone()[0],
+                0,
+            )
 
     def test_known_legacy_orders_upgrade_preserves_snapshot(self):
         path = self.root / "orders-legacy.db"

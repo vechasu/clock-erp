@@ -169,5 +169,190 @@
             });
         });
 
+        var navigationList = document.getElementById("navigationPreferencesList");
+        var navigationSave = document.getElementById("navigationPreferencesSave");
+        var navigationReset = document.getElementById("navigationPreferencesReset");
+        var navigationStatus = document.getElementById("navigationPreferencesStatus");
+        var draggedItem = null;
+
+        function setNavigationStatus(message, kind) {
+            if (navigationStatus) {
+                navigationStatus.textContent = message;
+                navigationStatus.className = "settings-form-status is-" + kind;
+            }
+        }
+
+        function navigationItems() {
+            return navigationList
+                ? Array.prototype.slice.call(
+                    navigationList.querySelectorAll("[data-navigation-preference-key]")
+                )
+                : [];
+        }
+
+        function updateMoveButtons() {
+            var items = navigationItems();
+            items.forEach(function (item, index) {
+                var up = item.querySelector('[data-navigation-move="up"]');
+                var down = item.querySelector('[data-navigation-move="down"]');
+                up.disabled = index === 0;
+                down.disabled = index === items.length - 1;
+            });
+        }
+
+        function moveNavigationItem(item, direction) {
+            var sibling = direction === "up"
+                ? item.previousElementSibling
+                : item.nextElementSibling;
+            if (!sibling) {
+                return;
+            }
+            if (direction === "up") {
+                navigationList.insertBefore(item, sibling);
+            } else {
+                navigationList.insertBefore(sibling, item);
+            }
+            updateMoveButtons();
+            setNavigationStatus(
+                "Вкладка «" + item.querySelector(".navigation-preference-label").textContent.trim()
+                + "» перемещена " + (direction === "up" ? "вверх." : "вниз."),
+                "info"
+            );
+            item.querySelector('[data-navigation-move="' + direction + '"]').focus();
+        }
+
+        function requestNavigation(method, payload) {
+            navigationSave.disabled = true;
+            navigationReset.disabled = true;
+            setNavigationStatus("Сохраняем…", "info");
+            return fetch("/api/v1/navigation-preferences", {
+                method: method,
+                credentials: "same-origin",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": csrf ? csrf.value : ""
+                },
+                body: payload ? JSON.stringify(payload) : undefined
+            }).then(function (response) {
+                return response.json().catch(function () {
+                    return {};
+                }).then(function (data) {
+                    if (!response.ok) {
+                        throw new Error(
+                            data.message || "Не удалось сохранить настройки вкладок."
+                        );
+                    }
+                    return data;
+                });
+            }).catch(function (error) {
+                navigationSave.disabled = false;
+                navigationReset.disabled = false;
+                setNavigationStatus(error.message, "error");
+                showNotice(form, error.message, "error");
+                return null;
+            });
+        }
+
+        if (navigationList && navigationSave && navigationReset) {
+            updateMoveButtons();
+            navigationList.addEventListener("click", function (event) {
+                var button = event.target.closest("[data-navigation-move]");
+                if (button) {
+                    moveNavigationItem(
+                        button.closest("[data-navigation-preference-key]"),
+                        button.dataset.navigationMove
+                    );
+                }
+            });
+            navigationList.addEventListener("dragstart", function (event) {
+                draggedItem = event.target.closest("[data-navigation-preference-key]");
+                if (!draggedItem) {
+                    return;
+                }
+                draggedItem.classList.add("is-dragging");
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData(
+                    "text/plain", draggedItem.dataset.navigationPreferenceKey
+                );
+            });
+            navigationList.addEventListener("dragover", function (event) {
+                var target = event.target.closest("[data-navigation-preference-key]");
+                if (!draggedItem || !target || target === draggedItem) {
+                    return;
+                }
+                event.preventDefault();
+                navigationItems().forEach(function (item) {
+                    item.classList.remove("is-drag-target");
+                });
+                target.classList.add("is-drag-target");
+            });
+            navigationList.addEventListener("drop", function (event) {
+                var target = event.target.closest("[data-navigation-preference-key]");
+                if (!draggedItem || !target || target === draggedItem) {
+                    return;
+                }
+                event.preventDefault();
+                var box = target.getBoundingClientRect();
+                navigationList.insertBefore(
+                    draggedItem,
+                    event.clientY < box.top + box.height / 2
+                        ? target
+                        : target.nextElementSibling
+                );
+                setNavigationStatus("Порядок вкладок изменён.", "info");
+                updateMoveButtons();
+            });
+            navigationList.addEventListener("dragend", function () {
+                navigationItems().forEach(function (item) {
+                    item.classList.remove("is-dragging", "is-drag-target");
+                });
+                draggedItem = null;
+            });
+            navigationSave.addEventListener("click", function () {
+                var items = navigationItems();
+                requestNavigation("PUT", {
+                    order: items.map(function (item) {
+                        return item.dataset.navigationPreferenceKey;
+                    }),
+                    hidden: items.filter(function (item) {
+                        var checkbox = item.querySelector("[data-navigation-visible]");
+                        return checkbox && !checkbox.checked;
+                    }).map(function (item) {
+                        return item.dataset.navigationPreferenceKey;
+                    })
+                }).then(function (result) {
+                    if (!result) {
+                        return;
+                    }
+                    sessionStorage.setItem(
+                        "vechasu-navigation-notice",
+                        "Настройки вкладок сохранены"
+                    );
+                    window.location.reload();
+                });
+            });
+            navigationReset.addEventListener("click", function () {
+                requestNavigation("DELETE").then(function (result) {
+                    if (!result) {
+                        return;
+                    }
+                    sessionStorage.setItem(
+                        "vechasu-navigation-notice",
+                        "Настройки вкладок сброшены"
+                    );
+                    window.location.reload();
+                });
+            });
+            var savedNavigationNotice = sessionStorage.getItem(
+                "vechasu-navigation-notice"
+            );
+            if (savedNavigationNotice) {
+                sessionStorage.removeItem("vechasu-navigation-notice");
+                setNavigationStatus(savedNavigationNotice, "success");
+                showNotice(form, savedNavigationNotice, "success");
+            }
+        }
+
     });
 })();

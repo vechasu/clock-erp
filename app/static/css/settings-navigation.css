@@ -1,0 +1,116 @@
+.settings-navigation-card {
+    margin-top: 18px;
+}
+
+.navigation-preferences-list {
+    display: grid;
+    gap: 8px;
+    margin: 18px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.navigation-preference-item {
+    display: grid;
+    grid-template-columns: 28px minmax(140px, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    min-height: 54px;
+    padding: 8px 10px;
+    border: 1px solid var(--theme-border, #d8e0ea);
+    border-radius: 10px;
+    background: var(--theme-surface, #fff);
+}
+
+.navigation-preference-item.is-dragging {
+    opacity: 0.55;
+}
+
+.navigation-preference-item.is-drag-target {
+    border-color: var(--theme-primary, #2563eb);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.navigation-drag-handle {
+    color: var(--theme-text-muted, #64748b);
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -4px;
+    cursor: grab;
+    user-select: none;
+}
+
+.navigation-preference-label {
+    color: var(--theme-text, #172033);
+    font-weight: 750;
+}
+
+.navigation-preference-controls,
+.navigation-visibility-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.navigation-move-button {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--theme-border, #cbd5e1);
+    border-radius: 8px;
+    background: var(--theme-surface, #fff);
+    color: var(--theme-primary, #174887);
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.navigation-move-button:focus-visible,
+.navigation-visibility-toggle input:focus-visible {
+    outline: 2px solid var(--theme-primary, #2563eb);
+    outline-offset: 2px;
+}
+
+.navigation-visibility-toggle {
+    min-width: 118px;
+    cursor: pointer;
+}
+
+.navigation-visibility-toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--theme-primary, #2563eb);
+}
+
+.navigation-required-hint {
+    color: var(--theme-text-muted, #64748b);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.navigation-preference-actions {
+    justify-content: flex-end;
+}
+
+@media (max-width: 760px) {
+    .navigation-preference-item {
+        grid-template-columns: 24px minmax(0, 1fr);
+    }
+
+    .navigation-preference-controls {
+        grid-column: 1 / -1;
+        justify-content: flex-end;
+    }
+
+    .navigation-drag-handle {
+        cursor: default;
+    }
+
+    .navigation-preference-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .navigation-preference-actions .button {
+        width: 100%;
+    }
+}
