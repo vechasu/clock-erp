@@ -3,6 +3,7 @@
     {% set label = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else existing_label or 'Неизвестный статус' %}
     <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% else %}badge-default{% endif %}">{{ label }}</span>
 {%- endmacro %}
+{% set navigation_query_args = orders_query_args|default(request.args) %}
 <div data-orders-results>
     {% if orders %}
     <div class="orders-table-scroll" tabindex="0" aria-label="Таблица заказов с горизонтальной прокруткой">
@@ -15,12 +16,13 @@
                 {% set code = order.get('status') or 'UNKNOWN' %}
                 {% set is_wb = order.get('source') == 'wildberries' %}
                 {% set source_label = 'WB' if is_wb else order.get('source_name') or ('Сайт' if order.get('source') in [none, '', 'tictactoy'] else order.get('source')) %}
-                {% set order_url = url_for('wildberries_order_page', wb_order_id=order.get('wb_order_id'), page=request.args.get('page',1), page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) if is_wb else url_for('order_page', order_id=oid, page=request.args.get('page',1), page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) if oid else '#' %}
+                {% set order_url = url_for('wildberries_order_page', wb_order_id=order.get('wb_order_id'), **navigation_query_args) if is_wb else url_for('order_page', order_id=oid, **navigation_query_args) if oid else '#' %}
                 {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
                 {% set products = order.get('items') or order.get('products') or [] %}
                 {% set status_event = order.get('status_event') or {} %}
                 {% set internal_comment = order.get('internal_comment') or {} %}
-                <tr class="order-table-row{% if selected_order and selected_order.get('id')|string == oid|string %} active{% endif %}" data-order-id="{{ oid }}" data-order-href="{{ order_url }}" tabindex="0" aria-label="Открыть заказ №{{ number }}">
+                {% set is_selected = selected_order and selected_order.get('id')|string == oid|string %}
+                <tr class="order-table-row{% if is_selected %} active is-selected{% endif %}" data-order-id="{{ oid }}" data-order-href="{{ order_url }}" tabindex="0" aria-label="Открыть заказ №{{ number }}"{% if is_selected %} aria-current="true"{% endif %}>
                     <td class="order-cell order-identity-cell">
                         <span class="order-state-dot status-{{ code|string|lower }}" aria-hidden="true"></span>
                         <a class="order-number" href="{{ order_url }}">№{{ number }}</a>
@@ -76,6 +78,6 @@
     <footer class="list-footer erp-pagination">
         <span>Найдено: {{ orders_total }} заказов</span>
         <label class="orders-page-size">Показывать:<select class="field" name="page_size" aria-label="Заказов на странице" data-orders-page-size>{% for size in orders_page_sizes %}<option value="{{ size }}"{% if orders_page_size|string == size|string %} selected{% endif %}>{{ 'Все' if size == 'all' else size }}</option>{% endfor %}</select></label>
-        <span class="pagination">{% if orders_page > 1 %}<a class="page-link" data-orders-page-link href="{{ url_for('orders_page', page=orders_page - 1, page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) }}" aria-label="Предыдущая страница">←</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">←</span>{% endif %}<span>Страница {{ orders_page }} из {{ orders_page_count }}</span>{% if orders_page < orders_page_count %}<a class="page-link" data-orders-page-link href="{{ url_for('orders_page', page=orders_page + 1, page_size=orders_page_size, q=request.args.get('q',''), status=request.args.get('status','all'), period=request.args.get('period','all'), source=request.args.get('source','all')) }}" aria-label="Следующая страница">→</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">→</span>{% endif %}</span>
+        <span class="pagination">{% if orders_page > 1 %}<a class="page-link" data-orders-page-link href="{{ request.path }}?{{ dict(navigation_query_args, page=orders_page - 1, page_size=orders_page_size)|urlencode }}" aria-label="Предыдущая страница">←</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">←</span>{% endif %}<span>Страница {{ orders_page }} из {{ orders_page_count }}</span>{% if orders_page < orders_page_count %}<a class="page-link" data-orders-page-link href="{{ request.path }}?{{ dict(navigation_query_args, page=orders_page + 1, page_size=orders_page_size)|urlencode }}" aria-label="Следующая страница">→</a>{% else %}<span class="page-link is-disabled" aria-hidden="true">→</span>{% endif %}</span>
     </footer>
 </div>

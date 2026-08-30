@@ -1,5 +1,7 @@
 import unittest
+from html import unescape
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest import mock
 
 from app import web
@@ -28,7 +30,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
         web.app.config.clear()
         web.app.config.update(self.original_config)
 
-    def render_selected_order(self):
+    def render_selected_order(self, path="/order/7"):
         summary = {
             "id": "7",
             "number": "7007",
@@ -55,6 +57,8 @@ class OrdersUiRedesignTest(unittest.TestCase):
                 "price": 12990,
             }],
         })
+        second_summary = dict(summary, id="8", number="8008", customer="Другой клиент")
+        second_detail = dict(detail, id="8", number="8008", customer="Другой клиент")
         mapping = {
             "line:line-1": {
                 "state": "unmapped",
@@ -63,8 +67,12 @@ class OrdersUiRedesignTest(unittest.TestCase):
             },
         }
         with (
-            mock.patch.object(web, "get_orders", return_value=[summary]),
-            mock.patch.object(web, "get_order", return_value=detail),
+            mock.patch.object(web, "get_orders", return_value=[summary, second_summary]),
+            mock.patch.object(
+                web,
+                "get_order",
+                side_effect=lambda order_id: detail if int(order_id) == 7 else second_detail,
+            ),
             mock.patch.object(web, "load_order_product_mappings", return_value={}),
             mock.patch.object(
                 web,
@@ -91,11 +99,70 @@ class OrdersUiRedesignTest(unittest.TestCase):
             ),
             mock.patch.object(web, "SharedCatalog", return_value=mock.Mock()),
         ):
-            return self.client.get("/order/7").get_data(as_text=True)
+            return self.client.get(path).get_data(as_text=True)
+
+    def test_selected_order_comes_from_route_and_moves_with_card(self):
+        first = self.render_selected_order("/order/7")
+        second = self.render_selected_order("/order/8")
+
+        self.assertIn(
+            'class="order-table-row active is-selected" data-order-id="7"', first
+        )
+        self.assertIn('data-order-id="7" data-order-href=', first)
+        self.assertIn('aria-current="true"', first)
+        self.assertIn("Заказ №7007", first)
+        self.assertNotIn(
+            'class="order-table-row active is-selected" data-order-id="8"', first
+        )
+
+        self.assertIn(
+            'class="order-table-row active is-selected" data-order-id="8"', second
+        )
+        self.assertIn("Заказ №8008", second)
+        self.assertNotIn(
+            'class="order-table-row active is-selected" data-order-id="7"', second
+        )
+
+    def test_order_links_keep_all_query_parameters(self):
+        html = self.render_selected_order(
+            "/order/7?page=3&page_size=50&q=Другой&status=N&period=30d"
+            "&source=tictactoy&sort=created_at&direction=desc"
+        )
+        row = html.split('data-order-id="8"', 1)[1].split("</tr>", 1)[0]
+        href = unescape(row.split('data-order-href="', 1)[1].split('"', 1)[0])
+        parsed = urlparse(href)
+        self.assertEqual(parsed.path, "/order/8")
+        self.assertEqual(
+            parse_qs(parsed.query),
+            {
+                "page": ["3"], "page_size": ["50"], "q": ["Другой"],
+                "status": ["N"], "period": ["30d"],
+                "source": ["tictactoy"], "sort": ["created_at"],
+                "direction": ["desc"],
+            },
+        )
+
+    def test_navigation_script_keeps_route_selection_modes_and_history(self):
+        for expected in (
+            "const selectedOrderId=",
+            "window.location.pathname.match",
+            "window.location.assign(row.dataset.orderHref)",
+            "window.addEventListener('popstate'",
+            "new URL(window.location.href)",
+            "localStorage.setItem(storageKey,safe)",
+            "localStorage.getItem(storageKey)",
+            "target.searchParams.set('selected_id',selectedOrderId)",
+        ):
+            self.assertIn(expected, self.source)
+
+    def test_list_route_does_not_select_first_order_implicitly(self):
+        html = self.render_selected_order("/app/orders")
+        self.assertIn('data-has-selected-order="0"', html)
+        self.assertNotIn('aria-current="true"', html)
 
     def test_selected_order_row_keeps_complete_information(self):
         html = self.render_selected_order()
-        active_row = html.split('class="order-table-row active"', 1)[1].split(
+        active_row = html.split('class="order-table-row active is-selected"', 1)[1].split(
             "</tr>", 1
         )[0]
         for expected in (
@@ -110,7 +177,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
 
     def test_order_number_never_uses_ellipsis_and_badges_can_wrap(self):
         html = self.render_selected_order()
-        active_row = html.split('class="order-table-row active"', 1)[1].split(
+        active_row = html.split('class="order-table-row active is-selected"', 1)[1].split(
             "</tr>", 1
         )[0]
         self.assertIn('class="order-number"', active_row)
