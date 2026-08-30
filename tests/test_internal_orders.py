@@ -126,7 +126,7 @@ class InternalOrdersTest(unittest.TestCase):
 
         self.assertEqual(
             html.count('class="order-table-row"')
-            + html.count('class="order-table-row active"'),
+            + html.count('class="order-table-row active is-selected"'),
             20,
         )
         self.assertIn("Найдено: 45", html)

@@ -1263,12 +1263,10 @@ def orders_page():
     orders, list_state = current_orders_list_state(
         request.args, force=request.args.get("retry") == "1",
     )
-    orders_page_rows = list_state["rows"]
-    selected_order = orders_page_rows[0] if orders_page_rows else None
     return render_orders_page(
         orders=orders,
         list_state=list_state,
-        selected_order=selected_order,
+        selected_order=None,
         selected_order_explicit=False,
         detail_error="",
     )
@@ -1288,6 +1286,10 @@ def orders_list_api():
         "_orders_list_results.html",
         orders=list_state["rows"],
         selected_order=selected_order,
+        orders_query_args={
+            key: value for key, value in request.args.items()
+            if key != "selected_id"
+        },
         orders_total=list_state["total"],
         orders_page=list_state["page"],
         orders_page_size=list_state["page_size"],
@@ -1783,6 +1785,10 @@ def render_orders_page(
         sync_error=detail_error or ORDERS_CACHE.get("error", ""),
         last_sync_at=ORDERS_CACHE.get("loaded_at") or None,
         selected_customer_id=(selected_order or {}).get("customer_id"),
+        orders_query_args={
+            key: value for key, value in request.args.items()
+            if key != "selected_id"
+        },
     )
 
 
