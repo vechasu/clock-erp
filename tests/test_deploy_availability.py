@@ -138,6 +138,18 @@ class DeployAvailabilityTest(unittest.TestCase):
         self.assertNotIn("SERVICE_VAULT_KEY_CREATED", script)
         self.assertNotIn("printf '%s' \"$SERVICE_VAULT_KEY\"", script)
 
+    def test_backup_uses_the_fetched_release_tool_before_code_update(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        fetched_tool = script.index(
+            'git show "${FETCHED_COMMIT}:scripts/retain_erp_backups.py"'
+        )
+        backup = script.index("BACKUP: retention, disk guard, daily backup")
+        application_update = script.index("APPLICATION UPDATE: fast-forward")
+        self.assertLess(fetched_tool, backup)
+        self.assertLess(backup, application_update)
+        self.assertIn('python3 "$BACKUP_TOOL_SOURCE" --backup-root', script)
+        self.assertIn('python3 -m py_compile "$BACKUP_TOOL_SOURCE"', script)
+
     def test_services_smoke_covers_credentials_cleanup_and_data_guard(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("scripts/services_production_smoke.py", script)
