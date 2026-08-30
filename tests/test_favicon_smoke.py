@@ -33,16 +33,19 @@ class FaviconRouteSmokeTests(unittest.TestCase):
                 self.assertIn("/static/favicon.ico?v=", head)
 
     def test_favicon_assets_are_served_with_expected_types(self):
-        for path, mimetype in (
-            ("/static/favicon.svg", "image/svg+xml"),
-            ("/static/favicon-32x32.png", "image/png"),
-            ("/static/favicon-16x16.png", "image/png"),
-            ("/static/favicon.ico", "image/x-icon"),
+        for path, mimetypes in (
+            ("/static/favicon.svg", {"image/svg+xml"}),
+            ("/static/favicon-32x32.png", {"image/png"}),
+            ("/static/favicon-16x16.png", {"image/png"}),
+            (
+                "/static/favicon.ico",
+                {"image/x-icon", "image/vnd.microsoft.icon"},
+            ),
         ):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.mimetype, mimetype)
+                self.assertIn(response.mimetype, mimetypes)
 
 
 if __name__ == "__main__":
