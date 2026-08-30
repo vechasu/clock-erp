@@ -67,6 +67,7 @@ CURRENT_COMMIT=""
 FETCHED_COMMIT=""
 PRODUCTION_SQLITE_VERSION=""
 RELEASE_DIR=""
+BACKUP_TOOL_SOURCE=""
 SERVICE_STOPPED=0
 DEPLOY_UPDATED=0
 CATALOG_MIGRATION_REQUIRED=0
@@ -116,6 +117,10 @@ cleanup_release() {
     if [[ -n "$RELEASE_DIR" && "$RELEASE_DIR" == "$BACKUP_DIR/temporary/release-"* ]]; then
         rm -rf -- "$RELEASE_DIR"
         RELEASE_DIR=""
+    fi
+    if [[ -n "$BACKUP_TOOL_SOURCE" && "$BACKUP_TOOL_SOURCE" == "$BACKUP_DIR/temporary/retention-"*.py ]]; then
+        rm -f -- "$BACKUP_TOOL_SOURCE"
+        BACKUP_TOOL_SOURCE=""
     fi
 }
 
@@ -280,6 +285,10 @@ check_backup_disk_usage
 
 git fetch "$REMOTE_NAME"
 FETCHED_COMMIT="$(git rev-parse "$REMOTE_NAME/$EXPECTED_BRANCH")"
+BACKUP_TOOL_SOURCE="$(mktemp "$BACKUP_DIR/temporary/retention-XXXXXX.py")"
+git show "${FETCHED_COMMIT}:scripts/retain_erp_backups.py" > "$BACKUP_TOOL_SOURCE"
+chmod 700 "$BACKUP_TOOL_SOURCE"
+python3 -m py_compile "$BACKUP_TOOL_SOURCE"
 changed_files="$(git diff --name-only "$PREVIOUS_COMMIT" "$FETCHED_COMMIT")"
 if printf '%s\n' "$changed_files" | grep -Eq \
     '^(app/(catalog_db|catalog_migration_steps|schema_migrations)\.py|app/catalog_schema_manifest\.json|scripts/migration_preflight\.py)$'; then
@@ -343,37 +352,19 @@ fi
 
 printf 'BACKUP: retention, disk guard, daily backup\n'
 FAILURE_STAGE="BACKUP"
-if [[ -x "$RETENTION_TOOL" ]]; then
-    "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" --apply
-elif [[ -f scripts/retain_erp_backups.py ]]; then
-    python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" --apply
-else
-    printf 'BACKUP_ERROR: retention tool is not installed\n' >&2
-    false
-fi
+python3 "$BACKUP_TOOL_SOURCE" --backup-root "$BACKUP_DIR" --apply
 
 check_backup_disk_usage
-if [[ -x "$RETENTION_TOOL" ]]; then
-    "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" \
-        --project-root "$PROJECT_DIR" --create-daily --apply
-else
-    python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" \
-        --project-root "$PROJECT_DIR" --create-daily --apply
-fi
+python3 "$BACKUP_TOOL_SOURCE" --backup-root "$BACKUP_DIR" \
+    --project-root "$PROJECT_DIR" --create-daily --apply
 if [[ -x venv/bin/python ]]; then
     PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
 else
     PYTHON_BIN="python3"
 fi
-if [[ -x "$RETENTION_TOOL" ]]; then
-    "$RETENTION_TOOL" --backup-root "$BACKUP_DIR" \
-        --project-root "$PROJECT_DIR" \
-        --create-temporary "pre-services-vault-${FETCHED_COMMIT:0:12}" --apply
-else
-    python3 scripts/retain_erp_backups.py --backup-root "$BACKUP_DIR" \
-        --project-root "$PROJECT_DIR" \
-        --create-temporary "pre-services-vault-${FETCHED_COMMIT:0:12}" --apply
-fi
+python3 "$BACKUP_TOOL_SOURCE" --backup-root "$BACKUP_DIR" \
+    --project-root "$PROJECT_DIR" \
+    --create-temporary "pre-services-vault-${FETCHED_COMMIT:0:12}" --apply
 DATA_SNAPSHOT_BEFORE="$(stable_data_snapshot)"
 printf 'DATA_BEFORE=%s\n' "$DATA_SNAPSHOT_BEFORE"
 
