@@ -312,6 +312,7 @@
     }
     let initial='split'; try{initial=localStorage.getItem(storageKey)||'split'}catch(error){}
     applyMode(initial,false);
+    if(document.querySelector('[data-external-order-result]')&&initial==='card')applyMode('list',false);
     options.forEach(option=>option.addEventListener('click',()=>applyMode(option.dataset.layoutMode)));
     switcher?.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;event.preventDefault();const current=modes.indexOf(workspace.dataset.layoutMode);const next=Math.max(0,Math.min(2,current+(event.key==='ArrowRight'?1:-1)));applyMode(modes[next]);options[next]?.focus();});
     document.querySelector('[data-show-list]')?.addEventListener('click',()=>applyMode('list'));
@@ -326,41 +327,51 @@
     const filtersForm=searchInput?.form;
     const searchClear=document.querySelector('[data-search-clear]');
     const statusInput=document.querySelector('[data-status-input]');
-    let ordersSearchTimer=null;
-    let ordersSearchController=null;
+        let ordersSearchTimer=null;
+        let ordersSearchController=null;
     let ordersSearchRequest=0;
-    function formatOrdersResults(scope){scope.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));scope.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));}
-    async function loadOrdersResults(url,{push=false}={}){
+    const exactOrderNumber=value=>{const match=String(value||'').match(/^\s*(?:(?:№|#|Nº)\s*)?(\d+)(?:\s*№)?\s*$/iu);return match?match[1]:null;};
+    let listReturnUrl=(()=>{const url=new URL(window.location.href);url.searchParams.delete('q');url.searchParams.delete('retry');return url;})();
+    let searchReturnMode=initial;
+        function formatOrdersResults(scope){scope.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));scope.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));}
+        async function loadOrdersResults(url,{push=false}={}){
         const requestId=++ordersSearchRequest;
         ordersSearchController?.abort();
         const controller=new AbortController();ordersSearchController=controller;
-        const displayUrl=new URL(url,window.location.href);
-        const target=new URL(displayUrl);target.pathname='/api/orders';
-        if(selectedOrderId)target.searchParams.set('selected_id',selectedOrderId);else target.searchParams.delete('selected_id');
+            const requestUrl=new URL(url,window.location.href);
+            const target=new URL(requestUrl);target.pathname='/api/orders';
+            const displayUrl=new URL(requestUrl);
+            const normalizedNumber=exactOrderNumber(target.searchParams.get('q'));
+            if(normalizedNumber!==null)displayUrl.searchParams.set('q',normalizedNumber);else displayUrl.searchParams.delete('q');
+            if(selectedOrderId)target.searchParams.set('selected_id',selectedOrderId);else target.searchParams.delete('selected_id');
+            if(normalizedNumber!==null){const current=document.querySelector('[data-orders-results]');current.innerHTML=`<div class="orders-search-loading" role="status">Ищем заказ №${normalizedNumber} в ERP и подключённых источниках…</div>`;}
         try{
             const response=await fetch(target,{headers:{Accept:'application/json'},signal:controller.signal,credentials:'same-origin'});
             const payload=await response.json();if(!response.ok||payload?.ok!==true)throw new Error('Не удалось обновить заказы');
             if(requestId!==ordersSearchRequest)return;
             const current=document.querySelector('[data-orders-results]');current.outerHTML=payload.html;
             document.querySelectorAll('[data-orders-page-link]').forEach(link=>{const pageUrl=new URL(link.href,window.location.href);pageUrl.pathname=displayUrl.pathname;pageUrl.searchParams.delete('selected_id');link.href=pageUrl.pathname+pageUrl.search;});
-            const titleCount=document.querySelector('[data-orders-title-count]');if(titleCount)titleCount.textContent=`${payload.total_filtered} заказов`;
+                const titleCount=document.querySelector('[data-orders-title-count]');if(titleCount)titleCount.textContent=payload.exact_search?.status==='external_found'?'1 результат':`${payload.total_filtered} заказов`;
             Object.entries(payload.kpis||{}).forEach(([key,value])=>{const node=document.querySelector(`[data-status-count="${key}"]`);if(node)node.textContent=value;});
-            window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
+                window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
             formatOrdersResults(document.querySelector('[data-orders-results]'));
+            if(payload.exact_search?.status==='local_found'&&payload.exact_search.local_count===1&&workspace.dataset.layoutMode!=='list'&&payload.exact_search.selected_url){window.location.assign(payload.exact_search.selected_url);}
+            if(payload.exact_search&&(payload.exact_search.status==='external_found'||payload.exact_search.local_count>1)&&workspace.dataset.layoutMode==='card'){applyMode('list',false);}
         }catch(error){if(error.name!=='AbortError'){window.VechasuNotify?.error(error.message||'Не удалось обновить заказы');}}
         finally{if(ordersSearchController===controller)ordersSearchController=null;}
     }
     function ordersFilterUrl(){const url=new URL(window.location.href);['q','status','period','source'].forEach(key=>url.searchParams.delete(key));new FormData(filtersForm).forEach((value,key)=>{if(value&&value!=='all')url.searchParams.set(key,value);});url.searchParams.delete('page');const pageSize=document.querySelector('[data-orders-page-size]')?.value||'20';url.searchParams.set('page_size',pageSize);return url;}
-    searchInput?.addEventListener('input',()=>{searchClear.hidden=!searchInput.value;window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),250);});
+    searchInput?.addEventListener('input',()=>{if(searchInput.value&&!(new URL(window.location.href)).searchParams.get('q')){listReturnUrl=new URL(window.location.href);listReturnUrl.searchParams.delete('retry');searchReturnMode=workspace.dataset.layoutMode;}searchClear.hidden=!searchInput.value;window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),250);});
     searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());}});
-    searchClear?.addEventListener('click',()=>{searchInput.value='';searchClear.hidden=true;window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());searchInput.focus();});
+    function clearOrderSearch(){searchInput.value='';searchClear.hidden=true;window.clearTimeout(ordersSearchTimer);applyMode(searchReturnMode,false);loadOrdersResults(listReturnUrl,{push:true});searchInput.focus();}
+        searchClear?.addEventListener('click',clearOrderSearch);
     document.querySelectorAll('[data-status-filter]').forEach(button=>button.addEventListener('click',()=>{statusInput.value=button.dataset.statusFilter;document.querySelectorAll('[data-status-filter]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});loadOrdersResults(ordersFilterUrl());}));
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>loadOrdersResults(ordersFilterUrl())));
     document.querySelector('.orders-list-panel')?.addEventListener('change',event=>{if(!event.target.matches('[data-orders-page-size]'))return;loadOrdersResults(ordersFilterUrl());});
-    document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
+        document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const showAll=event.target.closest('[data-show-all-orders]');if(showAll){event.preventDefault();clearOrderSearch();return;}const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
     document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea'))return;window.location.assign(row.dataset.orderHref);});
     document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea')||!['Enter',' '].includes(event.key))return;event.preventDefault();window.location.assign(row.dataset.orderHref);});
-    window.addEventListener('popstate',()=>loadOrdersResults(window.location.href));
+        window.addEventListener('popstate',()=>{const url=new URL(window.location.href);searchInput.value=url.searchParams.get('q')||'';searchClear.hidden=!searchInput.value;loadOrdersResults(url);});
     function setPending(form,label){
         if(form.dataset.submitting==='1')return false;
         const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';
