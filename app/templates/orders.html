@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-dense-list-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-selected-state-v1') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
@@ -304,6 +304,7 @@
     const options=Array.from(document.querySelectorAll('[data-layout-mode]')).filter(el=>el.closest('#ordersLayoutSwitch'));
     const modes=['list','split','card'];
     const storageKey='vechasu:orders:view:v2';
+    const selectedOrderId=(()=>{const match=window.location.pathname.match(/^\/order\/(wildberries\/)?([^/]+)$/);return match?(match[1]?'wb:':'')+decodeURIComponent(match[2]):null;})();
     function applyMode(mode,save=true){
         const safe=modes.includes(mode)?mode:'split'; workspace.dataset.layoutMode=safe;
         options.forEach(option=>option.setAttribute('aria-checked',String(option.dataset.layoutMode===safe)));
@@ -333,22 +334,23 @@
         const requestId=++ordersSearchRequest;
         ordersSearchController?.abort();
         const controller=new AbortController();ordersSearchController=controller;
-        const target=new URL(url,window.location.href);target.pathname='/api/orders';
-        const active=document.querySelector('.order-row.active');if(active?.dataset.orderId)target.searchParams.set('selected_id',active.dataset.orderId);
+        const displayUrl=new URL(url,window.location.href);
+        const target=new URL(displayUrl);target.pathname='/api/orders';
+        if(selectedOrderId)target.searchParams.set('selected_id',selectedOrderId);else target.searchParams.delete('selected_id');
         try{
             const response=await fetch(target,{headers:{Accept:'application/json'},signal:controller.signal,credentials:'same-origin'});
             const payload=await response.json();if(!response.ok||payload?.ok!==true)throw new Error('Не удалось обновить заказы');
             if(requestId!==ordersSearchRequest)return;
             const current=document.querySelector('[data-orders-results]');current.outerHTML=payload.html;
+            document.querySelectorAll('[data-orders-page-link]').forEach(link=>{const pageUrl=new URL(link.href,window.location.href);pageUrl.pathname=displayUrl.pathname;pageUrl.searchParams.delete('selected_id');link.href=pageUrl.pathname+pageUrl.search;});
             const titleCount=document.querySelector('[data-orders-title-count]');if(titleCount)titleCount.textContent=`${payload.total_filtered} заказов`;
             Object.entries(payload.kpis||{}).forEach(([key,value])=>{const node=document.querySelector(`[data-status-count="${key}"]`);if(node)node.textContent=value;});
-            const displayUrl=new URL(target);displayUrl.pathname='{{ url_for("orders_page") }}';displayUrl.searchParams.delete('selected_id');
             window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
             formatOrdersResults(document.querySelector('[data-orders-results]'));
         }catch(error){if(error.name!=='AbortError'){window.VechasuNotify?.error(error.message||'Не удалось обновить заказы');}}
         finally{if(ordersSearchController===controller)ordersSearchController=null;}
     }
-    function ordersFilterUrl(){const url=new URL('{{ url_for("orders_page") }}',window.location.origin);new FormData(filtersForm).forEach((value,key)=>{if(value&&value!=='all')url.searchParams.set(key,value);});url.searchParams.delete('page');const pageSize=document.querySelector('[data-orders-page-size]')?.value||'20';url.searchParams.set('page_size',pageSize);return url;}
+    function ordersFilterUrl(){const url=new URL(window.location.href);['q','status','period','source'].forEach(key=>url.searchParams.delete(key));new FormData(filtersForm).forEach((value,key)=>{if(value&&value!=='all')url.searchParams.set(key,value);});url.searchParams.delete('page');const pageSize=document.querySelector('[data-orders-page-size]')?.value||'20';url.searchParams.set('page_size',pageSize);return url;}
     searchInput?.addEventListener('input',()=>{searchClear.hidden=!searchInput.value;window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),250);});
     searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());}});
     searchClear?.addEventListener('click',()=>{searchInput.value='';searchClear.hidden=true;window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());searchInput.focus();});
@@ -357,7 +359,7 @@
     document.querySelector('.orders-list-panel')?.addEventListener('change',event=>{if(!event.target.matches('[data-orders-page-size]'))return;loadOrdersResults(ordersFilterUrl());});
     document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
     document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea'))return;window.location.assign(row.dataset.orderHref);});
-    document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||!['Enter',' '].includes(event.key))return;event.preventDefault();window.location.assign(row.dataset.orderHref);});
+    document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea')||!['Enter',' '].includes(event.key))return;event.preventDefault();window.location.assign(row.dataset.orderHref);});
     window.addEventListener('popstate',()=>loadOrdersResults(window.location.href));
     function setPending(form,label){
         if(form.dataset.submitting==='1')return false;
