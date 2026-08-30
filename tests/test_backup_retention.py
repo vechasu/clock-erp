@@ -173,6 +173,32 @@ class BackupRetentionTest(unittest.TestCase):
         self.assertNotIn("instance/backups/old/catalog.db", names)
         self.assertNotIn("instance/catalog.db.backup-strap-20260723", names)
 
+    def test_backup_excludes_transient_sqlite_sidecars(self):
+        project = Path(self.temp.name) / "project"
+        instance = project / "instance"
+        instance.mkdir(parents=True)
+        database = instance / "catalog.db"
+        with sqlite3.connect(str(database)) as connection:
+            connection.execute("CREATE TABLE products (id INTEGER)")
+        for suffix in ("-journal", "-wal", "-shm"):
+            Path(str(database) + suffix).write_bytes(b"transient")
+
+        backup = create_backup(
+            project,
+            self.root,
+            dt.datetime(2026, 8, 21, 3, 17, 0),
+            "daily",
+            apply_changes=True,
+        )
+
+        with tarfile.open(str(backup), "r:gz") as archive:
+            names = archive.getnames()
+        self.assertIn("instance/catalog.db", names)
+        self.assertFalse(any(
+            name.endswith((".db-journal", ".db-wal", ".db-shm"))
+            for name in names
+        ))
+
     def test_runtime_backups_are_moved_to_managed_archive(self):
         project = Path(self.temp.name) / "project"
         instance = project / "instance"
