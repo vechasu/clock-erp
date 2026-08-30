@@ -8,7 +8,10 @@ from unittest import mock
 from app import web
 from app.catalog_db import CatalogDatabase
 from app.domain_schema_migrations import apply_domain_migrations
-from app.services.orders_snapshot import OrdersSnapshotStore
+from app.services.orders_snapshot import (
+    OrdersSnapshotStore,
+    normalize_exact_order_number_query,
+)
 
 
 def order_row(index):
@@ -139,6 +142,44 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
                     self.assertIn(expected_id, {row["id"] for row in state["rows"]})
         self.assertEqual(self.query(q="результата нет")["total"], 0)
 
+    def test_exact_order_number_normalization_preserves_string_identity(self):
+        for value in ("20078", "№20078", "20078№", "#20078", "Nº 20078", " № 20078 "):
+            with self.subTest(value=value):
+                self.assertEqual(normalize_exact_order_number_query(value), "20078")
+        self.assertEqual(normalize_exact_order_number_query("№ 0020078"), "0020078")
+        self.assertIsNone(normalize_exact_order_number_query("ORDER-20078"))
+
+    def test_exact_number_ignores_page_status_source_and_period(self):
+        target = dict(self.orders[123])
+        target.update(number="20078", status="D", created_at="2020-01-01 10:00:00")
+        self.store.replace(self.orders[:123] + [target] + self.orders[124:], 1001)
+
+        state = self.query(
+            q=" № 20078 ", page=9, page_size=20, status="N",
+            source="wildberries", period="today",
+        )
+
+        self.assertEqual(state["exact_number"], "20078")
+        self.assertEqual(state["total"], 1)
+        self.assertEqual(state["page"], 1)
+        self.assertEqual(state["rows"][0]["id"], target["id"])
+
+    def test_same_display_number_from_two_sources_stays_two_results(self):
+        local = dict(self.orders[0], number="20078", source="tictactoy")
+        self.store.replace([local], 1001)
+        self.store.upsert_wildberries([{
+            "wb_order_id": "wb-external-1", "number": "20078",
+            "created_at": "2026-08-20", "status": "new", "source": "wildberries",
+        }])
+
+        state = self.query(q="#20078", status="D", source="tictactoy")
+
+        self.assertEqual(state["total"], 2)
+        self.assertEqual(
+            {row.get("source") for row in state["rows"]},
+            {"tictactoy", "wildberries"},
+        )
+
     def test_text_fields_are_or_while_status_and_period_are_and(self):
         target = self.orders[123]
         matching = self.query(q=target["number"], status=target["status"])
@@ -245,6 +286,7 @@ class OrdersListIntegrationTest(unittest.TestCase):
         self.client = web.app.test_client()
 
     def tearDown(self):
+        web.ORDER_SEARCH_RATE_BUCKETS.clear()
         web.app.config.clear()
         web.app.config.update(self.original_config)
         self.temporary.cleanup()
@@ -301,6 +343,112 @@ class OrdersListIntegrationTest(unittest.TestCase):
             response = self.client.get("/api/orders?mine=1&page_size=20")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["total_available"], 75)
+
+    def test_external_search_runs_only_after_local_exact_miss(self):
+        external_client = mock.Mock()
+        external_client.get_order.return_value = {"ID": "20078"}
+        with web.app.test_request_context("/api/orders?q=20078"):
+            local_state = web.exact_order_search_state(
+                "20078", [{"id": "20078", "number": "20078"}],
+                client=external_client,
+            )
+        self.assertEqual(local_state["status"], "local_found")
+        external_client.get_order.assert_not_called()
+
+        with (
+            web.app.test_request_context("/api/orders?q=20078"),
+            mock.patch.object(web, "normalize_order", return_value={
+                "id": "20078", "number": "20078", "status": "D",
+                "products": [],
+            }),
+            mock.patch.object(web, "build_bitrix_order_url", return_value="https://www.tictactoy.ru/bitrix/admin/sale_order_view.php?ID=20078"),
+        ):
+            external_state = web.exact_order_search_state(
+                "20078", [], client=external_client
+            )
+        self.assertEqual(external_state["status"], "external_found")
+        self.assertEqual(external_state["external_results"][0]["external_id"], "20078")
+        self.assertTrue(external_state["external_results"][0]["external_only"])
+        self.assertEqual(external_client.get_order.call_count, 1)
+        self.assertEqual(external_state["sources"][1]["result"], "not_supported")
+
+    def test_external_not_found_and_unavailable_are_distinct(self):
+        not_found_client = mock.Mock()
+        not_found_client.get_order.return_value = None
+        with web.app.test_request_context("/api/orders?q=20078"):
+            not_found = web.exact_order_search_state(
+                "20078", [], client=not_found_client
+            )
+        self.assertEqual(not_found["status"], "not_found")
+        self.assertEqual(not_found["sources"][0]["result"], "not_found")
+
+        unavailable_client = mock.Mock()
+        unavailable_client.get_order.side_effect = web.BitrixReadOnlyError("timeout")
+        with web.app.test_request_context("/api/orders?q=20079"):
+            unavailable = web.exact_order_search_state(
+                "20079", [], client=unavailable_client
+            )
+        self.assertEqual(unavailable["status"], "partial")
+        self.assertEqual(unavailable["sources"][0]["result"], "unavailable")
+
+    def test_external_identity_resolves_to_existing_local_record_without_duplicate(self):
+        external_client = mock.Mock()
+        external_client.get_order.return_value = {"ID": "20078"}
+        store = mock.Mock()
+        store.get_by_identity.return_value = {
+            "id": "local-1", "number": "legacy-number", "source": "tictactoy"
+        }
+        with (
+            web.app.test_request_context("/api/orders?q=20078"),
+            mock.patch.object(web, "normalize_order", return_value={
+                "id": "20078", "number": "20078", "products": [],
+            }),
+        ):
+            state = web.exact_order_search_state(
+                "20078", [], client=external_client, store=store
+            )
+
+        self.assertEqual(state["status"], "local_found")
+        self.assertEqual(state["local_results"][0]["id"], "local-1")
+        self.assertEqual(state["external_results"], [])
+
+    def test_exact_search_api_returns_external_read_only_card(self):
+        external_client = mock.Mock()
+        external_client.get_order.return_value = {"ID": "20078"}
+        with (
+            mock.patch.dict("os.environ", {"ORDERS_DATABASE_PATH": str(self.orders_path)}),
+            mock.patch.object(web, "get_orders", return_value=self.orders),
+            mock.patch.object(web, "bulk_conducted_order_sales", return_value={}),
+            mock.patch.object(web, "bitrix_orders_client", return_value=external_client),
+            mock.patch.object(web, "normalize_order", return_value={
+                "id": "20078", "number": "20078", "status": "D",
+                "status_name": "Собран", "products": [],
+            }),
+            mock.patch.dict(web.ORDERS_CACHE, {"items": self.orders, "loaded_at": 1000, "error": ""}, clear=True),
+        ):
+            response = self.client.get(
+                "/api/orders?q=%E2%84%96%2020078&status=N&period=today&source=wildberries"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["exact_search"]["status"], "external_found")
+        self.assertIn("Заказ ещё не загружен в ERP", payload["html"])
+        self.assertIn("по всем статусам, источникам и периодам", payload["html"])
+        self.assertNotIn("Загрузить в ERP", payload["html"])
+
+    def test_search_ui_preserves_list_state_and_cancels_stale_requests(self):
+        template = Path(web.PROJECT_ROOT / "app/templates/orders.html").read_text(encoding="utf-8")
+        for expected in (
+            "ordersSearchController?.abort()",
+            "requestId!==ordersSearchRequest",
+            "let listReturnUrl=",
+            "loadOrdersResults(listReturnUrl,{push:true})",
+            "displayUrl.searchParams.set('q',normalizedNumber)",
+            "displayUrl.searchParams.delete('q')",
+            "Ищем заказ №${normalizedNumber} в ERP и подключённых источниках",
+        ):
+            self.assertIn(expected, template)
 
     def test_row_has_customer_phone_amount_datetime_units_status_and_sale_badge(self):
         row = dict(

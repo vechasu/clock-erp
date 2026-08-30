@@ -19,11 +19,21 @@ PAGE_SIZES = (20, 50, 100, 200, "all")
 DATE_QUERY = re.compile(r"^(\d{2})\.(\d{2})\.(\d{2}|\d{4})$")
 AMOUNT_QUERY = re.compile(r"^[\d\s.,₽]+$")
 PHONE_QUERY = re.compile(r"^[+\d\s()\-]+$")
+EXACT_ORDER_NUMBER_QUERY = re.compile(
+    r"^\s*(?:(?:№|#|Nº)\s*)?(\d+)(?:\s*№)?\s*$",
+    re.IGNORECASE,
+)
 LOGGER = logging.getLogger(__name__)
 
 
 def _text(value):
     return str(value or "").strip()
+
+
+def normalize_exact_order_number_query(value):
+    """Return an exact display number without ever coercing it to an integer."""
+    match = EXACT_ORDER_NUMBER_QUERY.fullmatch(str(value or ""))
+    return match.group(1) if match else None
 
 
 def _phone_digits(value):
@@ -332,6 +342,22 @@ class OrdersSnapshotStore:
         payload["customer_id"] = row["customer_id"]
         return payload
 
+    def get_by_identity(self, source, external_order_id):
+        """Resolve the canonical local record by source identity."""
+        self.initialize()
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT payload_json, item_units, customer_id FROM orders_snapshot "
+                "WHERE source = ? AND external_order_id = ?",
+                (_text(source).casefold(), _text(external_order_id)),
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(row["payload_json"])
+        payload["item_units"] = row["item_units"]
+        payload["customer_id"] = row["customer_id"]
+        return payload
+
     def set_item_units(self, order_id, item_units):
         self.initialize()
         with self.connection() as connection:
@@ -413,6 +439,20 @@ class OrdersSnapshotStore:
     def query(self, args, now=None, allowed_order_ids=None):
         self.initialize()
         query = _text(args.get("q"))
+        exact_candidate = normalize_exact_order_number_query(query)
+        exact_number = None
+        if exact_candidate is not None:
+            with self.connection() as connection:
+                exact_rows = connection.execute(
+                    "SELECT order_id FROM orders_snapshot WHERE "
+                    "number_fold = ? OR order_id = ? OR external_order_id = ?",
+                    (exact_candidate.casefold(), exact_candidate, exact_candidate),
+                ).fetchall()
+            exact_ids = {row["order_id"] for row in exact_rows}
+            if allowed_order_ids is not None:
+                exact_ids.intersection_update(str(value) for value in allowed_order_ids)
+            if exact_ids:
+                exact_number = exact_candidate
         status = _text(args.get("status") or "all").upper()
         source = _text(args.get("source") or "all").casefold()
         period = _text(args.get("period") or "all")
@@ -433,7 +473,14 @@ class OrdersSnapshotStore:
 
         clauses = []
         parameters = []
-        if query:
+        if exact_number is not None:
+            clauses.append(
+                "(number_fold = ? OR order_id = ? OR external_order_id = ?)"
+            )
+            parameters.extend([exact_number.casefold(), exact_number, exact_number])
+            page = 1
+            page_size = "all"
+        elif query:
             folded = "%{}%".format(query.casefold())
             search_clauses = [
                 "number_fold LIKE ?",
@@ -459,13 +506,13 @@ class OrdersSnapshotStore:
                 search_parameters.append("%{}%".format(date_value))
             clauses.append("(" + " OR ".join(search_clauses) + ")")
             parameters.extend(search_parameters)
-        if status != "ALL":
+        if exact_number is None and status != "ALL":
             clauses.append("status = ?")
             parameters.append(status)
-        if source in {"tictactoy", "wildberries"}:
+        if exact_number is None and source in {"tictactoy", "wildberries"}:
             clauses.append("source = ?")
             parameters.append(source)
-        if period in {"today", "7d", "30d"}:
+        if exact_number is None and period in {"today", "7d", "30d"}:
             reference = now or datetime.now()
             days = 0 if period == "today" else 7 if period == "7d" else 30
             threshold = (reference - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -522,6 +569,9 @@ class OrdersSnapshotStore:
             "page": page,
             "page_size": page_size,
             "page_count": page_count,
+            "exact_number": (
+                exact_candidate if exact_number is not None or total == 0 else None
+            ),
             "kpis": {
                 "total": physical_total,
                 "unconfirmed": counts.get("N", 0),

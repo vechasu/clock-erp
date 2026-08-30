@@ -82,6 +82,7 @@ from app.services.order_comments import OrderCommentsService
 from app.services.orders_snapshot import (
     PAGE_SIZES as ORDER_PAGE_SIZES,
     OrdersSnapshotStore,
+    normalize_exact_order_number_query,
     order_item_units,
 )
 from app.services.customer_registry import CustomerRegistry, PAGE_SIZES as CUSTOMER_PAGE_SIZES
@@ -445,6 +446,8 @@ ORDERS_REFRESH_LOCK = threading.Lock()
 ORDER_ITEM_COUNT_REFRESH_LOCK = threading.Lock()
 WB_SYNC_LOCK = threading.Lock()
 ORDER_COMMENT_SYNC_LOCK = threading.Lock()
+ORDER_SEARCH_RATE_LOCK = threading.Lock()
+ORDER_SEARCH_RATE_BUCKETS = {}
 
 WAREHOUSE_CACHE = {
     "items": [],
@@ -1062,6 +1065,121 @@ def get_order(order_id):
     return normalized
 
 
+def allow_external_order_search(identity, now=None):
+    """Bound exact external lookups per authenticated user (or client address)."""
+    timestamp = float(time.time() if now is None else now)
+    window = 60.0
+    try:
+        limit = max(1, int(os.getenv("ORDER_SEARCH_RATE_LIMIT", "12")))
+    except (TypeError, ValueError):
+        limit = 12
+    key = str(identity or "anonymous")
+    with ORDER_SEARCH_RATE_LOCK:
+        recent = [value for value in ORDER_SEARCH_RATE_BUCKETS.get(key, []) if timestamp - value < window]
+        if len(recent) >= limit:
+            ORDER_SEARCH_RATE_BUCKETS[key] = recent
+            return False
+        recent.append(timestamp)
+        ORDER_SEARCH_RATE_BUCKETS[key] = recent
+        return True
+
+
+def exact_order_search_state(number, local_rows, client=None, store=None):
+    """Search one exact number locally, then via supported read-only adapters."""
+    if number is None:
+        return None
+    state = {
+        "active": True,
+        "number": number,
+        "status": "local_found" if local_rows else "searching",
+        "local_count": len(local_rows),
+        "local_results": [],
+        "external_results": [],
+        "sources": [],
+    }
+    if local_rows:
+        return state
+
+    auth_user = current_auth_user() or {}
+    identity = auth_user.get("id") or request.remote_addr or "anonymous"
+    started_at = time.monotonic()
+    source_result = "unavailable"
+    source_detail = "Источник временно недоступен."
+    if not allow_external_order_search(identity):
+        source_detail = "Превышен лимит безопасных внешних запросов."
+    else:
+        try:
+            raw_order = (client or bitrix_orders_client()).get_order(number)
+            normalized = normalize_order(raw_order) if raw_order else None
+            fetched_id = str((normalized or {}).get("id") or (normalized or {}).get("ID") or "")
+            fetched_number = str((normalized or {}).get("number") or fetched_id)
+            if normalized and number in {fetched_id, fetched_number}:
+                normalized = dict(normalized)
+                normalized["source"] = "tictactoy"
+                normalized["source_name"] = "Сайт / Ziro (Bitrix)"
+                normalized["external_id"] = fetched_id
+                local_identity = (store or OrdersSnapshotStore()).get_by_identity(
+                    "tictactoy", fetched_id
+                )
+                if local_identity:
+                    state["local_results"].append(local_identity)
+                    state["local_count"] = 1
+                else:
+                    normalized["external_only"] = True
+                    normalized["source_url"] = build_bitrix_order_url(fetched_id)
+                    state["external_results"].append(normalized)
+                source_result = "found"
+                source_detail = "Заказ найден через read-only API."
+            else:
+                source_result = "not_found"
+                source_detail = "Заказ с таким номером не найден."
+        except BitrixReadOnlyError as error:
+            message = str(error).casefold()
+            if "access denied" in message or "401" in message or "403" in message:
+                source_result = "forbidden"
+                source_detail = "Сервису не разрешён доступ к заказам."
+            elif "configured" in message:
+                source_result = "not_configured"
+                source_detail = "Read-only API не настроен."
+            else:
+                source_detail = "Read-only API временно недоступен."
+        except Exception as error:
+            source_detail = "Read-only API временно недоступен."
+            app.logger.warning(
+                "external_order_search_failed operation_id=%s source=tictactoy reason=%s",
+                getattr(g, "operation_id", "unknown"), type(error).__name__,
+            )
+    state["sources"].append({
+        "key": "tictactoy",
+        "name": "Сайт / Ziro (Bitrix)",
+        "capability": "supported",
+        "result": source_result,
+        "detail": source_detail,
+    })
+    state["sources"].append({
+        "key": "wildberries",
+        "name": "Wildberries",
+        "capability": "not_supported",
+        "result": "not_supported",
+        "detail": "Источник не поддерживает поиск по полной истории.",
+    })
+    if state["local_results"]:
+        state["status"] = "local_found"
+    elif state["external_results"]:
+        state["status"] = "external_found"
+    elif source_result == "not_found":
+        state["status"] = "not_found"
+    else:
+        state["status"] = "partial"
+    app.logger.info(
+        "external_order_search operation_id=%s source=tictactoy result=%s duration_ms=%d",
+        getattr(g, "operation_id", "unknown"),
+        source_result,
+        int((time.monotonic() - started_at) * 1000),
+    )
+    return state
+
+
 def refresh_orders_cache():
     """Refresh the durable Bitrix snapshot outside ordinary page requests."""
     now = time.time()
@@ -1260,28 +1378,48 @@ def overview_page():
 @app.route("/orders")
 @app.route("/app/orders")
 def orders_page():
+    if not can_view_orders():
+        abort(403)
     orders, list_state = current_orders_list_state(
         request.args, force=request.args.get("retry") == "1",
     )
+    exact_search = exact_order_search_state(
+        list_state.get("exact_number"), list_state["rows"]
+    )
+    if exact_search and exact_search["local_results"]:
+        list_state["rows"] = enrich_orders_list_rows(exact_search["local_results"])
+        list_state.update(total=len(list_state["rows"]), page=1, page_count=1, page_size="all")
+        orders = list_state["rows"]
     return render_orders_page(
         orders=orders,
         list_state=list_state,
         selected_order=None,
         selected_order_explicit=False,
         detail_error="",
+        exact_search=exact_search,
     )
 
 
 @app.get("/api/orders")
 def orders_list_api():
+    if not can_view_orders():
+        abort(403)
     _orders, list_state = current_orders_list_state(
         request.args
     )
+    exact_search = exact_order_search_state(
+        list_state.get("exact_number"), list_state["rows"]
+    )
+    if exact_search and exact_search["local_results"]:
+        list_state["rows"] = enrich_orders_list_rows(exact_search["local_results"])
+        list_state.update(total=len(list_state["rows"]), page=1, page_count=1, page_size="all")
     selected_id = str(request.args.get("selected_id") or "").strip()
     selected_order = next((
         order for order in list_state["rows"]
         if str(order.get("id") or order.get("ID") or "") == selected_id
     ), None)
+    if selected_order is None and exact_search and len(list_state["rows"]) == 1:
+        selected_order = list_state["rows"][0]
     html = render_template(
         "_orders_list_results.html",
         orders=list_state["rows"],
@@ -1297,7 +1435,34 @@ def orders_list_api():
         orders_page_count=list_state["page_count"],
         order_kpis=list_state["kpis"],
         sync_error=ORDERS_CACHE.get("error", ""),
+        exact_search=exact_search,
+        orders_clear_url=url_for(
+            "orders_page",
+            **{
+                key: value for key, value in request.args.items()
+                if key not in {"q", "retry", "selected_id"}
+            },
+        ),
     )
+    selected_url = ""
+    if selected_order and exact_search and exact_search["status"] == "local_found":
+        selection_args = {
+            key: value for key, value in request.args.items()
+            if key != "selected_id"
+        }
+        selection_args["q"] = exact_search["number"]
+        if selected_order.get("source") == "wildberries":
+            selected_url = url_for(
+                "wildberries_order_page",
+                wb_order_id=selected_order.get("wb_order_id"),
+                **selection_args,
+            )
+        else:
+            selected_url = url_for(
+                "order_page",
+                order_id=selected_order.get("id") or selected_order.get("ID"),
+                **selection_args,
+            )
     return jsonify({
         "ok": True,
         "html": html,
@@ -1307,6 +1472,13 @@ def orders_list_api():
         "page_size": list_state["page_size"],
         "page_count": list_state["page_count"],
         "kpis": list_state["kpis"],
+        "exact_search": ({
+            "number": exact_search["number"],
+            "status": exact_search["status"],
+            "local_count": exact_search["local_count"],
+            "selected_url": selected_url,
+            "external_count": len(exact_search["external_results"]),
+        } if exact_search else None),
     })
 
 
@@ -1627,7 +1799,23 @@ def current_orders_list_state(args, force=False, allowed_order_ids=None):
 
 def prepare_orders_list(orders, args, allowed_order_ids=None):
     """Build the read-only list view without changing order data or APIs."""
-    query = str(args.get("q") or "").strip().casefold()
+    raw_query = str(args.get("q") or "").strip()
+    query = raw_query.casefold()
+    exact_candidate = normalize_exact_order_number_query(raw_query)
+    exact_number = None
+    if exact_candidate is not None:
+        for order in orders:
+            order_id = str(order.get("id") or order.get("ID") or "")
+            if allowed_order_ids is not None and order_id not in allowed_order_ids:
+                continue
+            identifiers = {
+                str(order.get("number") or order.get("ACCOUNT_NUMBER") or ""),
+                order_id,
+                str(order.get("external_id") or order.get("external_order_id") or ""),
+            }
+            if exact_candidate in identifiers:
+                exact_number = exact_candidate
+                break
     status_filter = str(args.get("status") or "all").strip().upper()
     period = str(args.get("period") or "all").strip()
     source_filter = str(args.get("source") or "all").strip().casefold()
@@ -1639,7 +1827,7 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
         ) not in allowed_order_ids:
             continue
         order_source = str(order.get("source") or "tictactoy").casefold()
-        if source_filter in {"tictactoy", "wildberries"} and order_source != source_filter:
+        if exact_number is None and source_filter in {"tictactoy", "wildberries"} and order_source != source_filter:
             continue
         search_values = [order.get(key) for key in (
             "number", "id", "customer", "phone", "email", "order_total",
@@ -1650,12 +1838,20 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
                 "name", "model", "article", "sku", "barcode", "NAME", "ARTICLE",
             ))
         search_text = " ".join(str(value or "") for value in search_values).casefold()
-        if query and query not in search_text:
+        if exact_number is not None:
+            identifiers = {
+                str(order.get("number") or order.get("ACCOUNT_NUMBER") or ""),
+                str(order.get("id") or order.get("ID") or ""),
+                str(order.get("external_id") or order.get("external_order_id") or ""),
+            }
+            if exact_number not in identifiers:
+                continue
+        elif query and query not in search_text:
             continue
         code = str(order.get("status") or "").upper()
-        if status_filter != "ALL" and code != status_filter:
+        if exact_number is None and status_filter != "ALL" and code != status_filter:
             continue
-        if period in {"today", "7d", "30d"}:
+        if exact_number is None and period in {"today", "7d", "30d"}:
             raw_date = str(order.get("created_at") or order.get("date") or "")[:10]
             created = None
             for date_format in ("%Y-%m-%d", "%d.%m.%Y"):
@@ -1670,7 +1866,7 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
             if created.date() < (now - timedelta(days=days)).date():
                 continue
         filtered_orders.append(order)
-    raw_page_size = str(args.get("page_size") or 20).strip().casefold()
+    raw_page_size = "all" if exact_number is not None else str(args.get("page_size") or 20).strip().casefold()
     per_page = "all" if raw_page_size == "all" else 20
     if per_page != "all":
         try:
@@ -1698,6 +1894,9 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
         "page": page,
         "page_count": page_count,
         "page_size": per_page,
+        "exact_number": (
+            exact_candidate if exact_number is not None or total == 0 else None
+        ),
         "kpis": {
             "total": len(orders),
             "unconfirmed": counts["N"],
@@ -1708,7 +1907,8 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
 
 
 def render_orders_page(
-    orders, list_state, selected_order, selected_order_explicit, detail_error=""
+    orders, list_state, selected_order, selected_order_explicit, detail_error="",
+    exact_search=None,
 ):
     order_id = (
         (selected_order or {}).get("id")
@@ -1783,6 +1983,14 @@ def render_orders_page(
         orders_page_count=list_state["page_count"],
         order_kpis=list_state["kpis"],
         sync_error=detail_error or ORDERS_CACHE.get("error", ""),
+        exact_search=exact_search,
+        orders_clear_url=url_for(
+            "orders_page",
+            **{
+                key: value for key, value in request.args.items()
+                if key not in {"q", "retry", "selected_id"}
+            },
+        ),
         last_sync_at=ORDERS_CACHE.get("loaded_at") or None,
         selected_customer_id=(selected_order or {}).get("customer_id"),
         orders_query_args={
@@ -2446,6 +2654,10 @@ def order_page(order_id):
         selected_order=selected_order,
         selected_order_explicit=True,
         detail_error=detail_error,
+        exact_search=exact_order_search_state(
+            list_state.get("exact_number"), [selected_order]
+            if list_state.get("exact_number") else []
+        ),
     )
 
 
@@ -2463,6 +2675,10 @@ def wildberries_order_page(wb_order_id):
         selected_order=order,
         selected_order_explicit=True,
         detail_error="",
+        exact_search=exact_order_search_state(
+            list_state.get("exact_number"), [order]
+            if list_state.get("exact_number") else []
+        ),
     )
 
 
