@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-category-assignment') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-selected-state-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-card-header-v1') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
@@ -108,41 +108,49 @@
                 {% set detail_delivery = selected_order.get('delivery_price') %}
                 {% set detail_delivery_source = selected_order.get('delivery_price_source') %}
                 {% set is_wb = selected_order.get('source') == 'wildberries' %}
+                {% set detail_source_name = selected_order.get('source_name') or selected_order.get('source') or '—' %}
                 {% set legacy_calc_ok = selected_order.get('calculation_complete') is none %}
                 {% set sale_state = order_sale_state %}
                 <div class="detail-scroll">
                     <header class="card-head order-card-head">
-                        <div class="order-card-summary">
-                            <button class="button button-secondary back-list" type="button" data-show-list>← Назад к заказам</button>
-                            <div class="card-title">
-                                <h2>Заказ №{{ detail_number }}</h2>
-                                <span class="badge badge-default source-badge">{{ 'Wildberries' if is_wb else 'Tictactoy' }}</span>
-                                {% if sale_state.sale_completed %}<span class="sale-completed-badge"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10 3 3 7-7"/></svg>Продажа проведена</span>{% endif %}
+                        <div class="order-card-top">
+                            <div class="order-card-summary">
+                                <button class="button button-secondary back-list" type="button" data-show-list>← Назад к заказам</button>
+                                <div class="card-title">
+                                    <h2>Заказ №{{ detail_number }}</h2>
+                                    <span class="badge badge-default source-badge">{{ detail_source_name }}</span>
+                                    {% if sale_state.sale_completed %}<span class="sale-completed-badge"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10 3 3 7-7"/></svg>Продажа проведена</span>{% endif %}
+                                </div>
+                                <div class="card-subtitle"><span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span></div>
                             </div>
-                            <div class="card-subtitle">
-                                <span class="date-value" data-date="{{ selected_order.get('created_at') or selected_order.get('date') }}"></span>
-                                {% if detail_total is not none %}<strong><span class="money-value" data-amount="{{ detail_total }}"></span> ₽</strong>{% endif %}
+                            <div class="order-card-total">
+                                <span>Сумма заказа</span>
+                                <strong>{% if detail_total is not none %}<span class="money-value" data-amount="{{ detail_total }}"></span> ₽{% else %}—{% endif %}</strong>
                             </div>
                         </div>
-                        <div class="actions order-card-actions">
-                            {% if not is_wb %}<button class="button button-secondary" type="button" data-open-order-history>История</button>{% endif %}
-                            {% if is_wb %}<span class="button button-secondary" aria-label="Только чтение">Только чтение</span>{% else %}
-                            <form class="status-form" method="post" action="/order/{{ detail_id }}/status" data-status-autosave>
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <select class="field" name="status" aria-label="Статус заказа" data-saved-status="{{ detail_status_code }}">
-                                    <option value="N"{% if detail_status_code == 'N' %} selected{% endif %}>Не подтверждён</option>
-                                    <option value="A"{% if detail_status_code == 'A' %} selected{% endif %}>Подтверждён</option>
-                                    <option value="D"{% if detail_status_code == 'D' %} selected{% endif %}>Собран</option>
-                                </select>
-                                <span class="status-save-state" data-status-save-state aria-live="polite"></span>
-                            </form>
-                            {% if sale_state.sale_completed %}
-                                <a class="button button-primary order-primary-action" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
+                        <div class="order-control-panel">
+                            {% if is_wb %}
+                            <div class="order-status-control">
+                                <span class="order-control-label">Статус заказа</span>
+                                <span class="button button-secondary" aria-label="Только чтение">Только чтение</span>
+                            </div>
                             {% else %}
-                                <button class="button button-primary order-primary-action" type="button" data-order-sale-action{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
+                            <form class="status-form order-status-control" method="post" action="/order/{{ detail_id }}/status" data-status-autosave>
+                                <label class="order-control-label" for="orderStatusSelect">Статус заказа</label>
+                                <div class="order-status-field">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <select class="field" id="orderStatusSelect" name="status" data-saved-status="{{ detail_status_code }}">
+                                        <option value="N"{% if detail_status_code == 'N' %} selected{% endif %}>Не подтверждён</option>
+                                        <option value="A"{% if detail_status_code == 'A' %} selected{% endif %}>Подтверждён</option>
+                                        <option value="D"{% if detail_status_code == 'D' %} selected{% endif %}>Собран</option>
+                                    </select>
+                                    <span class="status-save-state" data-status-save-state aria-live="polite"></span>
+                                </div>
+                            </form>
                             {% endif %}
-                            {% endif %}
-                            <div class="order-actions-menu" data-order-actions-menu>
+                            <div class="order-control-actions">
+                                {% if not is_wb %}<button class="button button-secondary" type="button" aria-expanded="false" aria-controls="orderLifecyclePanel" data-open-order-history>История</button>{% endif %}
+                                <div class="order-actions-menu" data-order-actions-menu>
                                 <button class="button button-secondary order-actions-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="orderActionsMenu" data-order-actions-trigger>Действия <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></button>
                                 <div class="order-actions-dropdown" id="orderActionsMenu" role="menu" hidden data-order-actions-dropdown>
                                     <a role="menuitem" href="{{ url_for('tasks_page', entity_type='order', entity_id=detail_id, title='Заказ №' ~ detail_number) }}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Создать задачу</a>
@@ -153,24 +161,23 @@
                                     {% if not is_wb and selected_order_bitrix_url %}<a role="menuitem" href="{{ selected_order_bitrix_url }}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11 4h5v5M9 11l7-7M15 11v5H4V5h5"/></svg>Открыть в Bitrix</a>{% endif %}
                                     {% if not is_wb and detail_id and selected_order.get('sync_state') != 'error' %}<a role="menuitem" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 7V3h8v4M5 15H3V8h14v7h-2M6 12h8v5H6z"/></svg>Печать заказа</a>{% endif %}
                                 </div>
+                                </div>
+                                {% if not is_wb %}
+                                    {% if sale_state.sale_completed %}
+                                        <a class="button button-primary order-primary-action" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
+                                    {% else %}
+                                        <button class="button button-primary order-primary-action" type="button" data-order-sale-action{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
+                                    {% endif %}
+                                {% endif %}
                             </div>
                             {% if request.args.get('notice') and request.args.get('message') %}<div class="action-feedback notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') == 'error' else 'status' }}">{{ request.args.get('message') }}</div>{% endif %}
                         </div>
-                    </header>
-                    {% if not is_wb %}
-                    <section class="order-lifecycle-summary" aria-label="Жизненный цикл заказа">
-                        {% if order_lifecycle.events %}
-                            <div class="order-lifecycle-steps">
-                            {% for event in order_lifecycle.events %}
-                                <span>{% if not loop.first %}<i aria-hidden="true">→</i>{% endif %}<strong>{{ event.title|replace('Заказ ', '')|replace('Статус изменён', event.detail.split(' → ')|last) }}</strong> <time datetime="{{ event.occurred_at }}">{% if order_lifecycle.has_multiple_days %}{{ event.date_display }} {% endif %}{{ event.time_display[:5] }}</time></span>
-                            {% endfor %}
-                            </div>
-                            {% if order_lifecycle.total_display %}<strong class="order-lifecycle-total">Итого: {{ order_lifecycle.total_display }}</strong>{% endif %}
-                        {% else %}
-                            <span class="order-lifecycle-empty">История начнёт заполняться при следующих действиях с заказом.</span>
+                        {% if not is_wb %}
+                        <section class="order-lifecycle-inline" id="orderLifecyclePanel" aria-label="История заказа №{{ detail_number }}" data-order-id="{{ detail_id }}" hidden>
+                            <div class="order-lifecycle-body" data-order-lifecycle-body><p role="status">Загружаем историю…</p></div>
+                        </section>
                         {% endif %}
-                    </section>
-                    {% endif %}
+                    </header>
                     <div class="detail-body">
                         <section class="entity-tasks" data-entity-tasks data-entity-type="order" data-entity-id="{{ detail_id }}" data-entity-label="Заказ №{{ detail_number }}" data-csrf="{{ csrf_token() }}" aria-label="Задачи заказа">Загружаем задачи…</section>
                         {% if selected_order.get('status_sync_state') == 'pending' %}<div class="warning">Статус сохранён в ERP и ожидает синхронизации с Bitrix. Повторные попытки выполняются автоматически.</div>{% elif selected_order.get('status_sync_state') == 'unknown' %}<div class="warning">Bitrix передал неизвестный статус. Текущий статус ERP сохранён, событие записано в журнал.</div>{% endif %}
@@ -303,15 +310,6 @@
     </main>
 </div>
 
-{% if selected_order and not is_wb %}
-<div class="order-lifecycle-modal" id="orderLifecycleModal" role="dialog" aria-modal="true" aria-labelledby="orderLifecycleTitle" aria-hidden="true" data-order-id="{{ detail_id }}">
-    <div class="order-lifecycle-dialog">
-        <header><div><h2 id="orderLifecycleTitle">История заказа №{{ detail_number }}</h2><p>Фактические события общего Журнала</p></div><button class="button button-secondary" type="button" data-close-order-history aria-label="Закрыть">×</button></header>
-        <div class="order-lifecycle-body" data-order-lifecycle-body><p role="status">Загружаем историю…</p></div>
-    </div>
-</div>
-{% endif %}
-
 {% if selected_order and sale_state.can_create_sale %}
 <div class="order-sale-modal" id="orderSaleModal" role="dialog" aria-modal="true" aria-labelledby="orderSaleTitle" aria-hidden="true" data-auto-open="{{ '1' if request.args.get('open_sale') == '1' else '0' }}">
     <div class="sale-dialog">
@@ -398,17 +396,13 @@
     document.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));
     document.querySelectorAll('[data-sync-time]').forEach(node=>{const raw=Number(node.dataset.syncTime);const date=new Date(raw?raw*1000:node.dataset.syncTime);node.textContent=Number.isNaN(date.getTime())?'—':new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(date);node.dateTime=date.toISOString?.()||'';});
 
-    const historyModal=document.getElementById('orderLifecycleModal');
-    if(historyModal){
-        const historyBody=historyModal.querySelector('[data-order-lifecycle-body]');let historyLoaded=false;let historyReturnFocus=null;
+    const historyPanel=document.getElementById('orderLifecyclePanel');
+    if(historyPanel){
+        const historyButton=document.querySelector('[data-open-order-history]');const historyBody=historyPanel.querySelector('[data-order-lifecycle-body]');let historyLoaded=false;
         const escapeHtml=value=>{const node=document.createElement('span');node.textContent=String(value??'');return node.innerHTML;};
-        const closeHistory=()=>{historyModal.classList.remove('is-open');historyModal.setAttribute('aria-hidden','true');historyReturnFocus?.focus();};
         const renderHistory=data=>{if(!data.events.length){historyBody.innerHTML='<p class="order-lifecycle-empty">Зафиксированных lifecycle-событий пока нет.</p>';return;}historyBody.innerHTML=`<ol class="order-lifecycle-timeline">${data.events.map(event=>`<li><time datetime="${escapeHtml(event.occurred_at)}"><strong>${escapeHtml(event.time_display)}</strong>${data.has_multiple_days?`<span>${escapeHtml(event.date_display)}</span>`:''}</time><span class="order-lifecycle-dot"></span><div><h3>${escapeHtml(event.title)}</h3>${event.detail?`<p>${escapeHtml(event.detail)}</p>`:''}<small>${escapeHtml(event.actor_name)}${event.elapsed_display?` · через ${escapeHtml(event.elapsed_display)}`:''}</small></div></li>`).join('')}</ol>${data.total_display?`<div class="order-lifecycle-dialog-total">Итого: <strong>${escapeHtml(data.total_display)}</strong></div>`:''}`;};
-        const openHistory=async event=>{historyReturnFocus=event.currentTarget;historyModal.classList.add('is-open');historyModal.setAttribute('aria-hidden','false');historyModal.querySelector('[data-close-order-history]')?.focus();if(historyLoaded)return;try{const response=await fetch(`/api/v1/orders/${encodeURIComponent(historyModal.dataset.orderId)}/lifecycle`,{headers:{Accept:'application/json'},credentials:'same-origin'});const payload=await response.json();if(!response.ok||payload?.ok!==true)throw new Error('Не удалось загрузить историю');renderHistory(payload.data);historyLoaded=true;}catch(error){historyBody.innerHTML='<p class="warning" role="alert">Не удалось загрузить историю заказа.</p>';}};
-        document.querySelector('[data-open-order-history]')?.addEventListener('click',openHistory);
-        historyModal.querySelector('[data-close-order-history]')?.addEventListener('click',closeHistory);
-        historyModal.addEventListener('click',event=>{if(event.target===historyModal)closeHistory();});
-        document.addEventListener('keydown',event=>{if(event.key==='Escape'&&historyModal.classList.contains('is-open'))closeHistory();});
+        const toggleHistory=async()=>{const opening=historyPanel.hidden;historyPanel.hidden=!opening;historyButton.setAttribute('aria-expanded',String(opening));if(!opening||historyLoaded)return;try{const response=await fetch(`/api/v1/orders/${encodeURIComponent(historyPanel.dataset.orderId)}/lifecycle`,{headers:{Accept:'application/json'},credentials:'same-origin'});const payload=await response.json();if(!response.ok||!payload?.data)throw new Error('Не удалось загрузить историю');renderHistory(payload.data);historyLoaded=true;}catch(error){historyBody.innerHTML='<p class="warning" role="alert">Не удалось загрузить историю заказа.</p>';}};
+        historyButton?.addEventListener('click',toggleHistory);
     }
 
     const searchInput=document.getElementById('orderSearch');
