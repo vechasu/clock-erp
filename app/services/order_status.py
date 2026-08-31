@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from app.catalog_db import CatalogDatabase
+from app.services.audit_journal import AuditJournal
 
 
 ERP_UNCONFIRMED = "unconfirmed"
@@ -76,17 +77,60 @@ class OrderStatusService:
     def _event(
         self, connection, order_id, old_status, new_status, actor,
         source, sync_result, bitrix_status=None, message=None,
+        occurred_at=None, origin="runtime", order_number=None,
     ):
-        connection.execute(
-            "INSERT INTO erp_order_status_events ("
-            "external_order_id, old_status, new_status, actor, source, "
-            "bitrix_status, sync_result, message, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                str(order_id), old_status, new_status, str(actor or source),
-                source, bitrix_status, sync_result, str(message or "") or None,
-                _now(),
-            ),
+        actor_data = actor if isinstance(actor, dict) else {}
+        if actor_data:
+            actor_type = str(actor_data.get("actor_type") or "user")
+            actor_name = str(
+                actor_data.get("actor_name")
+                or ("Система" if actor_type == "system" else source)
+            ).strip()
+            actor_id = str(actor_data.get("actor_id") or "").strip()
+        else:
+            actor_type = "external" if source == "bitrix" else "user"
+            actor_name = str(actor or source).strip()
+            actor_id = actor_name
+        timestamp = str(occurred_at or _now())
+        # The legacy status-event table remains sync diagnostics. The shared
+        # append-only journal is the lifecycle source of truth used by both UI
+        # projections, and is committed or rolled back with the status row.
+        lifecycle_fact = old_status != new_status and not (
+            old_status is None and not occurred_at
+        )
+        if not lifecycle_fact:
+            connection.execute(
+                "INSERT INTO erp_order_status_events ("
+                "external_order_id, old_status, new_status, actor, source, "
+                "bitrix_status, sync_result, message, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    str(order_id), old_status, new_status, actor_name,
+                    source, bitrix_status, sync_result,
+                    str(message or "") or None, timestamp,
+                ),
+            )
+            return
+        AuditJournal(self.database).record(
+            "order",
+            str(order_id),
+            "created" if old_status is None else "status_changed",
+            "Заказ №{}".format(order_number or order_id),
+            "Bitrix" if source == "bitrix" else "ERP",
+            before={} if old_status is None else {"status": old_status},
+            after={"status": new_status},
+            metadata={
+                "number": str(order_number or order_id),
+                "origin": origin,
+                "sync_result": sync_result,
+            },
+            actor_id=actor_id,
+            actor_name=actor_name,
+            actor_type=actor_type,
+            occurred_at=timestamp,
+            status=new_status,
+            source=source,
+            connection=connection,
         )
 
     def _queue(self, connection, order_id, erp_status, bitrix_status):
@@ -119,7 +163,7 @@ class OrderStatusService:
             if owns:
                 connection.close()
 
-    def ingest(self, order_id, bitrix_status):
+    def ingest(self, order_id, bitrix_status, created_at=None, order_number=None):
         order_id = str(order_id)
         remote = str(bitrix_status or "").strip().upper()
         mapped = self.mapping.from_bitrix(remote)
@@ -157,6 +201,9 @@ class OrderStatusService:
                     connection, order_id, None, initial, "Bitrix", "bitrix",
                     "synced" if mapped else "unknown_status", remote,
                     None if mapped else "Неизвестный статус Bitrix сохранён без сопоставления",
+                    occurred_at=created_at,
+                    origin="external_source",
+                    order_number=order_number,
                 )
                 return self.get(order_id, connection)
 
@@ -215,7 +262,10 @@ class OrderStatusService:
                     )
             return self.get(order_id, connection)
 
-    def change(self, order_id, target, actor, sale_id=None, connection=None):
+    def change(
+        self, order_id, target, actor, sale_id=None, connection=None,
+        order_number=None,
+    ):
         if target not in ERP_STATUS_NAMES:
             raise OrderStatusError("Недопустимый статус заказа")
         owns = connection is None
@@ -263,7 +313,7 @@ class OrderStatusService:
             self._queue(connection, order_id, target, bitrix_code)
             self._event(
                 connection, order_id, old, target, actor, "erp", "pending",
-                bitrix_code,
+                bitrix_code, order_number=order_number,
             )
             result = self.get(order_id, connection)
             if owns:
@@ -274,7 +324,7 @@ class OrderStatusService:
                 context.__exit__(type(error), error, error.__traceback__)
             raise
 
-    def record_synced_change(self, order_id, target, actor):
+    def record_synced_change(self, order_id, target, actor, order_number=None):
         """Persist an ERP change only after Bitrix accepted it."""
         if target not in ERP_STATUS_NAMES:
             raise OrderStatusError("Недопустимый статус заказа")
@@ -305,7 +355,7 @@ class OrderStatusService:
             if old != target:
                 self._event(
                     connection, order_id, old, target, actor, "erp", "synced",
-                    bitrix_code,
+                    bitrix_code, order_number=order_number,
                 )
             return self.get(order_id, connection)
 
@@ -314,7 +364,12 @@ class OrderStatusService:
         if not order_id:
             return order
         try:
-            state = self.ingest(order_id, order.get("status"))
+            state = self.ingest(
+                order_id,
+                order.get("status"),
+                created_at=order.get("created_at") or order.get("date"),
+                order_number=order.get("number"),
+            )
         except sqlite3.OperationalError as error:
             if "locked" not in str(error).casefold():
                 raise

@@ -274,6 +274,14 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn('data-status-autosave', header)
         self.assertIn('data-order-sale-action', header)
 
+    def test_order_lifecycle_summary_and_lazy_timeline_are_available(self):
+        self.assertIn('class="order-lifecycle-summary"', self.source)
+        self.assertIn('data-open-order-history', self.source)
+        self.assertIn('id="orderLifecycleModal"', self.source)
+        self.assertIn('/lifecycle`', self.source)
+        self.assertIn('event.elapsed_display', self.source)
+        self.assertIn('.order-lifecycle-timeline', self.source)
+
     def test_actions_menu_keyboard_and_responsive_contract(self):
         self.assertIn("event.key==='ArrowDown'||event.key==='ArrowUp'", self.source)
         self.assertIn("event.key==='Escape'", self.source)

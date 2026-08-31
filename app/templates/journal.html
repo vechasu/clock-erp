@@ -517,9 +517,18 @@
                 sale: "Открыть продажу",
                 receipt: "Открыть приход",
                 inventory: "Открыть инвентаризацию",
+                order: "Открыть заказ",
             }[event.entity_type] || "Открыть объект";
             content.append(link);
-        } else {
+        }
+        if (event.order_url && event.order_url !== event.object_url) {
+            const orderLink = document.createElement("a");
+            orderLink.className = "journal-object-link";
+            orderLink.href = event.order_url;
+            orderLink.textContent = "Открыть заказ";
+            content.append(orderLink);
+        }
+        if (!event.object_url && !event.order_url) {
             const deleted = document.createElement("div");
             deleted.className = "journal-deleted-note";
             deleted.textContent = "Объект удалён";
