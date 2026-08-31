@@ -1,0 +1,27 @@
+import unittest
+from pathlib import Path
+
+
+class WildberriesFbsSalesSmokeContractTest(unittest.TestCase):
+    def test_smoke_is_get_only_idempotent_and_checks_sales_workspace(self):
+        source = (Path(__file__).resolve().parents[1] / "scripts" / "wb_fbs_sales_smoke.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('item.get("method") != "GET"', source)
+        self.assertIn('second["added"] != 0', source)
+        self.assertIn("GROUP BY external_order_id HAVING COUNT(*) > 1", source)
+        self.assertIn("/sales?view=assembly", source)
+        for method in (".post(", ".put(", ".patch(", ".delete("):
+            self.assertNotIn(method, source.casefold())
+
+    def test_deploy_runs_fbs_smoke_after_stable_data_guard(self):
+        source = (Path(__file__).resolve().parents[1] / "scripts" / "deploy.sh").read_text(
+            encoding="utf-8"
+        )
+        guard = source.rindex('printf \'DATA_AFTER=%s\\n\' "$DATA_SNAPSHOT_AFTER"')
+        smoke = source.rindex("scripts/wb_fbs_sales_smoke.py")
+        self.assertGreater(smoke, guard)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -31,6 +31,7 @@ def raw_order(identifier, order_uid="buyer-order", status="new", article="WB-ART
         "article": article,
         "skus": ["4600000000001"],
         "warehouseId": 777,
+        "supplyId": "WB-SUPPLY-1",
         "createdAt": "2026-08-24T10:30:00Z",
         "deliveryType": "fbs",
         "convertedFinalPrice": 129900,
@@ -215,14 +216,14 @@ class WildberriesStorageTest(unittest.TestCase):
         mapped = context["line:200"]
         self.assertEqual(mapped["state"], "mapped")
         self.assertEqual(str(mapped["product"]["id"]), str(product["id"]))
-        self.assertEqual(mapped["mapping_method"], "wb_barcode_or_article")
+        self.assertEqual(mapped["mapping_method"], "vendor_code")
 
     def test_normalized_payload_contains_required_identifiers_and_no_sale_permission(self):
         order = normalize_wildberries_order(raw_order(200))
         for key in (
             "wb_order_id", "order_uid", "rid", "nm_id", "chrt_id",
             "article", "skus", "warehouse_id", "created_at", "delivery_type",
-            "supplier_status", "wb_status",
+            "supplier_status", "wb_status", "supply_id",
         ):
             self.assertIn(key, order)
         state = web.build_order_sale_state(order, {})
@@ -282,6 +283,78 @@ class WildberriesRoutesTest(unittest.TestCase):
             self.assertIn(value, html)
         self.assertNotIn("Провести продажу", html)
         self.assertNotIn("Открыть в Bitrix", html)
+
+    def test_sales_assembly_workspace_lists_wb_order_and_opens_card(self):
+        store = OrdersSnapshotStore(self.path)
+        store.upsert_wildberries([normalize_wildberries_order(raw_order(200))])
+        catalog_path = Path(self.temporary.name) / "catalog.db"
+        catalog = CatalogDatabase(catalog_path)
+        catalog.initialize()
+        with catalog.transaction() as connection:
+            connection.execute(
+                "INSERT INTO catalog_excel_batches (id, file_sha256, source_filename, "
+                "row_count, total_stock, positive_rows, zero_rows, status, created_at, applied_at) "
+                "VALUES ('batch-sales-wb', 'sha-sales-wb', 'wb.xlsx', 0, 0, 0, 0, 'active', ?, ?)",
+                ("2026-08-24T10:00:00+00:00", "2026-08-24T10:00:00+00:00"),
+            )
+        product = ExcelProductCatalog(catalog).create_product(
+            "WB Watch", article="WB-ARTICLE", brand="Test", category="Часы", stock=3
+        )
+        with (
+            mock.patch.dict("os.environ", {
+                "ORDERS_DATABASE_PATH": str(self.path),
+                "CATALOG_DATABASE_PATH": str(catalog_path),
+            }, clear=False),
+            mock.patch.object(web, "get_warehouse_items", return_value=[]),
+        ):
+            response = self.client.get("/sales?view=assembly")
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        for value in (
+            "Собрать заказ", "Обновить WB-заказы", "Заказ №200", "WB-ARTICLE",
+            "4600000000001", "nmId: 123456", "Сопоставлен · ERP #{}".format(product["id"]),
+            "/order/wildberries/200?source=wildberries",
+        ):
+            self.assertIn(value, html)
+        self.assertNotIn("Не сопоставлен", html)
+
+    def test_sales_assembly_does_not_guess_unknown_product(self):
+        store = OrdersSnapshotStore(self.path)
+        store.upsert_wildberries([
+            normalize_wildberries_order(raw_order(201, article="UNKNOWN-WB"))
+        ])
+        catalog_path = Path(self.temporary.name) / "empty-catalog.db"
+        CatalogDatabase(catalog_path).initialize()
+        with mock.patch.dict("os.environ", {
+            "ORDERS_DATABASE_PATH": str(self.path),
+            "CATALOG_DATABASE_PATH": str(catalog_path),
+        }, clear=False):
+            with web.app.test_request_context("/sales?view=assembly"):
+                rows = web.build_wb_fbs_assembly_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["matching_status"], "unmatched")
+        self.assertIsNone(rows[0]["products"][0]["erp_product_id"])
+
+    def test_successful_manual_sync_returns_matching_summary(self):
+        catalog_path = Path(self.temporary.name) / "sync-catalog.db"
+        CatalogDatabase(catalog_path).initialize()
+        fake_client = mock.Mock()
+        fake_client.get_new_orders.return_value = [raw_order(202, article="UNKNOWN-WB")]
+        with (
+            mock.patch.dict("os.environ", {
+                "ORDERS_DATABASE_PATH": str(self.path),
+                "CATALOG_DATABASE_PATH": str(catalog_path),
+                "WB_API_TOKEN": "configured",
+            }, clear=False),
+            mock.patch.object(web, "WildberriesOrdersReadOnlyClient", return_value=fake_client),
+        ):
+            first = self.client.post("/api/orders/wildberries/sync")
+            second = self.client.post("/api/orders/wildberries/sync")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.get_json()["result"]["added"], 1)
+        self.assertEqual(first.get_json()["result"]["unmatched"], 1)
+        self.assertEqual(second.get_json()["result"]["added"], 0)
+        self.assertEqual(second.get_json()["result"]["updated"], 1)
 
 
 if __name__ == "__main__":

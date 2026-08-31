@@ -73,6 +73,7 @@ def normalize_wildberries_order(order, synced_at=None):
         "phone": "",
         "warehouse_id": order.get("warehouseId"),
         "office_id": order.get("officeId"),
+        "supply_id": _text(order.get("supplyId")),
         "delivery_type": _text(order.get("deliveryType")),
         "article": article,
         "skus": skus,
