@@ -104,12 +104,12 @@ test('collection bulk success resets mode while an error preserves selection', a
     await page.locator('#productCollectionBulkTarget').selectOption({ index: 1 });
   };
   const submitAndWaitForRefresh = async (action: 'add' | 'remove') => {
-    const previousResults = await page.locator('#warehouseResults').elementHandle();
     await Promise.all([
-      page.waitForFunction(
-        (previous) => document.querySelector('#warehouseResults') !== previous,
-        previousResults,
-      ),
+      page.evaluate(() => new Promise<void>((resolve) => {
+        document.addEventListener('warehouse:results-updated', () => resolve(), {
+          once: true,
+        });
+      })),
       page.locator(`[data-collection-bulk-action="${action}"]`).click(),
     ]);
   };
