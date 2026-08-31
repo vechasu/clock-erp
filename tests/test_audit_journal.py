@@ -422,6 +422,41 @@ class AuditJournalTest(unittest.TestCase):
         )
         self.assertEqual(incomplete["summary"], "Создана категория")
 
+    def test_order_status_event_uses_order_status_labels(self):
+        event_id = self.journal.record(
+            "order", "order-440", "status_changed", "Заказ №440",
+            changes={"status": {
+                "before": "unconfirmed", "after": "confirmed",
+            }},
+        )
+
+        event = web.serialize_journal_event(self.journal.get_event(event_id))
+
+        self.assertEqual(
+            event["summary"], "Статус: Не подтверждён → Подтверждён"
+        )
+
+    def test_mixed_feed_and_linked_order_sale_events_have_unique_ids(self):
+        for entity_type, entity_id in (
+            ("product", "mixed-product"),
+            ("sale", "mixed-sale"),
+            ("order", "mixed-order"),
+            ("inventory", "mixed-inventory"),
+            ("category", "legacy-category"),
+        ):
+            self.journal.record(
+                entity_type, entity_id, "updated", entity_id,
+                occurred_at="2026-08-12T10:00:00+00:00",
+            )
+
+        listing = self.journal.list_events(limit=100)
+        event_ids = [event["id"] for event in listing["events"]]
+
+        self.assertEqual(len(event_ids), len(set(event_ids)))
+        self.assertTrue({
+            "product", "sale", "order", "inventory", "category",
+        }.issubset({event["entity_type"] for event in listing["events"]}))
+
 
 class AuditJournalUiTest(unittest.TestCase):
     def setUp(self):
@@ -454,7 +489,9 @@ class AuditJournalUiTest(unittest.TestCase):
         source = response.get_data(as_text=True)
         self.assertIn("Все", source)
         self.assertIn("Товары", source)
+        self.assertIn("Заказы", source)
         self.assertIn("Продажи", source)
+        self.assertIn("Инвентаризация", source)
         self.assertIn("Приход", source)
         self.assertIn("Период", source)
         self.assertIn("Фильтры", source)
@@ -509,6 +546,63 @@ class AuditJournalUiTest(unittest.TestCase):
             response = self.client.get("/app/journal")
             self.assertEqual(response.status_code, 200)
             self.assertIn("Событий пока нет", response.get_data(as_text=True))
+
+    def test_order_status_regression_page_and_api_return_200(self):
+        AuditJournal(self.database).record(
+            "order", "order-440", "status_changed", "Заказ №440",
+            changes={"status": {
+                "before": "unconfirmed", "after": "confirmed",
+            }},
+        )
+
+        page = self.client.get("/app/journal")
+        api = self.client.get("/api/v1/journal?entity_type=order")
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(api.status_code, 200)
+        self.assertIn(
+            "Статус: Не подтверждён → Подтверждён",
+            page.get_data(as_text=True),
+        )
+        self.assertEqual(
+            api.get_json()["data"]["events"][0]["summary"],
+            "Статус: Не подтверждён → Подтверждён",
+        )
+
+    def test_invalid_legacy_event_is_visible_and_logged_with_correlation(self):
+        event_id = AuditJournal(self.database).record(
+            "inventory", "legacy-inventory", "completed", "Старая ревизия"
+        )
+
+        with mock.patch.object(
+            web.InventoryJournal,
+            "enrich_events",
+            side_effect=lambda events: events[0].update({
+                "inventory_summary": {"checked_positions": "legacy"},
+            }),
+        ), self.assertLogs(web.app.logger, level="ERROR") as captured:
+            response = self.client.get(
+                "/api/v1/journal", headers={"X-Operation-ID": "journal-test-440"}
+            )
+            detail = self.client.get(
+                "/api/v1/journal/{}".format(event_id),
+                headers={"X-Operation-ID": "journal-detail-440"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(detail.status_code, 200)
+        event = next(
+            item for item in response.get_json()["data"]["events"]
+            if item["id"] == event_id
+        )
+        self.assertEqual(
+            event["summary"], "Событие сохранено в устаревшем формате"
+        )
+        log = "\n".join(captured.output)
+        self.assertIn("error_type=ValueError", log)
+        self.assertIn("event_id={}".format(event_id), log)
+        self.assertIn("operation_id=journal-test-440", log)
+        self.assertIn("operation_id=journal-detail-440", log)
 
     def test_deleted_object_detail_is_readable_without_broken_link(self):
         response = self.client.get("/api/journal/1")

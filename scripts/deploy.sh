@@ -763,6 +763,9 @@ fi
 PYTHONPATH="$PROJECT_DIR" ERP_PRODUCTION_SERVICES_SMOKE=confirmed \
     LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN" \
     scripts/services_production_smoke.py
+PYTHONPATH="$PROJECT_DIR" ERP_PRODUCTION_JOURNAL_SMOKE=confirmed \
+    LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN" \
+    scripts/journal_production_smoke.py
 DATA_SNAPSHOT_AFTER="$(stable_data_snapshot)"
 if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
     printf 'POST-SMOKE DATA SAFETY: stable business aggregate mismatch\n' >&2
