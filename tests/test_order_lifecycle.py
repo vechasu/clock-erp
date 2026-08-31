@@ -109,9 +109,9 @@ class OrderLifecycleTests(unittest.TestCase):
                 "metadata_json,inserted_at,updated_at) VALUES "
                 "('sale-1','tictactoy','42','completed',?,'{}',?,?)",
                 (
-                    "2026-08-31T21:00:10+00:00",
-                    "2026-08-31T21:00:10+00:00",
-                    "2026-08-31T21:00:10+00:00",
+                    "2026-09-01T00:00:10+00:00",
+                    "2026-09-01T00:00:10+00:00",
+                    "2026-09-01T00:00:10+00:00",
                 ),
             )
             sale_event_id = AuditJournal(self.database).record(
@@ -119,14 +119,14 @@ class OrderLifecycleTests(unittest.TestCase):
                 after={"status": "completed", "order_number": "20078"},
                 metadata={"number": "20078", "external_order_id": "42"},
                 actor_id="7", actor_name="Максим",
-                occurred_at="2026-08-31T21:00:10+00:00",
+                occurred_at="2026-09-01T00:00:10+00:00",
                 status="completed", source="tictactoy", connection=connection,
             )
 
         timeline = OrderLifecycle(self.database).timeline("42")
         self.assertEqual([event["id"] for event in timeline["events"]][-1], sale_event_id)
         self.assertEqual(timeline["events"][-1]["title"], "Продажа проведена")
-        self.assertEqual(timeline["total_seconds"], 20)
+        self.assertEqual(timeline["total_seconds"], 10820)
         self.assertTrue(timeline["has_multiple_days"])
 
         journal = AuditJournal(self.database).list_events(
