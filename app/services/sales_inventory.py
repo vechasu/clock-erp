@@ -1372,6 +1372,11 @@ class SalesInventory:
                 raise SalesInventoryError("Продажа не найдена.")
 
             current = self._metadata(sale)
+            current_item_snapshot = next((
+                snapshot for snapshot in current.get("items", [])
+                if isinstance(snapshot, dict)
+                and int(snapshot.get("sale_item_id") or 0) == int(item["id"])
+            ), None)
             requested = dict(payload or {})
 
             requested_quantity = positive_number(quantity, "Количество")
@@ -1382,6 +1387,8 @@ class SalesInventory:
                 None if item["unit_price"] is None else float(item["unit_price"])
             )
             canonical = dict(current)
+            if current_item_snapshot:
+                canonical.update(current_item_snapshot)
             canonical.update({
                 "product_id": str(item["product_id"]),
                 "quantity": float(item["quantity"]),
