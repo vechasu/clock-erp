@@ -136,6 +136,39 @@ class CatalogStockStatisticsTest(unittest.TestCase):
         self.assertEqual(brands["666 Barcelona"]["stock_display"], "12 480.5")
         self.assertEqual(brands["Без бренда"]["stock_display"], "-1.25")
 
+    def test_strap_picker_uses_local_catalog_contract_and_product_kinds(self):
+        response = self.client.get(
+            "/api/v1/catalog/options",
+            query_string={
+                "type": "product", "product_kind": "watch",
+                "in_stock": "1", "q": "X Watch",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(set(payload), {"data", "meta", "error"})
+        self.assertIsNone(payload["error"])
+        self.assertEqual(
+            [item["name"] for item in payload["data"]], ["X Watch"]
+        )
+
+        brands = self.options(
+            "brand", product_kind="strap_component",
+            available_for_sale="1",
+        )
+        self.assertEqual([item["name"] for item in brands], ["X"])
+        categories = self.options(
+            "category", brand_id=brands[0]["id"], category_scope="brand",
+            product_kind="strap_component", available_for_sale="1",
+        )
+        self.assertEqual([item["name"] for item in categories], ["Ремни"])
+        products = self.options(
+            "product", brand_id=brands[0]["id"],
+            category_id=categories[0]["id"],
+            product_kind="strap_component", in_stock="1",
+        )
+        self.assertEqual([item["name"] for item in products], ["X Strap"])
+
     def test_category_totals_are_global_then_intersect_selected_brand(self):
         global_categories = self.by_name(self.options("category"))
         self.assertEqual(global_categories["Часы"]["stock_total"], 12488.5)

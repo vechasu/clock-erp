@@ -20167,6 +20167,7 @@ def api_catalog_options():
                 (request.args.get("available_for_sale") or "")
                 .strip().lower() in {"1", "true", "yes"}
             ),
+            product_kind=request.args.get("product_kind") or "",
         )
         if result is None:
             return api_error(

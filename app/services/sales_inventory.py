@@ -18,7 +18,13 @@ from app.services.excel_product_catalog import (
 from app.services.inventory_lock import assert_products_unlocked
 from app.services.product_reconciliation import article_quality, normalize_text, text
 from app.services.sale_pricing import calculate_sale_pricing
-from app.services.shared_catalog import get_or_create_brand, get_or_create_category
+from app.services.shared_catalog import (
+    PRODUCT_KIND_STRAP_COMPONENT,
+    PRODUCT_KIND_WATCH,
+    get_or_create_brand,
+    get_or_create_category,
+    product_matches_kind,
+)
 
 
 class SalesInventoryError(ValueError):
@@ -441,6 +447,20 @@ class SalesInventory:
             if any(value is None for value in products.values()):
                 raise SalesInventoryError("Один или несколько товаров отсутствуют или архивированы.")
             assert_products_unlocked(connection, product_ids, SalesInventoryError)
+            if not product_matches_kind(products[base_id], PRODUCT_KIND_WATCH):
+                raise SalesInventoryError("В качестве часов-основы можно выбрать только часы.")
+            if not product_matches_kind(
+                products[installed_id], PRODUCT_KIND_STRAP_COMPONENT
+            ):
+                raise SalesInventoryError(
+                    "Для установки можно выбрать только ремешок или комплектующую."
+                )
+            if removed_id is not None and not product_matches_kind(
+                products[removed_id], PRODUCT_KIND_STRAP_COMPONENT
+            ):
+                raise SalesInventoryError(
+                    "Для снятия можно выбрать только ремешок или комплектующую."
+                )
 
             required = {}
             for index, item in enumerate(prepared):
