@@ -472,6 +472,137 @@
             background: #ffffff;
         }
 
+        .warehouse-collection-bulk-toolbar[hidden] {
+            display: none;
+        }
+
+        .warehouse-collection-bulk-toolbar select {
+            width: min(260px, 32vw);
+            min-height: 36px;
+            padding: 7px 34px 7px 10px;
+            border-radius: 9px;
+            font-size: 13px;
+        }
+
+        .warehouse-collection-bulk-toolbar .search-tool-button {
+            min-width: 0;
+            min-height: 36px;
+            padding: 0 12px;
+        }
+
+        .warehouse-collection-mode-close {
+            width: 36px;
+            min-width: 36px;
+            height: 36px;
+            padding: 0;
+            border: 1px solid #e1e8f5;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        [data-collection-mode-control] {
+            display: none;
+        }
+
+        .app.is-collection-mode [data-collection-mode-control] {
+            display: inline-block;
+        }
+
+        .warehouse-more {
+            position: relative;
+        }
+
+        .warehouse-more-trigger {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            min-width: 86px;
+        }
+
+        .warehouse-more-trigger svg,
+        .warehouse-more-menu svg {
+            width: 18px;
+            height: 18px;
+            flex: 0 0 auto;
+            fill: none;
+            stroke: currentColor;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-width: 1.7;
+        }
+
+        .warehouse-more-menu {
+            position: absolute;
+            z-index: 40;
+            top: calc(100% + 6px);
+            right: 0;
+            width: 224px;
+            padding: 6px;
+            border: 1px solid #dbe3ec;
+            border-radius: 12px;
+            background: #ffffff;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+        }
+
+        .warehouse-more-menu[hidden] {
+            display: none;
+        }
+
+        .warehouse-more-action {
+            display: flex;
+            width: 100%;
+            min-height: 40px;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 9px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #334155;
+            font-size: 13px;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        .warehouse-more-action:hover,
+        .warehouse-more-action:focus-visible {
+            background: #f1f5f9;
+            color: #1d4ed8;
+            outline: none;
+        }
+
+        .warehouse-more .warehouse-column-settings-panel {
+            top: calc(100% + 6px);
+        }
+
+        @media (max-width: 767px) {
+            .warehouse-more {
+                width: 100%;
+            }
+
+            .warehouse-more-trigger {
+                width: 100%;
+            }
+
+            .warehouse-more-menu,
+            .warehouse-more .warehouse-column-settings-panel {
+                right: 0;
+                max-width: calc(100vw - 32px);
+            }
+
+            .warehouse-collection-bulk-toolbar {
+                justify-content: flex-start;
+                flex-wrap: wrap;
+            }
+
+            .warehouse-collection-bulk-toolbar select {
+                width: 100%;
+            }
+        }
+
         .warehouse-column-settings {
             position: relative;
         }
@@ -4054,7 +4185,7 @@
         data-focus-mode-storage-key="vechasu.erp.products.focus-mode.v1"
         data-focus-mode-subject="таблицу товаров"
         data-focus-mode-hide=".products-workspace-header,.products-workspace-tabs,.products-workspace-metrics,#appSidebar,.mobile-erp-navigation,.mobile-erp-more-sheet,.mobile-erp-more-backdrop,#sidebarTooltip,#pageNotice,.inventory-lock-panel,#warehouseAddModal,#warehouseLoadingState"
-        data-focus-mode-overlays="#filterDrawer.open,#editDrawer.open,#warehouseColumnSettingsPanel:not([hidden]),.brand-combobox-dropdown,.warehouse-calendar-popup:not([hidden]),.modal.is-open,.mobile-erp-more-sheet.is-open"
+        data-focus-mode-overlays="#filterDrawer.open,#editDrawer.open,#warehouseMoreMenu:not([hidden]),#warehouseColumnSettingsPanel:not([hidden]),.brand-combobox-dropdown,.warehouse-calendar-popup:not([hidden]),.modal.is-open,.mobile-erp-more-sheet.is-open"
     >
         {% include "_sidebar.html" %}
 
@@ -4363,46 +4494,52 @@
                         </label>
                     </div>
 
-                    <div class="warehouse-column-settings">
+                    <div class="warehouse-more">
                         <button
-                            id="warehouseColumnSettingsTrigger"
-                            class="search-tool-button erp-secondary-action"
+                            id="warehouseMoreTrigger"
+                            class="warehouse-more-trigger search-tool-button erp-secondary-action"
                             type="button"
-                            aria-haspopup="true"
+                            aria-haspopup="menu"
                             aria-expanded="false"
-                            aria-controls="warehouseColumnSettingsPanel"
-                        >Столбцы</button>
+                            aria-controls="warehouseMoreMenu"
+                        >
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1"></circle><circle cx="10" cy="10" r="1"></circle><circle cx="16" cy="10" r="1"></circle></svg>
+                            <span>Ещё</span>
+                        </button>
                         <div
-                            id="warehouseColumnSettingsPanel"
-                            class="warehouse-column-settings-panel"
-                            role="group"
-                            aria-label="Видимые столбцы таблицы"
+                            id="warehouseMoreMenu"
+                            class="warehouse-more-menu"
+                            role="menu"
+                            aria-label="Дополнительные действия"
                             hidden
-                        ></div>
+                        >
+                            <button id="warehouseCollectionModeTrigger" class="warehouse-more-action" type="button" role="menuitem">
+                                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.5v5.2L10.8 17l6.2-6.2-7.3-7.3H4.8a1.3 1.3 0 0 0-1.3 1Z"></path><circle cx="7" cy="7" r="1"></circle></svg>
+                                <span>Изменить подборки</span>
+                            </button>
+                            <button id="warehouseColumnSettingsTrigger" class="warehouse-more-action" type="button" role="menuitem" aria-haspopup="true" aria-expanded="false" aria-controls="warehouseColumnSettingsPanel">
+                                <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5"></rect><path d="M8 4v12m4-12v12"></path></svg>
+                                <span>Настроить столбцы</span>
+                            </button>
+                            <button
+                                id="warehouseFocusModeToggle"
+                                class="warehouse-more-action warehouse-focus-toggle"
+                                type="button"
+                                role="menuitem"
+                                aria-label="Развернуть таблицу товаров"
+                                aria-pressed="false"
+                                aria-expanded="false"
+                                title="Развернуть таблицу товаров"
+                                data-erp-focus-mode-toggle
+                                data-focus-mode-label-suffix=" таблицу"
+                            >
+                                <svg viewBox="0 0 20 20" data-focus-expand-icon aria-hidden="true"><path d="M8 3H3v5M12 3h5v5M8 17H3v-5M12 17h5v-5"></path><path d="m3 3 5 5m9-5-5 5M3 17l5-5m9 5-5-5"></path></svg>
+                                <svg viewBox="0 0 20 20" data-focus-collapse-icon aria-hidden="true" hidden><path d="M8 8H3V3M12 8h5V3M8 12H3v5M12 12h5v5"></path><path d="M8 8 3 3m9 5 5-5M8 12l-5 5m9-5 5 5"></path></svg>
+                                <span class="warehouse-focus-label" data-focus-mode-label>Развернуть таблицу</span>
+                            </button>
+                        </div>
+                        <div id="warehouseColumnSettingsPanel" class="warehouse-column-settings-panel" role="group" aria-label="Видимые столбцы таблицы" hidden></div>
                     </div>
-
-                    <button
-                        id="warehouseFocusModeToggle"
-                        class="warehouse-focus-toggle search-tool-button erp-secondary-action"
-                        type="button"
-                        aria-label="Развернуть таблицу товаров"
-                        aria-pressed="false"
-                        aria-expanded="false"
-                        title="Развернуть таблицу товаров"
-                        data-erp-focus-mode-toggle
-                    >
-                        <span aria-hidden="true">
-                            <svg viewBox="0 0 20 20" data-focus-expand-icon>
-                                <path d="M8 3H3v5M12 3h5v5M8 17H3v-5M12 17h5v-5"></path>
-                                <path d="m3 3 5 5m9-5-5 5M3 17l5-5m9 5-5-5"></path>
-                            </svg>
-                            <svg viewBox="0 0 20 20" data-focus-collapse-icon hidden>
-                                <path d="M8 8H3V3M12 8h5V3M8 12H3v5M12 12h5v5"></path>
-                                <path d="M8 8 3 3m9 5 5-5M8 12l-5 5m9-5 5 5"></path>
-                            </svg>
-                        </span>
-                        <span class="warehouse-focus-label" data-focus-mode-label>Развернуть</span>
-                    </button>
 
                 </form>
             </div>
@@ -4705,8 +4842,9 @@
             <div id="productCollectionBulkBar" class="warehouse-collection-bulk-toolbar" hidden>
                 <strong id="productCollectionBulkCount">Выбрано: 0</strong>
                 <select id="productCollectionBulkTarget" aria-label="Подборка для массового действия"><option value="">Выберите подборку</option>{% for collection in collections %}<option value="{{ collection.id }}">{{ collection.name }}</option>{% endfor %}</select>
-                <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="add">Добавить в подборку</button>
-                <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="remove">Удалить из подборки</button>
+                <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="add" disabled>Добавить</button>
+                <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="remove" disabled>Удалить</button>
+                <button id="productCollectionModeClose" class="warehouse-collection-mode-close" type="button" aria-label="Закрыть режим изменения подборок" title="Закрыть">×</button>
             </div>
             <div
                 id="warehouseTableScrollBody"
@@ -4739,7 +4877,7 @@
                                     </div>
                                 </th>
                                 <th data-column-key="name">
-                                    <input id="selectVisibleProductsForCollections" type="checkbox" aria-label="Выбрать товары на странице">
+                                    <input id="selectVisibleProductsForCollections" type="checkbox" data-collection-mode-control aria-label="Выбрать товары на странице">
                                     <span
                                         class="warehouse-sort-label erp-sort-label{% if sort_by == 'name' %} is-active{% endif %}"
                                         data-sort-field="name"
@@ -4903,7 +5041,7 @@
 
                                     <td data-column-key="name">
                                         <div class="warehouse-product-name-cell">
-                                            <input type="checkbox" data-product-collection-select value="{{ item.id }}" aria-label="Выбрать {{ item.name }}">
+                                            <input type="checkbox" data-product-collection-select data-collection-mode-control value="{{ item.id }}" aria-label="Выбрать {{ item.name }}">
                                             <div class="name warehouse-ellipsis" title="{{ item.name|e }}">{{ item.name }}</div>
                                         </div>
                                     </td>
@@ -7491,12 +7629,54 @@
             )).map(input => Number(input.value));
         }
 
+        let productCollectionModeActive = false;
+        let productCollectionMutationPending = false;
+
+        function clearProductCollectionSelection() {
+            document.querySelectorAll("[data-product-collection-select]").forEach(input => {
+                input.checked = false;
+            });
+            const selectAll = document.getElementById("selectVisibleProductsForCollections");
+            if (selectAll) {
+                selectAll.checked = false;
+                selectAll.indeterminate = false;
+            }
+        }
+
+        function setProductCollectionMode(enabled) {
+            productCollectionModeActive = Boolean(enabled);
+            document.querySelector("[data-erp-focus-mode]")?.classList.toggle(
+                "is-collection-mode",
+                productCollectionModeActive
+            );
+            if (!productCollectionModeActive) {
+                clearProductCollectionSelection();
+                const target = document.getElementById("productCollectionBulkTarget");
+                if (target) target.value = "";
+            }
+            updateProductCollectionBulkBar();
+        }
+
         function updateProductCollectionBulkBar() {
             const ids = selectedProductCollectionIds();
             const bar = document.getElementById("productCollectionBulkBar");
             const count = document.getElementById("productCollectionBulkCount");
-            if (bar) bar.hidden = ids.length === 0;
+            const target = document.getElementById("productCollectionBulkTarget");
+            const canSubmit = productCollectionModeActive
+                && ids.length > 0
+                && Boolean(target?.value)
+                && !productCollectionMutationPending;
+            if (bar) bar.hidden = !productCollectionModeActive;
             if (count) count.textContent = "Выбрано: " + ids.length;
+            document.querySelectorAll("[data-collection-bulk-action]").forEach(button => {
+                button.disabled = !canSubmit;
+            });
+            const selectAll = document.getElementById("selectVisibleProductsForCollections");
+            const visibleCount = document.querySelectorAll("[data-product-collection-select]").length;
+            if (selectAll) {
+                selectAll.checked = visibleCount > 0 && ids.length === visibleCount;
+                selectAll.indeterminate = ids.length > 0 && ids.length < visibleCount;
+            }
         }
 
         document.addEventListener("change", function(event) {
@@ -7509,11 +7689,32 @@
                 });
                 updateProductCollectionBulkBar();
             }
+            if (event.target.matches("#productCollectionBulkTarget")) {
+                updateProductCollectionBulkBar();
+            }
+        });
+
+        document.addEventListener("click", function(event) {
+            if (event.target.closest("#warehouseCollectionModeTrigger")) {
+                setProductCollectionMode(true);
+            }
+            if (event.target.closest("#productCollectionModeClose")) {
+                setProductCollectionMode(false);
+            }
+        });
+
+        document.addEventListener("warehouse:results-updated", function() {
+            setProductCollectionMode(false);
+        });
+
+        window.addEventListener("pagehide", function() {
+            setProductCollectionMode(false);
         });
 
         document.addEventListener("click", async function(event) {
             const button = event.target.closest("[data-collection-bulk-action]");
             if (!button) return;
+            if (productCollectionMutationPending || button.disabled) return;
             const productIds = selectedProductCollectionIds();
             const collectionId = Number(
                 document.getElementById("productCollectionBulkTarget")?.value || 0
@@ -7522,7 +7723,11 @@
                 window.alert("Выберите товары и подборку.");
                 return;
             }
-            button.disabled = true;
+            productCollectionMutationPending = true;
+            const action = button.dataset.collectionBulkAction;
+            const defaultLabels = {add: "Добавить", remove: "Удалить"};
+            button.textContent = action === "add" ? "Добавляем…" : "Удаляем…";
+            updateProductCollectionBulkBar();
             try {
                 const response = await fetch("/api/v1/product-collections/bulk", {
                     method: "POST",
@@ -7532,19 +7737,68 @@
                         "X-CSRF-Token": {{ csrf_token()|tojson }},
                     },
                     body: JSON.stringify({
-                        action: button.dataset.collectionBulkAction,
+                        action: action,
                         collection_id: collectionId,
                         product_ids: productIds,
                     }),
                 });
                 const payload = await response.json();
                 if (!response.ok) throw new Error(payload.message || "Не удалось изменить подборку.");
-                window.location.reload();
+                setProductCollectionMode(false);
+                showWarehouseNotice(
+                    action === "add"
+                        ? "Товары добавлены в подборку"
+                        : "Товары удалены из подборки",
+                    "success"
+                );
+                await loadWarehouseResultsUrl(new URL(window.location.href), {
+                    history: "none",
+                    message: "Обновляем подборки…"
+                });
             } catch (error) {
-                window.alert(error.message);
-                button.disabled = false;
+                showWarehouseNotice(error.message, "error");
+            } finally {
+                productCollectionMutationPending = false;
+                button.textContent = defaultLabels[action];
+                updateProductCollectionBulkBar();
             }
         });
+
+        (function initializeWarehouseMoreMenu() {
+            const trigger = document.getElementById("warehouseMoreTrigger");
+            const menu = document.getElementById("warehouseMoreMenu");
+            if (!trigger || !menu) return;
+
+            function closeMoreMenu(returnFocus) {
+                menu.hidden = true;
+                trigger.setAttribute("aria-expanded", "false");
+                if (returnFocus) trigger.focus();
+            }
+
+            trigger.addEventListener("click", function(event) {
+                event.stopPropagation();
+                const shouldOpen = menu.hidden;
+                document.getElementById("warehouseColumnSettingsPanel").hidden = true;
+                document.getElementById("warehouseColumnSettingsTrigger")
+                    .setAttribute("aria-expanded", "false");
+                menu.hidden = !shouldOpen;
+                trigger.setAttribute("aria-expanded", String(shouldOpen));
+            });
+            menu.addEventListener("click", function(event) {
+                if (event.target.closest("button[role=menuitem]")) {
+                    closeMoreMenu(false);
+                }
+            });
+            document.addEventListener("click", function(event) {
+                if (!event.target.closest(".warehouse-more")) closeMoreMenu(false);
+            });
+            document.addEventListener("keydown", function(event) {
+                if (event.key === "Escape" && !menu.hidden) {
+                    event.preventDefault();
+                    closeMoreMenu(true);
+                }
+            });
+        })();
 
     </script>
 
@@ -7886,7 +8140,7 @@
                 trigger.setAttribute("aria-expanded", String(!panel.hidden));
             }, { signal: viewSignal });
             document.addEventListener("click", function(event) {
-                if (!event.target.closest(".warehouse-column-settings")) {
+                if (!event.target.closest(".warehouse-more")) {
                     panel.hidden = true;
                     trigger.setAttribute("aria-expanded", "false");
                 }
@@ -9148,7 +9402,7 @@
                         "warehouseColumnSettingsTrigger"
                     ),
                     container: document.querySelector(
-                        ".warehouse-column-settings"
+                        ".warehouse-more"
                     ),
                     isOpen: () => !document.getElementById(
                         "warehouseColumnSettingsPanel"
