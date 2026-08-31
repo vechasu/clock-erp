@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import tempfile
@@ -1643,6 +1644,45 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(page.status_code, 200)
         self.assertIn("QA-TRACK-21127", text)
         self.assertIn("QA примечание продажи 21127", text)
+
+    def test_order_sale_item_snapshot_allows_tracking_and_note_edit(self):
+        sale = self.create_managed_sale(sale_id="21127-item-snapshot")
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT metadata_json FROM erp_sales WHERE id = ?",
+                (sale["id"],),
+            ).fetchone()
+            item = connection.execute(
+                "SELECT id FROM erp_sale_items WHERE sale_id = ?",
+                (sale["id"],),
+            ).fetchone()
+            metadata = json.loads(row["metadata_json"])
+            for field in ("product_id", "product_name", "brand", "category"):
+                metadata.pop(field, None)
+            metadata["items"] = [{
+                "sale_item_id": item["id"],
+                "product_id": sale["product_id"],
+                "product_name": sale["product_name"],
+                "brand": sale["brand"],
+                "category": sale["category"],
+            }]
+            connection.execute(
+                "UPDATE erp_sales SET metadata_json = ? WHERE id = ?",
+                (json.dumps(metadata, ensure_ascii=False), sale["id"]),
+            )
+
+        response = self.update_sale_form(
+            self.inventory.get_sale(sale["id"]),
+            track_number="QA-SNAPSHOT-TRACK",
+            note="QA snapshot note",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["track_number"], "QA-SNAPSHOT-TRACK")
+        self.assertEqual(stored["note"], "QA snapshot note")
+        self.assertEqual(stored["product_id"], sale["product_id"])
+        self.assertEqual(stored["product_name"], sale["product_name"])
 
     def test_tracking_and_sale_note_can_be_cleared_without_order_comment_drift(self):
         payload = self.payload(self.product, "sale-clear-fields")
