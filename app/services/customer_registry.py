@@ -17,6 +17,9 @@ from app.customer_registry_migrations import SCHEMA_VERSION, migrate_database
 PAGE_SIZES = (20, 50, 100, 200)
 PHONE_FORMATTING = re.compile(r"^[+\d\s().\-\u00a0]+$")
 EMAIL_PATTERN = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,189}\.[^@\s]{2,63}$")
+ORDER_QUERY_PATTERN = re.compile(
+    r"^\s*(?:заказ\s*)?(?:[№#]\s*)?(\d+)\s*$", re.IGNORECASE
+)
 MASKED_EMAIL_MARKERS = ("relay", "masked", "privaterelay", "marketplace")
 _VALIDATED_DATABASES = {}
 
@@ -75,6 +78,11 @@ def real_activity_date(value):
 def masked_email(value):
     normalized = normalize_email(value)
     return bool(normalized and any(marker in normalized.casefold() for marker in MASKED_EMAIL_MARKERS))
+
+
+def order_number_query(value):
+    match = ORDER_QUERY_PATTERN.fullmatch(text(value))
+    return match.group(1) if match else ""
 
 
 def validate_database(path):
@@ -362,13 +370,30 @@ class CustomerRegistry:
             per_page = 50
         clauses, params = ["c.merged_into_id IS NULL"], []
         if query:
-            folded = "%{}%".format(query.casefold())
             phone = normalize_phone(query)
-            search = ("(c.name_fold LIKE ? OR lower(c.city) LIKE ? OR EXISTS (SELECT 1 FROM customer_contacts cc WHERE cc.customer_id=c.id AND (cc.normalized_value LIKE ? OR lower(cc.display_value) LIKE ?)) OR EXISTS (SELECT 1 FROM customer_operations co WHERE co.customer_id=c.id AND (lower(co.source) LIKE ? OR lower(co.external_id) LIKE ? OR lower(COALESCE(co.local_ref,'')) LIKE ?)) OR EXISTS (SELECT 1 FROM customer_external_ids ce WHERE ce.customer_id=c.id AND (lower(ce.source) LIKE ? OR lower(ce.external_customer_id) LIKE ?)))")
-            params = [folded] * 9
-            if phone:
-                search = search[:-1] + " OR EXISTS (SELECT 1 FROM customer_contacts cp WHERE cp.customer_id=c.id AND cp.kind='phone' AND cp.normalized_value=?))"
-                params.append(phone)
+            order_number = order_number_query(query)
+            if order_number:
+                explicit_order = query.strip() != order_number
+                if explicit_order:
+                    search = ("EXISTS (SELECT 1 FROM customer_operations qo WHERE qo.customer_id=c.id "
+                              "AND qo.operation_type='order' AND qo.active=1 AND qo.external_id=?)")
+                    params.append(order_number)
+                else:
+                    search = ("(EXISTS (SELECT 1 FROM customer_operations qo WHERE qo.customer_id=c.id "
+                              "AND qo.active=1 AND (qo.external_id=? OR qo.local_ref=?))")
+                    params.extend([order_number, order_number])
+                    if phone:
+                        search += (" OR EXISTS (SELECT 1 FROM customer_contacts cp WHERE cp.customer_id=c.id "
+                                   "AND cp.kind='phone' AND cp.normalized_value=?)")
+                        params.append(phone)
+                    search += ")"
+            else:
+                folded = "%{}%".format(query.casefold())
+                search = ("(c.name_fold LIKE ? OR lower(c.city) LIKE ? OR EXISTS (SELECT 1 FROM customer_contacts cc WHERE cc.customer_id=c.id AND (cc.normalized_value LIKE ? OR lower(cc.display_value) LIKE ?)) OR EXISTS (SELECT 1 FROM customer_operations co WHERE co.customer_id=c.id AND (lower(co.source) LIKE ? OR lower(co.external_id) LIKE ? OR lower(COALESCE(co.local_ref,'')) LIKE ?)) OR EXISTS (SELECT 1 FROM customer_external_ids ce WHERE ce.customer_id=c.id AND (lower(ce.source) LIKE ? OR lower(ce.external_customer_id) LIKE ?)))")
+                params = [folded] * 9
+                if phone:
+                    search = search[:-1] + " OR EXISTS (SELECT 1 FROM customer_contacts cp WHERE cp.customer_id=c.id AND cp.kind='phone' AND cp.normalized_value=?))"
+                    params.append(phone)
             clauses.append(search)
         segment = text(filters.get("segment"))
         if segment:
@@ -707,5 +732,16 @@ class CustomerRegistry:
                 "SELECT * FROM customer_operations WHERE " + where + " ORDER BY occurred_at DESC,id DESC LIMIT ? OFFSET ?",
                 params + [per_page, (page - 1) * per_page],
             ).fetchall()
-        return {"rows": [dict(row) for row in rows], "total": total, "page": page,
+        prepared = []
+        for row in rows:
+            item = dict(row)
+            try:
+                payload = json.loads(item.get("payload_json") or "{}")
+            except (TypeError, ValueError):
+                payload = {}
+            item["number"] = text(payload.get("number")) or item["external_id"]
+            item["status_display"] = text(payload.get("status_name")) or item["status"]
+            item["item_count"] = payload.get("item_count")
+            prepared.append(item)
+        return {"rows": prepared, "total": total, "page": page,
                 "per_page": per_page, "pages": pages}
