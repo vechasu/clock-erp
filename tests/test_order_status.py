@@ -265,14 +265,17 @@ class OrderStatusServiceTests(unittest.TestCase):
             "SELECT * FROM erp_order_status_sync_queue"
         ), [])
         event = self.rows(
-            "SELECT old_status, new_status, actor, source, created_at "
-            "FROM erp_order_status_events ORDER BY id DESC LIMIT 1"
+            "SELECT changes_json,actor_display_name_snapshot,source_snapshot,"
+            "occurred_at FROM erp_audit_events WHERE entity_type='order' "
+            "ORDER BY id DESC LIMIT 1"
         )[0]
-        self.assertEqual(event["old_status"], ERP_ASSEMBLED)
-        self.assertEqual(event["new_status"], ERP_UNCONFIRMED)
-        self.assertEqual(event["actor"], "Максим")
-        self.assertEqual(event["source"], "erp")
-        self.assertTrue(event["created_at"])
+        import json
+        changes = json.loads(event["changes_json"])
+        self.assertEqual(changes["status"]["before"], ERP_ASSEMBLED)
+        self.assertEqual(changes["status"]["after"], ERP_UNCONFIRMED)
+        self.assertEqual(event["actor_display_name_snapshot"], "Максим")
+        self.assertEqual(event["source_snapshot"], "erp")
+        self.assertTrue(event["occurred_at"])
 
     def test_existing_assembled_order_can_be_linked_to_recovered_sale(self):
         self.service.ingest("42", "D")

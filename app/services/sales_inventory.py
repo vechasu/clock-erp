@@ -379,6 +379,7 @@ class SalesInventory:
         idempotency_key="",
         enforce_external_unique=False,
         failure_hook=None,
+        audit_actor=None,
     ):
         """Create one sale with all item rows and stock movements atomically."""
         payload = dict(payload or {})
@@ -612,9 +613,11 @@ class SalesInventory:
                     "number": stored_payload.get("order_number") or sale_id,
                     "external_order_id": external_order_id,
                 },
-                actor_id=user_name,
-                actor_name=user_name or source,
-                actor_type="user" if user_name else "external",
+                actor_id=(audit_actor or {}).get("actor_id") or user_name,
+                actor_name=(audit_actor or {}).get("actor_name") or user_name or source,
+                actor_type=(audit_actor or {}).get("actor_type") or (
+                    "user" if user_name else "external"
+                ),
                 status="completed",
                 source=source,
                 connection=connection,
@@ -1079,6 +1082,7 @@ class SalesInventory:
         user_name="",
         idempotency_key="",
         failure_hook=None,
+        audit_actor=None,
     ):
         sale_id = str(sale_id or "").strip()
         reason = str(reason or "").strip()
@@ -1212,8 +1216,11 @@ class SalesInventory:
                 metadata={
                     "number": self._sale_number(sale), "reason": reason,
                     "text_snapshot": comment,
-                }, actor_id=user_name, actor_name=user_name,
-                actor_type="user" if user_name else "system",
+                }, actor_id=(audit_actor or {}).get("actor_id") or user_name,
+                actor_name=(audit_actor or {}).get("actor_name") or user_name,
+                actor_type=(audit_actor or {}).get("actor_type") or (
+                    "user" if user_name else "system"
+                ),
                 status="refusal" if action == "refused" else "cancelled",
                 source=sale["source"], connection=connection,
             )
@@ -1226,6 +1233,7 @@ class SalesInventory:
         reason="",
         user_name="",
         idempotency_key="",
+        audit_actor=None,
     ):
         sale_id = str(sale_id or "").strip()
         deleted_at = now_iso()
@@ -1262,8 +1270,11 @@ class SalesInventory:
                 "sale", sale_id, "deleted",
                 "Продажа #{}".format(self._sale_number(sale)), sale["source"],
                 metadata={"number": self._sale_number(sale), "reason": reason},
-                actor_id=user_name, actor_name=user_name,
-                actor_type="user" if user_name else "system",
+                actor_id=(audit_actor or {}).get("actor_id") or user_name,
+                actor_name=(audit_actor or {}).get("actor_name") or user_name,
+                actor_type=(audit_actor or {}).get("actor_type") or (
+                    "user" if user_name else "system"
+                ),
                 status="deleted", source=sale["source"], connection=connection,
             )
         return self.get_sale(sale_id)
