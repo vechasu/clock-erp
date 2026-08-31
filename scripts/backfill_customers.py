@@ -38,6 +38,16 @@ def clean_amount(value):
         return None
 
 
+def order_item_count(row):
+    if row.get("item_count") not in (None, ""):
+        try:
+            return int(row["item_count"])
+        except (TypeError, ValueError):
+            pass
+    products = row.get("products")
+    return len(products) if isinstance(products, list) else None
+
+
 def order_operation(row, origin="bitrix"):
     order_id = str(row.get("id") or row.get("ID") or "").strip()
     status = str(row.get("status") or row.get("STATUS_ID") or "").strip().upper()
@@ -52,7 +62,12 @@ def order_operation(row, origin="bitrix"):
         "amount": clean_amount(row.get("order_total") if row.get("order_total") is not None else row.get("price")),
         "completed": status in {"D", "F"} and not cancelled,
         "cancelled": cancelled, "active": True,
-        "payload": {"number": row.get("number") or order_id, "origin": origin},
+        "payload": {
+            "number": row.get("number") or order_id,
+            "origin": origin,
+            "status_name": row.get("status_name") or row.get("STATUS_NAME") or "",
+            "item_count": order_item_count(row),
+        },
     }
 
 

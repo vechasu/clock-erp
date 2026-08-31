@@ -22,6 +22,10 @@ a { color: var(--erp-primary); }
 .customer-table tbody tr:hover { background: var(--erp-surface-muted); }
 .customer-name { color: var(--erp-text); font-weight: 750; text-decoration: none; }
 .customer-name:hover { color: var(--erp-primary); }
+.customer-history-links { display: flex; flex-wrap: wrap; gap: 5px; white-space: nowrap; }
+.customer-history-links a { font-weight: 700; text-decoration: none; }
+.customer-history-links b { color: var(--erp-muted); font-weight: 400; }
+.customer-history-links span { color: var(--erp-muted); }
 .customer-empty { display: grid; min-height: 260px; place-items: center; align-content: center; gap: 8px; padding: 32px; color: var(--erp-muted); text-align: center; }
 .customer-empty h2, .customer-empty p { margin: 0; }
 .customer-empty h2 { color: var(--erp-text); font-size: 18px; }
