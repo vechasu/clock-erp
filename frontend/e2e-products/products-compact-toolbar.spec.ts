@@ -103,14 +103,24 @@ test('collection bulk success resets mode while an error preserves selection', a
     await page.locator('[data-product-collection-select]').first().check();
     await page.locator('#productCollectionBulkTarget').selectOption({ index: 1 });
   };
+  const submitAndWaitForRefresh = async (action: 'add' | 'remove') => {
+    const previousResults = await page.locator('#warehouseResults').elementHandle();
+    await Promise.all([
+      page.waitForFunction(
+        (previous) => document.querySelector('#warehouseResults') !== previous,
+        previousResults,
+      ),
+      page.locator(`[data-collection-bulk-action="${action}"]`).click(),
+    ]);
+  };
 
   await enterMode();
-  await page.locator('[data-collection-bulk-action="add"]').click();
+  await submitAndWaitForRefresh('add');
   await expect(page.locator('#productCollectionBulkBar')).toBeHidden();
   await expect(page.locator('[data-product-collection-select]').first()).not.toBeChecked();
 
   await enterMode();
-  await page.locator('[data-collection-bulk-action="remove"]').click();
+  await submitAndWaitForRefresh('remove');
   await expect(page.locator('#productCollectionBulkBar')).toBeHidden();
 
   shouldFail = true;
