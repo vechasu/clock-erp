@@ -280,6 +280,21 @@ class SchemaMigrationTest(unittest.TestCase):
         self.assertIs(socket.socket.connect, original_connect)
         self.assertIs(socket.getaddrinfo, original_getaddrinfo)
 
+    def test_preflight_accepts_empty_new_strap_operation_table(self):
+        self.initialize()
+        with sqlite3.connect(str(self.database_path)) as connection:
+            connection.execute("DROP TABLE erp_order_strap_operations")
+        report_path = self.root / "strap-report.json"
+
+        result = migration_preflight.preflight(
+            self.preflight_arguments(report=report_path)
+        )
+
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        self.assertEqual(result, 0)
+        self.assertEqual(report["business_before"]["strap_operations"], 0)
+        self.assertEqual(report["business_after"]["strap_operations"], 0)
+
     def test_runtime_guard_prevents_worker_schema_repair(self):
         apply_migrations(self.database_path)
         write_runtime_guard(self.database_path, "guarded")
