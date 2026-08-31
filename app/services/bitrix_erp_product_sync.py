@@ -162,8 +162,9 @@ def create_database_backup(database, backup_root=None):
 class BitrixERPProductSync:
     """Match Bitrix products to ERP cards without changing inventory."""
 
-    def __init__(self, database=None):
+    def __init__(self, database=None, confirmed_mappings=None):
         self.database = database or CatalogDatabase()
+        self.confirmed_mappings = confirmed_mappings or {}
         self._label_cache = {}
         self._known_brands = None
 
@@ -390,6 +391,23 @@ class BitrixERPProductSync:
         brand = normalize_text(product.get("brand"))
         name = normalize_text(product.get("name"))
 
+        confirmed_id = self.confirmed_mappings.get(product_id)
+        if confirmed_id:
+            confirmed = connection.execute(
+                "SELECT * FROM catalog_excel_products "
+                "WHERE id = ? AND active = 1",
+                (int(confirmed_id),),
+            ).fetchone()
+            if confirmed is not None:
+                linked_id = _text(confirmed["bitrix_external_product_id"])
+                if not linked_id or linked_id == product_id:
+                    return {
+                        "status": "matched",
+                        "method": "confirmed_mapping",
+                        "product": confirmed,
+                        "candidates": [confirmed],
+                    }
+
         indexes = (
             (
                 "bitrix_id",
@@ -533,9 +551,12 @@ class BitrixERPProductSync:
         )
         if brand:
             self._known_brands.setdefault(normalize_text(brand), brand)
-        category = self._canonical_label(
-            connection, "excel_category",
-            classification["category"],
+        source_category = _text(classification["category"])
+        category = (
+            self._canonical_label(
+                connection, "excel_category", source_category,
+            )
+            if brand else ""
         )
         incoming_article = _text(product.get("external_sku"))
         article = _text(existing.get("excel_article"))
@@ -560,8 +581,19 @@ class BitrixERPProductSync:
                 None, "", "[]",
             ):
                 enrichment[field] = existing[field]
+        # A locally materialized Bitrix gallery is authoritative for delivery
+        # inside ERP.  Catalog refreshes still update the source tables, while
+        # the single-product image sync reconciles changed Bitrix file IDs.
+        if "/product-images/" in _text(existing.get("bitrix_gallery_json")):
+            enrichment["bitrix_gallery_json"] = existing["bitrix_gallery_json"]
+            enrichment["bitrix_primary_image_url"] = existing.get(
+                "bitrix_primary_image_url"
+            )
+            enrichment["bitrix_thumbnail_url"] = existing.get(
+                "bitrix_thumbnail_url"
+            )
         enrichment["bitrix_brand"] = brand or None
-        enrichment["bitrix_category"] = category or None
+        enrichment["bitrix_category"] = source_category or None
         values = {
             "active": 1,
             "excel_name_raw": name,
