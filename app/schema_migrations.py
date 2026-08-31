@@ -181,6 +181,51 @@ ORDER_STRAP_MIGRATION_CHECKSUM = hashlib.sha256(
      "\n".join(ORDER_STRAP_SCHEMA_SQL) + "\n"
      "structured-operation;atomic-stock;idempotent-sale;sqlite-3.7.17").encode("utf-8")
 ).hexdigest()
+PRODUCT_COLLECTIONS_MIGRATION_ID = "2026-08-31-product-collections-v1"
+PRODUCT_COLLECTIONS_MIGRATION_NAME = "Product collections and Bitrix membership"
+PRODUCT_COLLECTIONS_SQL = """
+CREATE TABLE erp_collections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL UNIQUE,
+    slug TEXT NOT NULL UNIQUE,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    on_site INTEGER NOT NULL DEFAULT 1 CHECK (on_site IN (0, 1)),
+    system_key TEXT UNIQUE,
+    source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN (
+        'manual', 'bitrix_section', 'bitrix_property', 'bitrix_sections'
+    )),
+    source_config_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE product_collections (
+    product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE CASCADE,
+    collection_id INTEGER NOT NULL
+        REFERENCES erp_collections(id) ON DELETE CASCADE,
+    source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN (
+        'manual', 'bitrix_import'
+    )),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (product_id, collection_id)
+);
+CREATE INDEX idx_product_collections_collection
+    ON product_collections(collection_id, product_id);
+CREATE INDEX idx_product_collections_product
+    ON product_collections(product_id, collection_id);
+"""
+SYSTEM_COLLECTIONS = (
+    ("wow-price", "WOW-цена", "wow-price", "bitrix_section", '{"section_ids":["271"]}'),
+    ("bestsellers", "Бестселлеры", "bestsellers", "bitrix_section", '{"section_ids":["260"]}'),
+    ("new", "Новинки", "new", "bitrix_property", '{"property_code":"NEW"}'),
+    ("preorder", "Предзаказ", "preorder", "bitrix_property", '{"property_code":"ON_PREORDER"}'),
+    ("sale", "Распродажа", "sale", "bitrix_sections", '{"section_ids":["65","140","252"]}'),
+)
+PRODUCT_COLLECTIONS_MIGRATION_CHECKSUM = hashlib.sha256(
+    (PRODUCT_COLLECTIONS_MIGRATION_ID + "\n" + PRODUCT_COLLECTIONS_SQL + "\n" +
+     repr(SYSTEM_COLLECTIONS)).encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -239,6 +284,13 @@ MIGRATIONS = (
         "transactional": True,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
+    {
+        "id": PRODUCT_COLLECTIONS_MIGRATION_ID,
+        "name": PRODUCT_COLLECTIONS_MIGRATION_NAME,
+        "checksum": PRODUCT_COLLECTIONS_MIGRATION_CHECKSUM,
+        "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
 )
 
 REQUIRED_TABLES = {
@@ -247,6 +299,8 @@ REQUIRED_TABLES = {
     "erp_audit_events",
     "erp_brands",
     "erp_categories",
+    "erp_collections",
+    "product_collections",
     "erp_inventory_items",
     "erp_inventory_sessions",
     "erp_inventory_document_numbers",
@@ -877,6 +931,36 @@ def apply_inventory_control_migration(connection, ddl_observer=None):
     return True
 
 
+def apply_product_collections_migration(connection, ddl_observer=None):
+    """Create collection tables and idempotently seed canonical system rows."""
+    if ddl_observer is not None:
+        ddl_observer("PRODUCT_COLLECTIONS_SQL")
+    tables = _table_names(connection)
+    collection_tables = {"erp_collections", "product_collections"}
+    present_collection_tables = collection_tables.intersection(tables)
+    if present_collection_tables and present_collection_tables != collection_tables:
+        raise MigrationError(
+            "partial product collections schema detected: {}".format(
+                ", ".join(sorted(present_collection_tables))
+            )
+        )
+    if not present_collection_tables:
+        connection.executescript(PRODUCT_COLLECTIONS_SQL)
+    now = utc_now()
+    for system_key, name, slug, source_type, source_config_json in SYSTEM_COLLECTIONS:
+        connection.execute(
+            "INSERT OR IGNORE INTO erp_collections "
+            "(name,normalized_name,slug,active,on_site,system_key,source_type,"
+            "source_config_json,created_at,updated_at) "
+            "VALUES(?,?,?,1,1,?,?,?,?,?)",
+            (
+                name, name.casefold(), slug, system_key, source_type,
+                source_config_json, now, now,
+            ),
+        )
+    return True
+
+
 def _migration_by_id(migration_id):
     for migration in MIGRATIONS:
         if migration["id"] == migration_id:
@@ -1082,6 +1166,21 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                         connection.execute("PRAGMA foreign_keys = ON")
                         connection.execute("BEGIN IMMEDIATE")
                         apply_order_strap_replacement_schema(
+                            connection, ddl_observer
+                        )
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
+                    finally:
+                        connection.close()
+                elif migration["id"] == PRODUCT_COLLECTIONS_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    connection.row_factory = sqlite3.Row
+                    try:
+                        connection.execute("PRAGMA foreign_keys = ON")
+                        connection.execute("BEGIN IMMEDIATE")
+                        apply_product_collections_migration(
                             connection, ddl_observer
                         )
                         connection.commit()

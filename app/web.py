@@ -106,6 +106,7 @@ from app.services.excel_product_catalog import (
     ProductDeleteBlockedError,
     parse_initial_stock,
 )
+from app.services.product_collections import ProductCollections
 from app.services.excel_receipt_import import (
     MAX_EXCEL_FILE_SIZE,
     ExcelDraftBlockedError,
@@ -4819,6 +4820,43 @@ def warehouse_page():
             "units_total", tab_counts.get("units_in_stock", 0)
         )),
     }
+    if warehouse_view == "collections":
+        collections_service = ProductCollections(product_catalog.database)
+        collection_id = request.args.get("collection_id")
+        collection = None
+        products = []
+        if collection_id not in (None, ""):
+            try:
+                collection = collections_service.get_collection(collection_id)
+            except (TypeError, ValueError):
+                collection = None
+            if collection is None:
+                return redirect(url_for(
+                    "warehouse_page", view="collections", notice="error",
+                    message="Подборка не найдена.",
+                ))
+            products = collections_service.list_products(
+                collection_id=collection["id"],
+                query=request.args.get("q") or "",
+                brand_id=request.args.get("brand_id"),
+                category_id=request.args.get("category_id"),
+                active="all",
+                limit=1000,
+            )
+        shared_catalog = SharedCatalog()
+        return render_template(
+            "warehouse_collections.html",
+            collections=collections_service.list_collections(),
+            collection=collection,
+            products=products,
+            brands=shared_catalog.list_brands(limit=500),
+            categories=shared_catalog.list_category_options(limit=500),
+            product_metrics=product_metrics,
+            can_manage=(
+                not auth_is_enabled()
+                or (current_auth_user() or {}).get("role") == "admin"
+            ),
+        )
     if warehouse_view == "analytics":
         return render_template(
             "warehouse_analytics.html",
@@ -4914,6 +4952,7 @@ def warehouse_page():
     selected_model_id = request.args.get("model_id", "").strip()
     selected_brand_id = request.args.get("brand_id", "").strip()
     selected_category_id = request.args.get("category_id", "").strip()
+    selected_collection_id = request.args.get("collection_id", "").strip()
     shared_catalog = SharedCatalog()
     shared_brands = shared_catalog.list_brands(limit=200)
     if not selected_brand_id and selected_brand:
@@ -5063,6 +5102,7 @@ def warehouse_page():
         bool(selected_category_id or selected_category),
         bool(selected_model_id or selected_model),
         bool(selected_cell),
+        bool(selected_collection_id),
         bool(created_date_from or created_date_to),
         check_state != "all",
     ))
@@ -5086,6 +5126,7 @@ def warehouse_page():
         brand_id=selected_brand_id or None,
         category_id=selected_category_id or None,
         model_id=selected_model_id or None,
+        collection_id=selected_collection_id or None,
         include_cell_item_names=False,
         include_facets=False,
         stock_state=stock_state,
@@ -5100,6 +5141,18 @@ def warehouse_page():
     }
     catalog_items = build_excel_warehouse_items(catalog["items"])
     items = get_excel_warehouse_items(catalog=catalog)
+    product_database = getattr(product_catalog, "database", None)
+    collections_service = (
+        ProductCollections(product_database)
+        if isinstance(product_database, CatalogDatabase)
+        else None
+    )
+    product_collection_map = (
+        collections_service.product_collections([item["id"] for item in items])
+        if collections_service is not None else {}
+    )
+    for item in items:
+        item["collections"] = product_collection_map.get(item["id"], [])
     if out_of_stock:
         cycles = OutOfStockChecks().current_for_products(
             [item["id"] for item in items]
@@ -5195,6 +5248,11 @@ def warehouse_page():
             selected_model_id=selected_model_id,
             selected_category_id=selected_category_id,
             selected_brand_id=selected_brand_id,
+            selected_collection_id=selected_collection_id,
+            collections=(
+                collections_service.list_collections()
+                if collections_service is not None else []
+            ),
             selected_cell=selected_cell,
             created_date_from=created_date_from,
             created_date_to=created_date_to,
@@ -5611,6 +5669,7 @@ def warehouse_product_detail(product_id):
             gallery_error = "Не удалось обновить галерею из МойСклад."
     return jsonify({
         "id": product["id"],
+        "collection_ids": ProductCollections().product_collection_ids(product_id),
         "source": (
             "bitrix"
             if product.get("bitrix_external_product_id")
@@ -5828,6 +5887,7 @@ def warehouse_add_product():
             stock=stock,
             brand_id=brand_id,
             category_id=category_id,
+            collection_ids=request.form.getlist("collection_ids"),
         )
         return redirect(url_for(
             "warehouse_page", notice="success", message="Товар добавлен"
@@ -5851,6 +5911,7 @@ def warehouse_edit_product():
             "cell", "date_from", "date_to",
             "in_stock", "sort_by", "sort_dir", "page", "per_page",
             "view", "check_state",
+            "collection_id",
         }
     }
 
@@ -5885,6 +5946,7 @@ def warehouse_edit_product():
             product_id, name=name, model=model, article=article, brand=brand,
             category=category, cell=cell, stock=stock, stock_reason=stock_reason,
             brand_id=brand_id, category_id=category_id,
+            collection_ids=request.form.getlist("collection_ids"),
         )
         return edit_redirect("success", "Карточка обновлена")
     except (TypeError, ValueError) as error:
@@ -19099,10 +19161,150 @@ def api_optional_id(value):
     return parsed
 
 
+def require_collection_manage():
+    if auth_is_enabled() and (current_auth_user() or {}).get("role") != "admin":
+        abort(403, description="Изменять подборки может только администратор.")
+    require_csrf_when_authenticated()
+
+
+@app.route("/api/v1/collections", methods=["GET", "POST"])
+def api_collections_collection():
+    service = ProductCollections()
+    if request.method == "GET":
+        return api_success(service.list_collections(
+            include_archived=request.args.get("include_archived") == "1"
+        ))
+    require_collection_manage()
+    try:
+        payload = api_json_payload()
+        collection = service.create_collection(
+            payload.get("name"), payload.get("on_site", True)
+        )
+    except ValueError as error:
+        return api_error("COLLECTION_VALIDATION_FAILED", str(error), 422)
+    return api_success(collection, 201)
+
+
+@app.route("/api/v1/collections/<int:collection_id>", methods=["GET", "PATCH", "DELETE"])
+def api_collection_resource(collection_id):
+    service = ProductCollections()
+    collection = service.get_collection(collection_id, include_archived=True)
+    if collection is None:
+        return api_error("COLLECTION_NOT_FOUND", "Подборка не найдена.", 404)
+    if request.method == "GET":
+        return api_success(collection)
+    require_collection_manage()
+    try:
+        if request.method == "DELETE":
+            service.archive_collection(collection_id)
+            return api_success({"id": collection_id, "archived": True})
+        payload = api_json_payload()
+        unknown = set(payload) - {"name", "on_site"}
+        if unknown:
+            raise ValueError("Переданы неизвестные поля подборки.")
+        updated = service.update_collection(
+            collection_id, name=payload.get("name"),
+            on_site=payload.get("on_site") if "on_site" in payload else None,
+        )
+    except ValueError as error:
+        return api_error("COLLECTION_VALIDATION_FAILED", str(error), 422)
+    return api_success(updated)
+
+
+@app.route("/api/v1/collections/<int:collection_id>/products", methods=["GET", "POST", "DELETE"])
+def api_collection_products(collection_id):
+    service = ProductCollections()
+    if service.get_collection(collection_id, include_archived=True) is None:
+        return api_error("COLLECTION_NOT_FOUND", "Подборка не найдена.", 404)
+    if request.method == "GET":
+        return api_success(service.list_products(
+            collection_id=collection_id,
+            query=request.args.get("q") or "",
+            brand_id=request.args.get("brand_id"),
+            category_id=request.args.get("category_id"),
+            active=request.args.get("active") or "1",
+            limit=api_positive_int(request.args.get("limit"), 500, 1000),
+        ))
+    require_collection_manage()
+    try:
+        payload = api_json_payload()
+        product_ids = payload.get("product_ids")
+        if not isinstance(product_ids, list):
+            raise ValueError("Передайте список товаров.")
+        if request.method == "POST":
+            changed = service.add_products(collection_id, product_ids)
+        else:
+            changed = service.remove_products(collection_id, product_ids)
+    except ValueError as error:
+        return api_error("COLLECTION_PRODUCTS_INVALID", str(error), 422)
+    return api_success({"changed": changed})
+
+
+@app.get("/api/v1/collections/<int:collection_id>/candidates")
+def api_collection_candidates(collection_id):
+    service = ProductCollections()
+    if service.get_collection(collection_id) is None:
+        return api_error("COLLECTION_NOT_FOUND", "Подборка не найдена.", 404)
+    return api_success(service.list_products(
+        exclude_collection_id=collection_id,
+        query=request.args.get("q") or "",
+        brand_id=request.args.get("brand_id"),
+        category_id=request.args.get("category_id"),
+        active="1", limit=api_positive_int(request.args.get("limit"), 500, 1000),
+    ))
+
+
+@app.post("/api/v1/product-collections/bulk")
+def api_product_collections_bulk():
+    require_collection_manage()
+    try:
+        payload = api_json_payload()
+        collection_id = int(payload.get("collection_id"))
+        product_ids = payload.get("product_ids")
+        action = str(payload.get("action") or "").strip()
+        if not isinstance(product_ids, list):
+            raise ValueError("Передайте список товаров.")
+        service = ProductCollections()
+        if action == "add":
+            changed = service.add_products(collection_id, product_ids)
+        elif action == "remove":
+            changed = service.remove_products(collection_id, product_ids)
+        else:
+            raise ValueError("Неизвестное массовое действие.")
+    except (TypeError, ValueError) as error:
+        return api_error("PRODUCT_COLLECTION_BULK_INVALID", str(error), 422)
+    return api_success({"changed": changed, "action": action})
+
+
+@app.get("/api/v1/site/collections/<slug>/products")
+def api_site_collection_products(slug):
+    """Read-only storefront contract; application authentication still applies."""
+    service = ProductCollections()
+    collection = service.get_collection(slug=slug)
+    if collection is None or not collection.get("on_site"):
+        return api_error("COLLECTION_NOT_FOUND", "Подборка не найдена.", 404)
+    products = service.list_products(
+        collection_id=collection["id"], active="1",
+        limit=api_positive_int(request.args.get("limit"), 200, 1000),
+    )
+    return api_success({
+        "collection": {
+            "id": collection["id"], "name": collection["name"],
+            "slug": collection["slug"],
+        },
+        "products": products,
+    })
+
+
 def serialize_api_product(product):
     projected = build_excel_warehouse_items([product])[0]
+    collection_items = ProductCollections().product_collections(
+        [product["id"]]
+    ).get(int(product["id"]), [])
     return {
         **projected,
+        "collections": collection_items,
+        "collection_ids": [item["id"] for item in collection_items],
         "match_status": product.get("match_status") or "",
         "match_confidence": product.get("match_confidence"),
         "properties": product.get("properties") or [],
@@ -19123,6 +19325,7 @@ def api_product_request_payload():
         for key in ("brand_id", "category_id"):
             if payload.get(key) in (None, ""):
                 payload[key] = None
+        payload["collection_ids"] = request.form.getlist("collection_ids")
         return payload, read_product_image_upload(
             request.files.get("product_image"),
             allow_webp=True,
@@ -19144,6 +19347,8 @@ def api_product_update_request_payload():
         for key in allowed_names
         if key in request.form
     }
+    if request.form.get("collections_present") == "1":
+        payload["collection_ids"] = request.form.getlist("collection_ids")
     for key in ("brand_id", "category_id"):
         if key in payload and payload[key] in (None, ""):
             payload[key] = None
@@ -19264,6 +19469,7 @@ def api_products_collection():
                 local_image_sha256=(prepared_image or {}).get("sha256"),
                 local_image_source="manual" if prepared_image else None,
                 local_image_updated_at=(prepared_image or {}).get("updated_at"),
+                collection_ids=payload.get("collection_ids") or [],
                 **current_audit_actor()
             )
         except DuplicateCatalogValueError as error:
@@ -19340,7 +19546,10 @@ def api_products_collection():
     try:
         filter_ids = {
             name: api_optional_id(request.args.get(name))
-            for name in ("brand_id", "category_id", "model_id", "product_id")
+            for name in (
+                "brand_id", "category_id", "model_id", "product_id",
+                "collection_id",
+            )
         }
     except ValueError as error:
         return api_error("PRODUCT_FILTER_INVALID", str(error), 422)
@@ -19372,6 +19581,7 @@ def api_products_collection():
         category_id=filter_ids["category_id"],
         model_id=filter_ids["model_id"],
         product_id=filter_ids["product_id"],
+        collection_id=filter_ids["collection_id"],
         include_cell_item_names=not request.path.startswith("/api/v1/"),
         stock_state=(request.args.get("stock_state") or "all").strip(),
         check_state=(request.args.get("check_state") or "all").strip(),
@@ -19437,7 +19647,7 @@ def api_product_resource(product_id):
         )
         allowed_fields = {
             "name", "model", "article", "brand", "category", "brand_id", "category_id",
-            "cell", "stock", "stock_reason", "price",
+            "cell", "stock", "stock_reason", "price", "collection_ids",
         }
         unknown_fields = set(payload) - allowed_fields
         if unknown_fields:

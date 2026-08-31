@@ -11,16 +11,16 @@ class ProductsRedesignStructureTest(unittest.TestCase):
     def source(self, name):
         return (ROOT / "app" / "templates" / name).read_text(encoding="utf-8")
 
-    def test_four_tabs_are_persistent_on_all_catalog_screens(self):
+    def test_five_tabs_are_persistent_on_all_catalog_screens(self):
         workspace = self.source("_products_workspace.html")
         for name in (
             "warehouse.html", "warehouse_analytics.html", "warehouse_brands.html",
-            "warehouse_categories.html"
+            "warehouse_categories.html", "warehouse_collections.html"
         ):
             source = self.source(name)
             self.assertIn("products_workspace_header", source)
             self.assertNotIn("Часы закончились", source)
-        for label in ("Товары", "Бренды", "Категории", "Аналитика"):
+        for label in ("Товары", "Бренды", "Категории", "Подборки", "Аналитика"):
             self.assertIn(label, workspace)
         self.assertNotIn("('products', 'В наличии'", workspace)
         self.assertNotIn("('out_of_stock', 'Нет в наличии'", workspace)
@@ -124,6 +124,7 @@ class ProductsRedesignStructureTest(unittest.TestCase):
         for name in (
             "warehouse.html", "warehouse_analytics.html",
             "warehouse_brands.html", "warehouse_categories.html",
+            "warehouse_collections.html",
         ):
             source = self.source(name)
             self.assertEqual(source.count("js/products-tabs.js"), 1, name)

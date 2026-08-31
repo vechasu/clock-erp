@@ -86,7 +86,7 @@ async function partialAction(
 async function expectUniqueProductsDom(page: Page, activeView: string) {
   await expect(page.locator('main#main-content')).toHaveCount(1);
   await expect(page.locator('.products-workspace-tabs')).toHaveCount(1);
-  await expect(page.locator('[data-products-tab]')).toHaveCount(4);
+  await expect(page.locator('[data-products-tab]')).toHaveCount(5);
   await expectVersionedProductsTabs(page);
   await expect(page.locator(`[data-products-tab="${activeView}"]`)).toHaveAttribute(
     'aria-current',
@@ -301,7 +301,7 @@ test('product tabs, cards and history remain idempotent through three lifecycles
     const first = await openProductCard(page);
     await closeProductCard(page);
 
-    for (const view of ['brands', 'categories', 'analytics', 'products']) {
+    for (const view of ['brands', 'categories', 'collections', 'analytics', 'products']) {
       await navigateTopTab(page, evidence, view);
     }
     await expect(page).toHaveURL(new RegExp(`(?:\\?|&)q=${encodeURIComponent(firstQuery)}(?:&|$)`));
