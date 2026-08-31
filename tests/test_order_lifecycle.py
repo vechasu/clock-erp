@@ -73,6 +73,18 @@ class OrderLifecycleTests(unittest.TestCase):
             "",
         )
 
+    def test_localized_bitrix_creation_time_is_rendered(self):
+        self.statuses.ingest(
+            "21129", "N", created_at="31.08.2026 20:43:11",
+            order_number="21129",
+        )
+
+        timeline = OrderLifecycle(self.database).timeline("21129")
+
+        self.assertEqual(len(timeline["events"]), 1)
+        self.assertEqual(timeline["events"][0]["action"], "created")
+        self.assertEqual(timeline["events"][0]["date_display"], "31.08.2026")
+
     def test_two_users_and_system_are_attributed_distinctly(self):
         self.statuses.ingest("42", "N")
         self.statuses.record_synced_change("42", ERP_CONFIRMED, {
