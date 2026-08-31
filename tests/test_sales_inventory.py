@@ -1606,11 +1606,22 @@ class SalesInventoryWebTest(SalesInventoryTest):
         sale = self.create_managed_sale(sale_id="21127")
         before = self.inventory.get_sale(sale["id"])
 
-        response = self.update_sale_form(
-            sale,
-            track_number="QA-TRACK-21127",
-            note="QA примечание продажи 21127",
-        )
+        # Production uses WAL, so the main DB file signature can remain stable
+        # while metadata changes. Prime that exact stale-cache scenario.
+        with mock.patch.object(
+            web, "catalog_cache_signature", return_value=("catalog-db",)
+        ):
+            web._cached_api_sales_records.cache_clear()
+            self.assertEqual(
+                web.find_api_sale(sale["id"])["track_number"], ""
+            )
+            response = self.update_sale_form(
+                sale,
+                track_number="QA-TRACK-21127",
+                note="QA примечание продажи 21127",
+            )
+            page = self.client.get("/app/sales?source=tictactoy")
+        web._cached_api_sales_records.cache_clear()
 
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
@@ -1628,7 +1639,6 @@ class SalesInventoryWebTest(SalesInventoryTest):
         ):
             self.assertEqual(stored.get(field), before.get(field), field)
 
-        page = self.client.get("/app/sales?source=tictactoy")
         text = page.get_data(as_text=True)
         self.assertEqual(page.status_code, 200)
         self.assertIn("QA-TRACK-21127", text)
