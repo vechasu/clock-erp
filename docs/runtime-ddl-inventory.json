@@ -33,12 +33,12 @@
     },
     {
       "file": "app/catalog_migration_steps.py",
-      "sha256": "5849e0056dc1da4f48ac7a225e42f783c435e8b6f9b1839fe568ae0576e10b35",
+      "sha256": "96bf009457cccc0b7885d575a96a6757efdf11d524c33b96a27ee7949ca0e71f",
       "owner": "catalog-migrations"
     },
     {
       "file": "app/catalog_schema_manifest.json",
-      "sha256": "291aede174ccd415835fa7f5207f222e932ffbfdb5cba417c1d6d477c970b053",
+      "sha256": "acb4748e755a40dd33ba1c8b15dd057354a4b349e405617ca5ed329baad2412a",
       "owner": "catalog-migrations"
     },
     {
@@ -48,7 +48,7 @@
     },
     {
       "file": "app/schema_migrations.py",
-      "sha256": "3ee7f818e6408cf12f6a180bcc1128cb9ee0745ff84034f27a1298853e345598",
+      "sha256": "3e52ca7036766140cd6eabd2cf15846c36f1bc7bd100244b8483396ba8d752a7",
       "owner": "migration-platform"
     },
     {

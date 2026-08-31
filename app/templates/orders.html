@@ -24,6 +24,26 @@
 {% macro product_count_label(count) -%}
     {{ count }} {% if count % 10 == 1 and count % 100 != 11 %}товар{% elif count % 10 in [2,3,4] and count % 100 not in [12,13,14] %}товара{% else %}товаров{% endif %}
 {%- endmacro %}
+{% macro strap_product_picker(key, label, required=true, in_stock=true) -%}
+<div class="strap-picker" data-strap-picker="{{ key }}" data-in-stock="{{ 1 if in_stock else 0 }}">
+    <label>{{ label }}{% if required %} <span aria-hidden="true">*</span>{% endif %}</label>
+    <input type="hidden" name="{{ key }}_product_id" data-picker-value{% if required %} required{% endif %}>
+    <div class="strap-picker-tabs" role="tablist" aria-label="Способ выбора {{ label|lower }}">
+        <button class="button button-secondary is-active" type="button" data-picker-mode="search">Поиск</button>
+        <button class="button button-secondary" type="button" data-picker-mode="catalog">По каталогу</button>
+    </div>
+    <div data-picker-panel="search">
+        <input class="field" type="search" data-picker-search placeholder="Название, бренд, модель или артикул" autocomplete="off">
+        <div class="strap-picker-results" data-picker-results role="listbox"></div>
+    </div>
+    <div class="strap-picker-catalog" data-picker-panel="catalog" hidden>
+        <select class="field" data-picker-brand aria-label="Бренд"><option value="">Бренд</option></select>
+        <select class="field" data-picker-category aria-label="Категория" disabled><option value="">Категория</option></select>
+        <select class="field" data-picker-product aria-label="Товар" disabled><option value="">Товар</option></select>
+    </div>
+    <div class="strap-picker-selected" data-picker-selected hidden></div>
+</div>
+{%- endmacro %}
 <div class="app">
     {% include "_sidebar.html" %}
     <main class="main" id="main-content" tabindex="-1">
@@ -307,6 +327,37 @@
                             <tbody>{% for item in order_sale_dialog_summary.lines %}<tr><td data-label="Товар"><strong>{{ item.name }}</strong><small>Артикул: {{ item.article or '—' }}</small></td><td data-label="Количество">{{ item.quantity_display }} шт.</td><td data-label="Цена"><span class="money-value" data-amount="{{ item.unit_price }}"></span> ₽</td><td data-label="Сумма"><strong><span class="money-value" data-amount="{{ item.line_total }}"></span> ₽</strong>{% set product = detail_products[loop.index0] %}<input type="hidden" name="original_price_{{ loop.index0 }}" value="{{ product.get('base_price') or product.get('price') or '' }}"><input type="hidden" name="discount_type_{{ loop.index0 }}" value="none"><input type="hidden" name="discount_value_{{ loop.index0 }}" value="0"><input type="hidden" name="discount_reason_{{ loop.index0 }}" value=""></td></tr>{% endfor %}</tbody>
                         </table>
                     </div>
+                    <button class="button button-secondary strap-replacement-open" type="button" data-open-strap-replacement>Заменить ремешок</button>
+                </section>
+                <section class="sale-dialog-section strap-replacement" data-strap-replacement hidden aria-labelledby="strapReplacementTitle">
+                    <input type="hidden" name="operation_mode" value="" data-operation-mode>
+                    <input type="hidden" name="strap_operation_id" value="" data-strap-operation-id>
+                    <div class="strap-replacement-head"><div><h3 id="strapReplacementTitle">Замена ремешка</h3><p>Клиентская позиция заказа не изменится; выберите фактически используемые часы и комплектующие.</p></div><button class="button button-secondary" type="button" data-cancel-strap-replacement>Скрыть</button></div>
+                    <label for="strapLineIndex">Заказанный товар *</label>
+                    <select class="field" id="strapLineIndex" name="strap_line_index" data-strap-line-index>{% for item in order_sale_dialog_summary.lines %}<option value="{{ loop.index0 }}" data-name="{{ item.name }}" data-quantity="{{ item.quantity_display }}">{{ item.name }} · {{ item.quantity_display }} шт.</option>{% endfor %}</select>
+                    {{ strap_product_picker('strap_base', 'Часы-основа', true, true) }}
+                    <fieldset class="strap-removed"><legend>Снимаем с часов</legend>
+                        <label><input type="radio" name="removed_strap_mode" value="none" checked> Без ремешка</label>
+                        <label><input type="radio" name="removed_strap_mode" value="existing"> Выбрать существующий ремешок</label>
+                        <label><input type="radio" name="removed_strap_mode" value="created"> Добавить снятый ремешок</label>
+                    </fieldset>
+                    <div data-removed-existing hidden>{{ strap_product_picker('removed_strap', 'Снимаемый ремешок', false, false) }}</div>
+                    <div class="strap-new-product" data-removed-created hidden>
+                        <div class="strap-fields-grid">
+                            <label>Бренд *<input class="field" name="new_removed_strap_brand" data-new-strap-brand></label>
+                            <label>Название/модель *<input class="field" name="new_removed_strap_name" data-new-strap-name></label>
+                            <label>Модель<input class="field" name="new_removed_strap_model"></label>
+                            <label>Цвет<input class="field" name="new_removed_strap_color"></label>
+                            <label>Артикул<input class="field" name="new_removed_strap_article"></label>
+                            <label>Состояние<select class="field" name="new_removed_strap_condition"><option value="new">Новый</option><option value="display">С витрины</option><option value="used">Б/у</option></select></label>
+                        </div>
+                        <label>Комментарий<input class="field" name="new_removed_strap_comment" placeholder="Снят с часов…"></label>
+                        <label class="strap-duplicate-confirm" data-duplicate-confirm hidden><input type="checkbox" name="confirm_removed_strap_duplicate" value="1"> Товары действительно разные — создать новую карточку</label>
+                        <div class="notice notice-error" data-duplicate-matches hidden></div>
+                    </div>
+                    {{ strap_product_picker('installed_strap', 'Устанавливаем', true, true) }}
+                    <label>Комментарий к операции<textarea class="field" name="strap_replacement_comment" rows="2"></textarea></label>
+                    <div class="strap-preview" data-strap-preview><strong>После проведения</strong><ul data-strap-preview-list></ul></div>
                 </section>
                 <section class="sale-dialog-section" aria-labelledby="orderSaleLocationTitle">
                     <h3 id="orderSaleLocationTitle">География</h3>
@@ -523,6 +574,10 @@
         }catch(error){window.VechasuNotify?.error(error.message||'Не удалось синхронизировать Wildberries');}
         finally{wbSyncButton.disabled=false;wbSyncButton.removeAttribute('aria-busy');wbSyncButton.textContent='Обновить WB';}
     });
+    const completedStrapStorageKey='order-strap-replacement:{{ detail_id if selected_order else "" }}';
+    {% if selected_order and sale_state.sale_completed %}
+    try{window.sessionStorage.removeItem(completedStrapStorageKey);}catch(error){}
+    {% endif %}
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';
     if(tracking){try{const saved=window.sessionStorage.getItem(trackingStorageKey);if(saved!==null)tracking.value=saved;tracking.addEventListener('input',()=>window.sessionStorage.setItem(trackingStorageKey,tracking.value));}catch(error){}}
@@ -548,7 +603,41 @@
     modal.querySelectorAll('[data-close-sale-dialog]').forEach(button=>button.addEventListener('click',close));
     modal.addEventListener('click',event=>{if(event.target===modal)close();});
     document.addEventListener('keydown',event=>{if(!modal.classList.contains('is-open'))return;if(event.key==='Escape'){event.preventDefault();close();return;}if(event.key==='Tab'){const focusable=focusableElements();if(!focusable.length){event.preventDefault();return;}const first=focusable[0];const last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
-    modal.querySelector('[data-order-sale-form]')?.addEventListener('submit',event=>{if(!setPending(event.currentTarget,'Проводим…'))event.preventDefault();});
+    const saleForm=modal.querySelector('[data-order-sale-form]');
+    const strapSection=modal.querySelector('[data-strap-replacement]');
+    const operationMode=modal.querySelector('[data-operation-mode]');
+    const strapSubmit=modal.querySelector('[data-sale-submit]');
+    const strapSubmitDefaultLabel=strapSubmit?.textContent||'';
+    const strapStorageKey='order-strap-replacement:{{ detail_id if selected_order else "" }}';
+    const productLabel=item=>`${item.brand||'Без бренда'} · ${item.name||item.model||'Без названия'}${item.article?` · ${item.article}`:''} · в наличии ${item.stock_display??item.stock??0}`;
+    const apiItems=async params=>{const response=await fetch(`/api/v1/catalog/options?${new URLSearchParams(params)}`,{credentials:'same-origin',headers:{Accept:'application/json'}});const payload=await response.json();if(!response.ok||payload?.ok!==true)throw new Error(payload?.error?.message||'Не удалось загрузить каталог');return payload.data||[];};
+    const selectedItem=picker=>{try{return JSON.parse(picker?.dataset.selected||'null');}catch(error){return null;}};
+    function selectPickerItem(picker,item){picker.dataset.selected=JSON.stringify(item);picker.querySelector('[data-picker-value]').value=item.id;const selected=picker.querySelector('[data-picker-selected]');selected.textContent=productLabel(item);selected.hidden=false;updateStrapPreview();}
+    function renderPickerResults(picker,items){const results=picker.querySelector('[data-picker-results]');results.replaceChildren();const ordered=[...items].sort((a,b)=>{const as=/ремеш/i.test(a.category||'')?0:1;const bs=/ремеш/i.test(b.category||'')?0:1;return as-bs;});for(const item of ordered){const button=document.createElement('button');button.type='button';button.className='strap-picker-option';button.disabled=picker.dataset.inStock==='1'&&Number(item.stock||0)<=0;const name=document.createElement('span');name.textContent=`${item.brand||'Без бренда'} · ${item.name||item.model||'Без названия'}`;const meta=document.createElement('small');meta.textContent=`${item.article||'без артикула'} · ${item.category||'без категории'} · остаток ${item.stock_display??item.stock??0}`;button.append(name,meta);button.addEventListener('click',()=>{selectPickerItem(picker,item);results.replaceChildren();});results.append(button);}}
+    async function loadPickerBrands(picker){const select=picker.querySelector('[data-picker-brand]');if(select.dataset.loaded==='1')return;const params={type:'brand',limit:'200'};if(picker.dataset.inStock==='1')params.available_for_sale='1';const items=await apiItems(params);for(const item of items)select.add(new Option(`${item.name} · ${item.stock_display??item.stock_total??item.count??0}`,item.id));select.dataset.loaded='1';}
+    modal.querySelectorAll('[data-strap-picker]').forEach(picker=>{
+        let searchTimer=null;const search=picker.querySelector('[data-picker-search]');
+        picker.querySelectorAll('[data-picker-mode]').forEach(button=>button.addEventListener('click',async()=>{picker.querySelectorAll('[data-picker-mode]').forEach(item=>item.classList.toggle('is-active',item===button));picker.querySelectorAll('[data-picker-panel]').forEach(panel=>panel.hidden=panel.dataset.pickerPanel!==button.dataset.pickerMode);if(button.dataset.pickerMode==='catalog')try{await loadPickerBrands(picker);}catch(error){window.VechasuNotify?.error(error.message);}}));
+        search.addEventListener('input',()=>{window.clearTimeout(searchTimer);const query=search.value.trim();if(!query){renderPickerResults(picker,[]);return;}searchTimer=window.setTimeout(async()=>{try{const params={type:'product',q:query,limit:'50'};if(picker.dataset.inStock==='1')params.in_stock='1';renderPickerResults(picker,await apiItems(params));}catch(error){window.VechasuNotify?.error(error.message);}},180);});
+        const brand=picker.querySelector('[data-picker-brand]');const category=picker.querySelector('[data-picker-category]');const product=picker.querySelector('[data-picker-product]');
+        brand.addEventListener('change',async()=>{category.innerHTML='<option value="">Категория</option>';product.innerHTML='<option value="">Товар</option>';category.disabled=true;product.disabled=true;if(!brand.value)return;try{const params={type:'category',brand_id:brand.value,category_scope:'brand',limit:'200'};if(picker.dataset.inStock==='1')params.available_for_sale='1';const items=await apiItems(params);for(const item of items)category.add(new Option(`${item.name} · ${item.count||0}`,item.id));category.disabled=false;}catch(error){window.VechasuNotify?.error(error.message);}});
+        category.addEventListener('change',async()=>{product.innerHTML='<option value="">Товар</option>';product.disabled=true;if(!category.value)return;try{const params={type:'product',brand_id:brand.value,category_id:category.value,limit:'200'};if(picker.dataset.inStock==='1')params.in_stock='1';const items=await apiItems(params);for(const item of items){const option=new Option(productLabel(item),item.id);option.dataset.item=JSON.stringify(item);option.disabled=picker.dataset.inStock==='1'&&Number(item.stock||0)<=0;product.add(option);}product.disabled=false;}catch(error){window.VechasuNotify?.error(error.message);}});
+        product.addEventListener('change',()=>{const option=product.selectedOptions[0];if(option?.dataset.item)selectPickerItem(picker,JSON.parse(option.dataset.item));});
+    });
+    function updateRemovedMode(){const mode=saleForm?.querySelector('input[name="removed_strap_mode"]:checked')?.value||'none';modal.querySelector('[data-removed-existing]').hidden=mode!=='existing';modal.querySelector('[data-removed-created]').hidden=mode!=='created';updateStrapPreview();}
+    saleForm?.querySelectorAll('input[name="removed_strap_mode"]').forEach(input=>input.addEventListener('change',updateRemovedMode));
+    function updateStrapPreview(){if(!strapSection||strapSection.hidden)return;const line=modal.querySelector('[data-strap-line-index]')?.selectedOptions[0];const quantity=line?.dataset.quantity||'1';const base=selectedItem(modal.querySelector('[data-strap-picker="strap_base"]'));const installed=selectedItem(modal.querySelector('[data-strap-picker="installed_strap"]'));const mode=saleForm.querySelector('input[name="removed_strap_mode"]:checked')?.value||'none';const removed=selectedItem(modal.querySelector('[data-strap-picker="removed_strap"]'));const name=modal.querySelector('[data-new-strap-name]')?.value.trim();const brand=modal.querySelector('[data-new-strap-brand]')?.value.trim();const lines=[];lines.push(`${base?.name||'Часы-основа'}: −${quantity}`);if(mode==='none')lines.push('Снятый ремешок: без изменений');else if(mode==='existing')lines.push(`${removed?.name||'Снимаемый ремешок'}: +${quantity}`);else lines.push(`Будет создан товар «${[name,brand].filter(Boolean).join(' ')||'Снятый ремешок'}» и установлен остаток ${quantity}`);lines.push(`${installed?.name||'Устанавливаемый ремешок'}: −${quantity}`);lines.push(`Продажа: ${line?.dataset.name||'заказанный товар'}`);const list=modal.querySelector('[data-strap-preview-list]');list.replaceChildren(...lines.map(value=>{const item=document.createElement('li');item.textContent=value;return item;}));}
+    modal.querySelector('[data-strap-line-index]')?.addEventListener('change',updateStrapPreview);modal.querySelectorAll('[data-new-strap-name],[data-new-strap-brand]').forEach(input=>input.addEventListener('input',updateStrapPreview));
+    function ensureOperationId(){const input=modal.querySelector('[data-strap-operation-id]');if(!input.value)input.value=globalThis.crypto?.randomUUID?.().replaceAll('-','')||`${Date.now()}${Math.random().toString(16).slice(2)}`;}
+    function openStrap(){strapSection.hidden=false;operationMode.value='strap_replacement';strapSubmit.textContent='Заменить ремешок и провести продажу';ensureOperationId();updateRemovedMode();updateStrapPreview();strapSection.scrollIntoView({behavior:'smooth',block:'start'});}
+    function closeStrap(){strapSection.hidden=true;operationMode.value='';strapSubmit.textContent=strapSubmitDefaultLabel;}
+    modal.querySelector('[data-open-strap-replacement]')?.addEventListener('click',openStrap);modal.querySelector('[data-cancel-strap-replacement]')?.addEventListener('click',closeStrap);
+    function saveStrapDraft(){try{const values={};for(const [key,value] of new FormData(saleForm).entries())values[key]=value;const pickers={};modal.querySelectorAll('[data-strap-picker]').forEach(picker=>pickers[picker.dataset.strapPicker]=selectedItem(picker));sessionStorage.setItem(strapStorageKey,JSON.stringify({values,pickers}));}catch(error){}}
+    function restoreStrapDraft(){try{const draft=JSON.parse(sessionStorage.getItem(strapStorageKey)||'null');if(!draft)return;for(const [key,value] of Object.entries(draft.values||{})){const fields=saleForm.elements.namedItem(key);if(!fields)continue;if(fields instanceof RadioNodeList){for(const field of fields)field.checked=field.value===value;}else if(fields.type==='checkbox')fields.checked=fields.value===value;else fields.value=value;}for(const [key,item] of Object.entries(draft.pickers||{})){const picker=modal.querySelector(`[data-strap-picker="${CSS.escape(key)}"]`);if(picker&&item)selectPickerItem(picker,item);}if(draft.values?.operation_mode==='strap_replacement')openStrap();}catch(error){sessionStorage.removeItem(strapStorageKey);}}
+    const duplicateRaw=new URLSearchParams(location.search).get('duplicate_matches');if(duplicateRaw){try{const matches=JSON.parse(duplicateRaw);const host=modal.querySelector('[data-duplicate-matches]');host.textContent=`Возможные дубли: ${matches.map(productLabel).join('; ')}`;host.hidden=false;modal.querySelector('[data-duplicate-confirm]').hidden=false;}catch(error){}}
+    restoreStrapDraft();if(new URLSearchParams(location.search).get('open_strap')==='1')openStrap();
+    function handleOrderSaleSubmit(event){if(operationMode.value==='strap_replacement'){const base=saleForm.elements.namedItem('strap_base_product_id').value;const installed=saleForm.elements.namedItem('installed_strap_product_id').value;const removedMode=saleForm.elements.namedItem('removed_strap_mode').value;const removed=saleForm.elements.namedItem('removed_strap_product_id').value;if(!base||!installed||(removedMode==='existing'&&!removed)||(removedMode==='created'&&(!saleForm.elements.namedItem('new_removed_strap_brand').value.trim()||!saleForm.elements.namedItem('new_removed_strap_name').value.trim()))){event.preventDefault();window.VechasuNotify?.error('Заполните обязательные поля замены ремешка');return;}saveStrapDraft();if(!setPending(event.currentTarget,'Заменяем и проводим…'))event.preventDefault();}else{try{sessionStorage.removeItem(strapStorageKey);}catch(error){}if(!setPending(event.currentTarget,'Проводим…'))event.preventDefault();}}
+    modal.querySelector('[data-order-sale-form]')?.addEventListener('submit',handleOrderSaleSubmit);
     if(modal.dataset.autoOpen==='1')open();
 })();
 </script>

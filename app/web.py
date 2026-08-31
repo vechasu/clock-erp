@@ -123,6 +123,7 @@ from app.services.product_classification import (
 from app.services.sales_inventory import (
     CancellationConflictError,
     InsufficientStockError,
+    PotentialStrapDuplicateError,
     ReturnConflictError,
     SalesInventory,
     SalesInventoryError,
@@ -2727,6 +2728,10 @@ def wildberries_order_page(wb_order_id):
 
 @app.route("/order/<int:order_id>/stock-writeoff", methods=["POST"])
 def order_stock_writeoff(order_id):
+    if auth_is_enabled() and (
+        (current_auth_user() or {}).get("role") not in {"employee", "admin"}
+    ):
+        abort(403)
     lock_directory = Path(app.instance_path) / "order_sale_locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_path = lock_directory / "{}.lock".format(order_id)
@@ -2767,7 +2772,12 @@ def _conduct_order_sale(order_id):
             "order_page",
             order_id=order_id,
             notice="error",
-            message="Продажа по этому заказу уже проведена",
+            message=(
+                "Заказ уже был проведён другим пользователем"
+                if str(request.form.get("operation_mode") or "")
+                == "strap_replacement"
+                else "Продажа по этому заказу уже проведена"
+            ),
             open_sale="1",
         ))
 
@@ -2851,6 +2861,14 @@ def _conduct_order_sale(order_id):
         # already proves confirmation and must not be forced through the UI.
         sale_status_service.ingest(order_id, "A")
     products = full_order.get("products") or []
+    strap_replacement_requested = (
+        str(request.form.get("operation_mode") or "").strip()
+        == "strap_replacement"
+    )
+    try:
+        strap_line_index = int(request.form.get("strap_line_index") or 0)
+    except ValueError:
+        strap_line_index = -1
     mapping_context = build_order_product_mapping_context(
         products, mappings=load_order_product_mappings(order_id)
     )
@@ -2948,9 +2966,12 @@ def _conduct_order_sale(order_id):
                 catalog_product.get("moysklad_product_id") or ""
             ),
         })
-        required_by_product[product_id] = (
-            required_by_product.get(product_id, 0) + quantity
-        )
+        if not (
+            strap_replacement_requested and line_index == strap_line_index
+        ):
+            required_by_product[product_id] = (
+                required_by_product.get(product_id, 0) + quantity
+            )
         product_by_id[product_id] = catalog_product
 
     for product_id, required in required_by_product.items():
@@ -3021,13 +3042,11 @@ def _conduct_order_sale(order_id):
     }
 
     try:
-        sale = inventory.create_sale_batch(
-            payload,
-            prepared_items,
-            user_name=actor,
-            idempotency_key="bitrix-order:{}".format(order_id),
-            enforce_external_unique=True,
-            failure_hook=lambda connection: sale_status_service.change(
+        create_arguments = {
+            "user_name": actor,
+            "idempotency_key": "bitrix-order:{}".format(order_id),
+            "enforce_external_unique": True,
+            "failure_hook": lambda connection: sale_status_service.change(
                 order_id,
                 ERP_ASSEMBLED,
                 current_audit_actor(),
@@ -3035,8 +3054,43 @@ def _conduct_order_sale(order_id):
                 connection=connection,
                 order_number=order_number,
             ),
-            audit_actor=current_audit_actor(),
-        )
+            "audit_actor": current_audit_actor(),
+        }
+        if strap_replacement_requested:
+            replacement = {
+                "operation_id": str(
+                    request.form.get("strap_operation_id") or uuid.uuid4().hex
+                ).strip(),
+                "line_index": strap_line_index,
+                "base_product_id": request.form.get("strap_base_product_id"),
+                "removed_strap_mode": request.form.get("removed_strap_mode"),
+                "removed_strap_product_id": request.form.get(
+                    "removed_strap_product_id"
+                ),
+                "installed_strap_product_id": request.form.get(
+                    "installed_strap_product_id"
+                ),
+                "confirm_duplicate": request.form.get(
+                    "confirm_removed_strap_duplicate"
+                ) == "1",
+                "comment": request.form.get("strap_replacement_comment"),
+                "new_removed_strap": {
+                    "brand": request.form.get("new_removed_strap_brand"),
+                    "name": request.form.get("new_removed_strap_name"),
+                    "model": request.form.get("new_removed_strap_model"),
+                    "color": request.form.get("new_removed_strap_color"),
+                    "article": request.form.get("new_removed_strap_article"),
+                    "condition": request.form.get("new_removed_strap_condition"),
+                    "comment": request.form.get("new_removed_strap_comment"),
+                },
+            }
+            sale = inventory.create_order_strap_replacement_sale(
+                payload, prepared_items, replacement, **create_arguments
+            )
+        else:
+            sale = inventory.create_sale_batch(
+                payload, prepared_items, **create_arguments
+            )
         status_synced = sale_status_service.sync_one(
             order_id, update_order_status
         )
@@ -3057,6 +3111,16 @@ def _conduct_order_sale(order_id):
             "sale_id": str(sale.get("id") or ""),
             "order_number": str(order_number),
         }))
+    except PotentialStrapDuplicateError as error:
+        record_order_sale_attempt(
+            inventory, order_id, "strap_duplicate_confirmation_required",
+            metadata={"matches": len(error.matches)},
+        )
+        return redirect(url_for(
+            "order_page", order_id=order_id, notice="error",
+            message=str(error), open_sale="1", open_strap="1",
+            duplicate_matches=json.dumps(error.matches, ensure_ascii=False),
+        ))
     except (SalesInventoryError, InsufficientStockError) as error:
         record_order_sale_attempt(
             inventory,
@@ -3073,8 +3137,13 @@ def _conduct_order_sale(order_id):
             "order_page",
             order_id=order_id,
             notice="error",
-            message="Продажа не проведена: {}".format(str(error)),
+            message=(
+                "Продажа не проведена: {} Операция отменена, остатки и "
+                "продажа не изменены."
+            ).format(str(error)) if strap_replacement_requested else
+            "Продажа не проведена: {}".format(str(error)),
             open_sale="1",
+            open_strap="1" if strap_replacement_requested else None,
         ))
     except Exception:
         app.logger.exception("Transactional Bitrix order sale failed: %s", order_id)
@@ -3082,7 +3151,11 @@ def _conduct_order_sale(order_id):
             "order_page",
             order_id=order_id,
             notice="error",
-            message="Продажа не проведена. Остатки не изменены.",
+            message=(
+                "Операция отменена, остатки и продажа не изменены."
+                if strap_replacement_requested else
+                "Продажа не проведена. Остатки не изменены."
+            ),
             open_sale="1",
         ))
 
@@ -10834,10 +10907,12 @@ def sale_cancel():
             status_code=400,
         )
 
-    managed = SalesInventory().get_sale(sale_id)
+    inventory = SalesInventory()
+    managed = inventory.get_sale(sale_id)
     if managed is not None:
         try:
-            SalesInventory().cancel_sale(
+            external_order_id = str(managed.get("external_order_id") or "").strip()
+            inventory.cancel_sale(
                 sale_id,
                 reason=reason,
                 comment=comment,
@@ -10847,7 +10922,21 @@ def sale_cancel():
                     or "sale-cancel:{}".format(sale_id)
                 ),
                 audit_actor=current_audit_actor(),
+                failure_hook=(
+                    lambda connection: OrderStatusService(
+                        inventory.database
+                    ).change(
+                        external_order_id, ERP_CONFIRMED,
+                        current_audit_actor(), connection=connection,
+                        clear_sale=True,
+                    )
+                    if external_order_id else None
+                ),
             )
+            if external_order_id:
+                OrderStatusService(inventory.database).sync_one(
+                    external_order_id, update_order_status
+                )
         except CancellationConflictError as error:
             return respond_to_sales_action(
                 str(error), notice="error", status_code=409,
@@ -22025,9 +22114,11 @@ def api_sale_cancel(sale_id):
             raise ValueError("Выберите причину отмены.")
         if reason_code == "other" and not comment:
             raise ValueError("Укажите комментарий для причины «Другое».")
-        managed = SalesInventory().get_sale(sale_id)
+        inventory = SalesInventory()
+        managed = inventory.get_sale(sale_id)
         if managed is not None:
-            sale = SalesInventory().cancel_sale(
+            external_order_id = str(managed.get("external_order_id") or "").strip()
+            sale = inventory.cancel_sale(
                 sale_id=sale_id,
                 reason=reason,
                 comment=comment,
@@ -22038,7 +22129,21 @@ def api_sale_cancel(sale_id):
                     or "sale-cancel:{}".format(sale_id)
                 ),
                 audit_actor=current_audit_actor(),
+                failure_hook=(
+                    lambda connection: OrderStatusService(
+                        inventory.database
+                    ).change(
+                        external_order_id, ERP_CONFIRMED,
+                        current_audit_actor(), connection=connection,
+                        clear_sale=True,
+                    )
+                    if external_order_id else None
+                ),
             )
+            if external_order_id:
+                OrderStatusService(inventory.database).sync_one(
+                    external_order_id, update_order_status
+                )
         else:
             record = find_api_sale(sale_id)
             if record is None:
