@@ -26,6 +26,26 @@ def _http_body(url):
         return response.read()
 
 
+def _application_body(path):
+    """Exercise an authenticated ERP route without production credentials."""
+    from app.web import app
+
+    previous_testing = app.config.get("TESTING")
+    previous_auth_testing = app.config.get("AUTH_TESTING")
+    app.config["TESTING"] = True
+    app.config["AUTH_TESTING"] = False
+    try:
+        response = app.test_client().get(path)
+    finally:
+        app.config["TESTING"] = previous_testing
+        app.config["AUTH_TESTING"] = previous_auth_testing
+    if response.status_code != 200:
+        raise RuntimeError("HTTP {} returned {}".format(
+            path, response.status_code
+        ))
+    return response.data
+
+
 def main():
     if os.getenv("ERP_PRODUCTION_WB_FBS_SMOKE") != "confirmed":
         raise RuntimeError("production WB FBS smoke requires explicit confirmation")
@@ -58,7 +78,7 @@ def main():
 
     login = _http_body("http://127.0.0.1:5000/login")
     register = _http_body("http://127.0.0.1:5000/register")
-    assembly = _http_body("http://127.0.0.1:5000/sales?view=assembly")
+    assembly = _application_body("/sales?view=assembly")
     token_bytes = token.encode("utf-8")
     if token_bytes in login or token_bytes in register or token_bytes in assembly:
         raise RuntimeError("WB token exposed over HTTP")

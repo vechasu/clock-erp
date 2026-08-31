@@ -10,7 +10,12 @@ class WildberriesFbsSalesSmokeContractTest(unittest.TestCase):
         self.assertIn('item.get("method") != "GET"', source)
         self.assertIn('second["added"] != 0', source)
         self.assertIn("GROUP BY external_order_id HAVING COUNT(*) > 1", source)
-        self.assertIn("/sales?view=assembly", source)
+        self.assertIn('_application_body("/sales?view=assembly")', source)
+        self.assertIn('app.config["TESTING"] = True', source)
+        self.assertIn('app.config["AUTH_TESTING"] = False', source)
+        self.assertEqual(
+            source.count('_http_body("http://127.0.0.1:5000/'), 2
+        )
         for method in (".post(", ".put(", ".patch(", ".delete("):
             self.assertNotIn(method, source.casefold())
 
