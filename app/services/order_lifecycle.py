@@ -18,6 +18,7 @@ def _parse_timestamp(value):
         "%Y-%m-%dT%H:%M:%S.%f",
         "%Y-%m-%dT%H:%M:%S",
         "%Y-%m-%d %H:%M:%S",
+        "%d.%m.%Y %H:%M:%S",
     ):
         try:
             parsed = datetime.strptime(raw, date_format)
