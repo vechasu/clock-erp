@@ -796,15 +796,15 @@ PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/wb_readonly_smoke.py \
 PYTHONPATH="$PROJECT_DIR" ERP_PRODUCTION_JOURNAL_SMOKE=confirmed \
     LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN" \
     scripts/journal_production_smoke.py
+PYTHONPATH="$PROJECT_DIR" ERP_PRODUCTION_WB_FBS_SMOKE=confirmed \
+    LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN" \
+    scripts/wb_fbs_sales_smoke.py
 DATA_SNAPSHOT_AFTER="$(stable_data_snapshot)"
 if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
     printf 'POST-SMOKE DATA SAFETY: stable business aggregate mismatch\n' >&2
     false
 fi
 printf 'DATA_AFTER=%s\n' "$DATA_SNAPSHOT_AFTER"
-PYTHONPATH="$PROJECT_DIR" ERP_PRODUCTION_WB_FBS_SMOKE=confirmed \
-    LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN" \
-    scripts/wb_fbs_sales_smoke.py
 if [[ "$MAIL_MIGRATION_REQUIRED" == "1" ]]; then
     PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/migrate_mail.py verify --database instance/mail.db
 fi
