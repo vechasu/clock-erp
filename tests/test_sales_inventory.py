@@ -1602,6 +1602,98 @@ class SalesInventoryWebTest(SalesInventoryTest):
             "No drift",
         )
 
+    def test_tracking_and_sale_note_persist_and_render_after_reload(self):
+        sale = self.create_managed_sale(sale_id="21127")
+        before = self.inventory.get_sale(sale["id"])
+
+        response = self.update_sale_form(
+            sale,
+            track_number="QA-TRACK-21127",
+            note="QA примечание продажи 21127",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["data"]["track_number"], "QA-TRACK-21127")
+        self.assertEqual(
+            body["data"]["note"], "QA примечание продажи 21127"
+        )
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["track_number"], "QA-TRACK-21127")
+        self.assertEqual(stored["note"], "QA примечание продажи 21127")
+        for field in (
+            "product_id", "product_name", "brand", "category", "quantity",
+            "unit_price", "created_at", "order_number", "source",
+        ):
+            self.assertEqual(stored.get(field), before.get(field), field)
+
+        page = self.client.get("/app/sales?source=tictactoy")
+        text = page.get_data(as_text=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("QA-TRACK-21127", text)
+        self.assertIn("QA примечание продажи 21127", text)
+
+    def test_tracking_and_sale_note_can_be_cleared_without_order_comment_drift(self):
+        payload = self.payload(self.product, "sale-clear-fields")
+        payload.update({
+            "source": "Tictactoy",
+            "order_number": "21127-clear",
+            "track_number": "OLD-TRACK",
+            "note": "Старое примечание продажи",
+            "comment": "Примечание исходного заказа",
+        })
+        sale = self.inventory.create_sale(
+            payload, self.product["id"], 1, 1000
+        )
+
+        response = self.update_sale_form(
+            sale, track_number="", note=""
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["track_number"], "")
+        self.assertEqual(response.get_json()["data"]["note"], "")
+        stored = self.inventory.get_sale(sale["id"])
+        self.assertEqual(stored["track_number"], "")
+        self.assertEqual(stored["note"], "")
+        self.assertEqual(stored["comment"], "Примечание исходного заказа")
+
+        reopened = self.client.get("/api/v1/sales/{}".format(sale["id"]))
+        self.assertEqual(reopened.status_code, 200)
+        self.assertEqual(reopened.get_json()["data"]["track_number"], "")
+        self.assertEqual(reopened.get_json()["data"]["note"], "")
+
+    def test_saved_response_is_rejected_when_backend_did_not_apply_edit(self):
+        sale = self.create_managed_sale(sale_id="readback-failure")
+        unchanged = self.inventory.get_sale(sale["id"])
+
+        with mock.patch.object(
+            SalesInventory, "update_sale", return_value=unchanged
+        ):
+            response = self.update_sale_form(
+                sale,
+                track_number="NOT-APPLIED",
+                note="Не применено",
+            )
+
+        self.assertEqual(response.status_code, 409)
+        body = response.get_json()
+        self.assertFalse(body["ok"])
+        self.assertNotIn("сохранена", body["message"].casefold())
+        self.assertIn("не подтверждены", body["message"].casefold())
+
+    def test_sale_editor_checks_backend_readback_before_saved_notice(self):
+        template = (
+            Path(web.app.root_path) / "templates" / "sales.html"
+        ).read_text(encoding="utf-8")
+
+        verification = template.index("const persistedSale = result.data")
+        success = template.index("reloadSalesWithNotice(", verification)
+        self.assertLess(verification, success)
+        self.assertIn("if (!persistedSale || notApplied.length)", template)
+        self.assertIn("setSaleFormError(", template[verification:])
+
     def test_sale_date_validation_is_python_36_compatible(self):
         self.assertEqual(
             web.validate_sale_form_date("2026-08-04T14:14"),

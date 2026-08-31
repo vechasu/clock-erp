@@ -9895,16 +9895,20 @@ def respond_to_sales_action(
     notice="success",
     status_code=200,
     form=None,
+    data=None,
 ):
     if (
         request.headers.get("X-Requested-With")
         == "XMLHttpRequest"
     ):
-        return jsonify(
+        response = dict(
             ok=notice != "error",
             message=message,
             notice=notice,
-        ), status_code
+        )
+        if data is not None:
+            response["data"] = data
+        return jsonify(response), status_code
 
     return redirect_to_sales(
         message,
@@ -10117,19 +10121,21 @@ def manual_sale_add():
 def manual_sale_update():
     require_csrf_when_authenticated()
 
+    form_payload = normalize_sale_edit_aliases(request.form.to_dict())
+    requested_edits = requested_sale_edit_values(form_payload)
     managed_sale_id = (request.form.get("sale_id") or "").strip()
     managed_sale = SalesInventory().get_sale(managed_sale_id)
     if managed_sale is not None:
         try:
             validate_performed_sale_update(
                 managed_sale,
-                request.form.to_dict(),
+                form_payload,
             )
             normalized = normalize_api_sale_payload(
-                request.form.to_dict(),
+                form_payload,
                 existing=managed_sale,
             )
-            SalesInventory().update_sale(
+            updated = SalesInventory().update_sale(
                 managed_sale_id,
                 normalized,
                 quantity=normalized["quantity"],
@@ -10137,6 +10143,8 @@ def manual_sale_update():
                 user_name=current_sales_user_name(),
                 idempotency_key=request.headers.get("Idempotency-Key") or "",
             )
+            verify_sale_edit_persisted(updated, requested_edits)
+            refreshed = refreshed_api_sale(managed_sale_id, requested_edits)
         except (ValueError, SalesInventoryError) as error:
             return respond_to_sales_action(
                 str(error), notice="error", status_code=409
@@ -10149,7 +10157,8 @@ def manual_sale_update():
                 status_code=500,
             )
         return respond_to_sales_action(
-            "Продажа №{} сохранена".format(managed_sale_id)
+            "Продажа №{} сохранена".format(managed_sale_id),
+            data=serialize_api_sale(refreshed),
         )
 
     sale_id = (request.form.get("sale_id") or "").strip()
@@ -10394,8 +10403,15 @@ def manual_sale_update():
     if not managed_sale_updated:
         save_manual_sales(sales)
 
+    try:
+        refreshed = refreshed_api_sale(sale_id, requested_edits)
+    except SalesInventoryError as error:
+        return respond_to_sales_action(
+            str(error), notice="error", status_code=500
+        )
     return respond_to_sales_action(
         "Продажа №{} сохранена".format(sale_id),
+        data=serialize_api_sale(refreshed),
     )
 
 
@@ -10566,6 +10582,8 @@ def sale_status_update():
 def automatic_sale_update():
     require_csrf_when_authenticated()
 
+    form_payload = normalize_sale_edit_aliases(request.form.to_dict())
+    requested_edits = requested_sale_edit_values(form_payload)
     managed_operation_id = (request.form.get("operation_id") or "").strip()
     managed_record = find_api_sale(managed_operation_id)
     if (
@@ -10573,7 +10591,7 @@ def automatic_sale_update():
         and managed_record.get("sale_type") == "automatic"
     ):
         try:
-            payload = request.form.to_dict()
+            payload = form_payload
             current_protected = dict(managed_record)
             current_protected["quantity"] = managed_record.get(
                 "quantity_value", managed_record.get("quantity")
@@ -10590,12 +10608,16 @@ def automatic_sale_update():
             current.update(normalized)
             overrides[managed_operation_id] = current
             save_automatic_sales_overrides(overrides)
+            refreshed = refreshed_api_sale(
+                managed_operation_id, requested_edits
+            )
         except (ValueError, SalesInventoryError) as error:
             return respond_to_sales_action(
                 str(error), notice="error", status_code=409
             )
         return respond_to_sales_action(
-            "Продажа №{} сохранена".format(managed_operation_id)
+            "Продажа №{} сохранена".format(managed_operation_id),
+            data=serialize_api_sale(refreshed),
         )
 
     operation_id = (
@@ -10787,8 +10809,15 @@ def automatic_sale_update():
 
     save_automatic_sales_overrides(overrides)
 
+    try:
+        refreshed = refreshed_api_sale(operation_id, requested_edits)
+    except SalesInventoryError as error:
+        return respond_to_sales_action(
+            str(error), notice="error", status_code=500
+        )
     return respond_to_sales_action(
         "Продажа №{} сохранена".format(operation_id),
+        data=serialize_api_sale(refreshed),
     )
 
 
@@ -21393,6 +21422,54 @@ API_SALE_TEXT_FIELDS = (
 )
 
 
+def normalize_sale_edit_aliases(payload):
+    """Map public edit aliases to the sale's own persisted metadata fields."""
+    normalized = dict(payload or {})
+    if "track_number" not in normalized:
+        if "tracking" in normalized:
+            normalized["track_number"] = normalized.get("tracking")
+        elif "tracking_number" in normalized:
+            normalized["track_number"] = normalized.get("tracking_number")
+    if "note" not in normalized and "comment" in normalized:
+        normalized["note"] = normalized.get("comment")
+    return normalized
+
+
+def requested_sale_edit_values(payload):
+    """Return only explicitly requested mutable text values for verification."""
+    payload = normalize_sale_edit_aliases(payload)
+    requested = {}
+    for field in ("track_number", "invoice_number", "note"):
+        if field in payload:
+            requested[field] = str(payload.get(field) or "").strip()
+    return requested
+
+
+def verify_sale_edit_persisted(sale, requested):
+    """Reject a success response unless storage reads back every edited value."""
+    if not isinstance(sale, dict):
+        raise SalesInventoryError(
+            "Изменения не подтверждены: продажа не прочитана после сохранения."
+        )
+    mismatched = [
+        field for field, expected in requested.items()
+        if str(sale.get(field) or "").strip() != expected
+    ]
+    if mismatched:
+        raise SalesInventoryError(
+            "Изменения не подтверждены после сохранения: {}."
+            .format(", ".join(mismatched))
+        )
+
+
+def refreshed_api_sale(sale_id, requested=None):
+    """Read through the report cache after a write and verify edited fields."""
+    _cached_api_sales_records.cache_clear()
+    refreshed = find_api_sale(sale_id)
+    verify_sale_edit_persisted(refreshed, requested or {})
+    return refreshed
+
+
 def serialize_api_sale(sale):
     status_presentation = get_sale_status_presentation(sale)
     result = {
@@ -21553,6 +21630,7 @@ def api_sale_catalog_items():
 
 
 def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
+    payload = normalize_sale_edit_aliases(payload)
     existing = existing if isinstance(existing, dict) else {}
     created_at = (
         str(existing.get("created_at") or "")
@@ -22036,7 +22114,8 @@ def api_sale_resource(sale_id):
         return api_success({"id": str(sale_id), "deleted": True})
 
     try:
-        payload = api_json_payload()
+        payload = normalize_sale_edit_aliases(api_json_payload())
+        requested_edits = requested_sale_edit_values(payload)
         current_protected = dict(record)
         current_protected["quantity"] = record.get(
             "quantity_value", record.get("quantity")
@@ -22064,7 +22143,7 @@ def api_sale_resource(sale_id):
             normalized["inventory_managed"] = True
             normalized["automatic_stock_applied"] = True
             try:
-                SalesInventory().update_sale(
+                updated_sale = SalesInventory().update_sale(
                     sale_id,
                     normalized,
                     quantity=normalized["quantity"],
@@ -22075,6 +22154,7 @@ def api_sale_resource(sale_id):
                         or payload.get("idempotency_key")
                     ),
                 )
+                verify_sale_edit_persisted(updated_sale, requested_edits)
             except SalesInventoryError as error:
                 return api_error("SALE_NOT_EDITABLE", str(error), 409)
             except Exception:
@@ -22097,7 +22177,10 @@ def api_sale_resource(sale_id):
         save_automatic_sales_overrides(overrides)
     else:
         return api_error("SALE_SOURCE_UNSUPPORTED", "Источник продажи не поддержан.", 409)
-    updated = find_api_sale(sale_id)
+    try:
+        updated = refreshed_api_sale(sale_id, requested_edits)
+    except SalesInventoryError as error:
+        return api_error("SALE_UPDATE_NOT_APPLIED", str(error), 500)
     return api_success(serialize_api_sale(updated or {**record, **normalized}))
 
 
