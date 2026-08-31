@@ -420,6 +420,27 @@ sys.stdout.write(load_key(sys.argv[1]))
 PYTHON_KEY
 )"
 export SERVICE_VAULT_KEY
+WB_API_TOKEN="$("$PYTHON_BIN" - "$SERVICE_ENV_FILE" <<'PYTHON_WB_KEY'
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+details = os.stat(path)
+if details.st_uid != 0 or stat.S_IMODE(details.st_mode) != 0o600:
+    raise SystemExit("WB_SECRET_PREFLIGHT_FAILED: protected EnvironmentFile permissions")
+values = []
+with open(path, "r", encoding="utf-8") as source:
+    for line in source:
+        if line.startswith("WB_API_TOKEN="):
+            values.append(line.rstrip("\r\n").split("=", 1)[1])
+if len(values) != 1 or not values[0] or values[0] != values[0].strip():
+    raise SystemExit("WB_SECRET_PREFLIGHT_FAILED: WB_API_TOKEN must appear exactly once")
+sys.stdout.write(values[0])
+PYTHON_WB_KEY
+)"
+export WB_API_TOKEN
+printf 'WB_SECRET_PREFLIGHT_OK\n'
 PREFLIGHT_REPORT="$(mktemp "$REHEARSAL_ROOT/preflight-report-XXXXXX.json")"
 chmod 600 "$PREFLIGHT_REPORT"
 if [[ "$CATALOG_MIGRATION_REQUIRED" == "1" && -f instance/catalog.db ]]; then
@@ -700,13 +721,19 @@ pid = int(details.split("=", 1)[1] or "0")
 if not pid:
     raise SystemExit("SERVICE_VAULT_PROCESS_KEY_FAILED: service MainPID is missing")
 process_key = None
+process_wb_token = None
 with open("/proc/{}/environ".format(pid), "rb") as environment:
     for item in environment.read().split(b"\0"):
         if item.startswith(b"SERVICE_VAULT_KEY="):
             process_key = item.split(b"=", 1)[1].decode("ascii")
+        if item.startswith(b"WB_API_TOKEN="):
+            process_wb_token = item.split(b"=", 1)[1].decode("utf-8")
 if process_key != os.environ.get("SERVICE_VAULT_KEY"):
     raise SystemExit("SERVICE_VAULT_PROCESS_KEY_FAILED: systemd process key does not match preflight")
+if process_wb_token != os.environ.get("WB_API_TOKEN"):
+    raise SystemExit("WB_SECRET_PROCESS_FAILED: systemd process secret does not match preflight")
 print("SERVICE_VAULT_PROCESS_KEY_OK")
+print("WB_SECRET_PROCESS_OK")
 PYTHON_SERVICE_KEY
 
 printf 'HEALTH CHECK: public routes and startup log\n'
@@ -763,6 +790,9 @@ fi
 PYTHONPATH="$PROJECT_DIR" ERP_PRODUCTION_SERVICES_SMOKE=confirmed \
     LC_ALL=en_US.utf8 LANG=en_US.utf8 "$PYTHON_BIN" \
     scripts/services_production_smoke.py
+PYTHONPATH="$PROJECT_DIR" "$PYTHON_BIN" scripts/wb_readonly_smoke.py \
+    --production --catalog instance/catalog.db \
+    --matching-report "$DEPLOY_SAFETY_DIR/wb-matching.json"
 DATA_SNAPSHOT_AFTER="$(stable_data_snapshot)"
 if [[ "$DATA_SNAPSHOT_BEFORE" != "$DATA_SNAPSHOT_AFTER" ]]; then
     printf 'POST-SMOKE DATA SAFETY: stable business aggregate mismatch\n' >&2
