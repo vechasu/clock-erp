@@ -77,6 +77,12 @@ h1 { font-size:27px; line-height:1.15; letter-spacing:-.025em; }
 .card-title { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
 .card-title h2 { font-size:20px; }
 .card-subtitle { margin-top:4px; color:var(--muted); font-size:12px; }
+.order-lifecycle-summary { display:flex; align-items:center; justify-content:space-between; gap:10px 18px; padding:9px 16px; border-bottom:1px solid var(--line); background:var(--theme-surface-muted,#fafbfc); font-size:12px; }
+.order-lifecycle-steps { display:flex; min-width:0; gap:7px; align-items:center; flex-wrap:wrap; }
+.order-lifecycle-steps span { white-space:nowrap; }
+.order-lifecycle-steps i { margin-right:7px; color:var(--muted); font-style:normal; }
+.order-lifecycle-steps time,.order-lifecycle-empty { color:var(--muted); }
+.order-lifecycle-total { white-space:nowrap; }
 .actions { gap:7px; flex-wrap:wrap; justify-content:flex-end; }
 .status-form { display:flex; gap:6px; align-items:center; }
 .status-form .field { width:170px; }
@@ -149,6 +155,23 @@ details.more summary::-webkit-details-marker { display:none; }
 .back-list { display:none; }
 .order-sale-modal { position:fixed; inset:0; z-index:1000; display:none; place-items:center; padding:20px; background:rgba(15,23,42,.56); }
 .order-sale-modal.is-open { display:grid; }
+.order-lifecycle-modal { position:fixed; inset:0; z-index:1100; display:none; place-items:center; padding:20px; background:rgba(15,23,42,.56); }
+.order-lifecycle-modal.is-open { display:grid; }
+.order-lifecycle-dialog { width:min(650px,100%); max-height:calc(100vh - 40px); overflow:auto; border-radius:10px; background:var(--theme-surface,#fff); box-shadow:0 25px 70px rgba(0,0,0,.25); }
+.order-lifecycle-dialog>header { display:flex; justify-content:space-between; gap:16px; padding:16px 18px; border-bottom:1px solid var(--line); }
+.order-lifecycle-dialog h2,.order-lifecycle-dialog h3,.order-lifecycle-dialog p { margin:0; }
+.order-lifecycle-dialog>header p { margin-top:4px; color:var(--muted); font-size:12px; }
+.order-lifecycle-body { padding:18px; }
+.order-lifecycle-timeline { margin:0; padding:0; list-style:none; }
+.order-lifecycle-timeline li { display:grid; grid-template-columns:90px 12px minmax(0,1fr); gap:12px; position:relative; min-height:72px; }
+.order-lifecycle-timeline li:not(:last-child)::after { content:""; position:absolute; top:18px; bottom:-4px; left:107px; width:2px; background:var(--line); }
+.order-lifecycle-timeline time { text-align:right; font-size:12px; }
+.order-lifecycle-timeline time span,.order-lifecycle-timeline small { display:block; color:var(--muted); }
+.order-lifecycle-dot { position:relative; z-index:1; width:10px; height:10px; margin-top:4px; border:2px solid var(--theme-surface,#fff); border-radius:50%; background:var(--blue,#2563eb); box-shadow:0 0 0 2px var(--blue,#2563eb); }
+.order-lifecycle-timeline h3 { font-size:14px; }
+.order-lifecycle-timeline p { margin-top:3px; }
+.order-lifecycle-timeline small { margin-top:5px; }
+.order-lifecycle-dialog-total { padding-top:14px; border-top:1px solid var(--line); text-align:right; }
 .sale-dialog { width:min(760px,100%); max-height:calc(100vh - 40px); overflow:auto; border-radius:10px; background:#fff; box-shadow:0 25px 70px rgba(0,0,0,.25); }
 .sale-dialog-head,.sale-dialog-body,.sale-dialog-actions { padding:16px 18px; }
 .sale-dialog-head { display:flex; justify-content:space-between; border-bottom:1px solid var(--line); }
@@ -228,6 +251,9 @@ details.more summary::-webkit-details-marker { display:none; }
     .panel { min-height:calc(100vh - 180px); }
     .orders-list { max-height:none; }
     .back-list { display:inline-flex; }
+    .order-lifecycle-summary { align-items:flex-start; flex-direction:column; }
+    .order-lifecycle-timeline li { grid-template-columns:74px 10px minmax(0,1fr); gap:9px; }
+    .order-lifecycle-timeline li:not(:last-child)::after { left:89px; }
     .card-head { position:static; align-items:flex-start; flex-direction:column; }
     .actions { justify-content:flex-start; }
     .product-row { grid-template-columns:1fr; }
