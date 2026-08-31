@@ -222,12 +222,27 @@ class AuditJournal:
         self.database.initialize()
         conditions = []
         parameters = []
-        if entity_type in ENTITY_TYPES:
+        if entity_type == "order":
+            conditions.append(
+                "(entity_type = 'order' OR (entity_type = 'sale' AND EXISTS ("
+                "SELECT 1 FROM erp_sales order_sale WHERE order_sale.id = entity_id "
+                "AND COALESCE(order_sale.external_order_id,'') <> '')))"
+            )
+        elif entity_type in ENTITY_TYPES:
             conditions.append("entity_type = ?")
             parameters.append(entity_type)
         if entity_id:
-            conditions.append("entity_id = ?")
-            parameters.append(str(entity_id))
+            if entity_type == "order":
+                conditions.append(
+                    "((entity_type='order' AND entity_id=?) OR "
+                    "(entity_type='sale' AND EXISTS (SELECT 1 FROM erp_sales "
+                    "order_sale_id WHERE order_sale_id.id=entity_id AND "
+                    "order_sale_id.external_order_id=?)))"
+                )
+                parameters.extend([str(entity_id), str(entity_id)])
+            else:
+                conditions.append("entity_id = ?")
+                parameters.append(str(entity_id))
         if action in ACTION_TYPES:
             conditions.append("action = ?")
             parameters.append(action)

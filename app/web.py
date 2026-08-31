@@ -77,6 +77,7 @@ from app.services.order_status import (
     OrderStatusError,
     OrderStatusService,
 )
+from app.services.order_lifecycle import OrderLifecycle
 from app.services.order_print import build_order_print_context
 from app.services.order_comments import OrderCommentsService
 from app.services.orders_snapshot import (
@@ -1747,11 +1748,16 @@ def enrich_orders_list_rows(rows, database=None):
                         order_ids,
                     ).fetchall()
                     status_rows = connection.execute(
-                        "SELECT external_order_id, actor, created_at "
-                        "FROM erp_order_status_events "
-                        "WHERE external_order_id IN ({}) "
-                        "ORDER BY external_order_id, created_at DESC, id DESC".format(placeholders),
-                        order_ids,
+                        "SELECT external_order_id,actor,created_at FROM ("
+                        "SELECT entity_id AS external_order_id,"
+                        "actor_display_name_snapshot AS actor,occurred_at AS created_at,"
+                        "0 AS source_priority,id FROM erp_audit_events "
+                        "WHERE entity_type='order' AND action='status_changed' "
+                        "AND entity_id IN ({0}) UNION ALL "
+                        "SELECT external_order_id,actor,created_at,1 AS source_priority,id "
+                        "FROM erp_order_status_events WHERE external_order_id IN ({0})) "
+                        "ORDER BY external_order_id,source_priority,created_at DESC,id DESC".format(placeholders),
+                        order_ids + order_ids,
                     ).fetchall()
                 for row in comment_rows:
                     metadata.setdefault(str(row["order_id"]), {}).setdefault(
@@ -1948,6 +1954,10 @@ def render_orders_page(
         mapping_context=order_mappings,
         order_total=(selected_order or {}).get("order_total"),
     )
+    order_lifecycle = (
+        OrderLifecycle().summary(order_id) if order_id and not is_wildberries
+        else {"events": [], "total_display": "", "has_multiple_days": False}
+    )
 
     return render_template(
         "orders.html",
@@ -1970,6 +1980,7 @@ def render_orders_page(
         ),
         order_sale_dialog_summary=sale_dialog_summary,
         order_comments=comments,
+        order_lifecycle=order_lifecycle,
         order_comment_action=(
             url_for("wildberries_order_comment_add", wb_order_id=(selected_order or {}).get("wb_order_id"))
             if is_wildberries else url_for("order_comment_add", order_id=order_id)
@@ -2989,10 +3000,12 @@ def _conduct_order_sale(order_id):
             failure_hook=lambda connection: sale_status_service.change(
                 order_id,
                 ERP_ASSEMBLED,
-                actor or "ERP",
+                current_audit_actor(),
                 sale_id=payload["id"],
                 connection=connection,
+                order_number=order_number,
             ),
+            audit_actor=current_audit_actor(),
         )
         status_synced = sale_status_service.sync_one(
             order_id, update_order_status
@@ -3455,6 +3468,7 @@ def order_status_update(order_id):
             order_id, False, "Выберите допустимый статус заказа", 400
         )
     service = order_status_service()
+    current_order = None
     if service.get(order_id) is None:
         current_order = next((
             item for item in get_orders()
@@ -3495,8 +3509,16 @@ def order_status_update(order_id):
             str(error_message or "Bitrix не принял изменение статуса"), 502,
         )
     try:
+        if current_order is None:
+            current_order = next((
+                item for item in get_orders()
+                if str(item.get("id") or item.get("ID") or "") == str(order_id)
+            ), None)
         service.record_synced_change(
-            order_id, target, current_sales_user_name() or "ERP"
+            order_id,
+            target,
+            current_audit_actor(),
+            order_number=(current_order or {}).get("number") or order_id,
         )
     except (OrderStatusError, sqlite3.Error):
         app.logger.exception(
@@ -10794,6 +10816,7 @@ def sale_cancel():
                     request.headers.get("Idempotency-Key")
                     or "sale-cancel:{}".format(sale_id)
                 ),
+                audit_actor=current_audit_actor(),
             )
         except CancellationConflictError as error:
             return respond_to_sales_action(
@@ -10863,6 +10886,7 @@ def sale_delete():
             SalesInventory().delete_sale(
                 sale_id,
                 user_name=current_sales_user_name(),
+                audit_actor=current_audit_actor(),
             )
         except CancellationConflictError as error:
             return respond_to_sales_action(
@@ -18354,6 +18378,9 @@ def _journal_change_text(entity_type, change):
     if entity_type == "sale" and change["field"] == "status":
         before = get_sale_status_presentation(before)["label"]
         after = get_sale_status_presentation(after)["label"]
+    elif entity_type == "order" and change["field"] == "status":
+        before = ERP_STATUS_NAMES.get(before, before)
+        after = ERP_STATUS_NAMES.get(after, after)
     return "{}: {} → {}".format(change["label"], before, after)
 
 
@@ -18424,6 +18451,8 @@ def format_journal_event(event):
             action_text = "Создана новая продажа"
         elif entity_type == "receipt":
             action_text = "Создан новый приход"
+        elif entity_type == "order":
+            action_text = "Заказ создан"
 
     elif entity_type == "brand" and action == "updated":
         name_change = next((item for item in changes if item["field"] == "name"), None)
@@ -18584,7 +18613,16 @@ def api_journal_event(event_id):
     if event is None:
         return api_error("JOURNAL_EVENT_NOT_FOUND", "Событие не найдено.", 404)
     object_url = ""
+    order_url = ""
     InventoryJournal(journal.database).enrich_events([event])
+    if event["entity_type"] == "sale":
+        with journal.database.connect() as connection:
+            linked = connection.execute(
+                "SELECT external_order_id FROM erp_sales WHERE id=?",
+                (event["entity_id"],),
+            ).fetchone()
+        if linked and linked[0]:
+            order_url = "/order/{}".format(linked[0])
     if event["action"] != "deleted":
         if event["entity_type"] == "product":
             if ExcelProductCatalog().get_product(event["entity_id"]):
@@ -18615,14 +18653,24 @@ def api_journal_event(event_id):
                     "archive" if repair.get("archived_at") else "active",
                     event["entity_id"],
                 )
+        elif event["entity_type"] == "order":
+            object_url = "/order/{}".format(event["entity_id"])
     payload = serialize_journal_event(event)
     payload["object_url"] = object_url
-    payload["object_deleted"] = not bool(object_url)
+    payload["order_url"] = order_url
+    payload["object_deleted"] = not bool(object_url or order_url)
     if event["entity_type"] == "inventory":
         payload["inventory"] = InventoryJournal(journal.database).get_document(
             event["entity_id"]
         )
     return api_success(payload)
+
+
+@app.get("/api/v1/orders/<int:order_id>/lifecycle")
+def api_order_lifecycle(order_id):
+    if not can_view_orders():
+        abort(403)
+    return api_success(OrderLifecycle().timeline(order_id))
 
 
 def get_app_settings_path():
@@ -21700,6 +21748,7 @@ def api_sale_resource(sale_id):
                     SalesInventory().delete_sale(
                         sale_id,
                         user_name=current_sales_user_name(),
+                        audit_actor=current_audit_actor(),
                     )
                 except CancellationConflictError as error:
                     return api_error("SALE_NOT_EDITABLE", str(error), 409)
@@ -21842,6 +21891,7 @@ def api_sale_cancel(sale_id):
                     or payload.get("idempotency_key")
                     or "sale-cancel:{}".format(sale_id)
                 ),
+                audit_actor=current_audit_actor(),
             )
         else:
             record = find_api_sale(sale_id)
