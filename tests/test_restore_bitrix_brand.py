@@ -28,7 +28,8 @@ class RestoreBitrixBrandTest(unittest.TestCase):
 
     def test_restore_is_scoped_idempotent_and_reconciles_stock(self):
         luch = product(
-            "10", name="Луч 10", brand="Luch", stock=7, image=False
+            "10", name="Луч 10", brand="Luch", stock=7,
+            sku="731959996", image=False,
         )
         other = product(
             "20", name="Other 20", brand="Other", stock=4, image=False
@@ -40,6 +41,15 @@ class RestoreBitrixBrandTest(unittest.TestCase):
             backup_root=self.root / "backups-first",
             image_root=self.root / "images",
         )
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE erp_brands SET name = 'Luch', normalized_name = 'luch' "
+                "WHERE name = 'Луч'"
+            )
+            connection.execute(
+                "UPDATE catalog_excel_products SET excel_brand = 'Luch', "
+                "excel_article = NULL"
+            )
         second = restore_brand(
             client, self.database, apply=True,
             backup_root=self.root / "backups-second",
@@ -53,10 +63,19 @@ class RestoreBitrixBrandTest(unittest.TestCase):
         self.assertEqual(second["duplicates_skipped"], 1)
         with self.database.connect() as connection:
             rows = connection.execute(
-                "SELECT excel_brand, stock, bitrix_external_product_id "
+                "SELECT excel_brand, stock, bitrix_external_product_id, "
+                "excel_article "
                 "FROM catalog_excel_products"
             ).fetchall()
-        self.assertEqual([tuple(row) for row in rows], [("Луч", 7, "10")])
+            brand = connection.execute(
+                "SELECT name FROM erp_brands WHERE active = 1"
+            ).fetchone()[0]
+        self.assertEqual(
+            [tuple(row) for row in rows],
+            [("Луч", 7, "10", "731959996")],
+        )
+        self.assertEqual(rows[0]["excel_article"], "731959996")
+        self.assertEqual(brand, "Луч")
 
 
 if __name__ == "__main__":
