@@ -4,7 +4,8 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = "2026-08-27-customers-crm-v2"
+SCHEMA_VERSION = "2026-08-31-customers-order-search-v3"
+CRM_V2_VERSION = "2026-08-27-customers-crm-v2"
 LEGACY_VERSION = "2026-08-27-customers-registry-v1"
 
 TABLES = (
@@ -110,6 +111,11 @@ V2_INDEXES = (
     "CREATE INDEX idx_customer_notes_customer ON customer_notes(customer_id,created_at,id)",
 )
 
+V3_INDEXES = (
+    "CREATE INDEX idx_registry_order_number ON customer_operations(external_id,operation_type,customer_id)",
+    "CREATE INDEX idx_registry_operations_customer_type ON customer_operations(customer_id,operation_type,active,occurred_at,id)",
+)
+
 
 def migrate_database(path):
     path = Path(path)
@@ -125,7 +131,7 @@ def migrate_database(path):
             version = connection.execute(
                 "SELECT value FROM registry_meta WHERE key='schema_version'"
             ).fetchone()
-            if not version or version[0] not in (LEGACY_VERSION, SCHEMA_VERSION):
+            if not version or version[0] not in (LEGACY_VERSION, CRM_V2_VERSION, SCHEMA_VERSION):
                 raise RuntimeError("unsupported customer registry schema")
         else:
             for statement in TABLES + INDEXES:
@@ -149,6 +155,13 @@ def migrate_database(path):
             "SELECT name FROM sqlite_master WHERE type='index'"
         )}
         for statement in V2_INDEXES:
+            index_name = statement.split()[2]
+            if index_name not in indexes:
+                connection.execute(statement)
+        indexes = {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'"
+        )}
+        for statement in V3_INDEXES:
             index_name = statement.split()[2]
             if index_name not in indexes:
                 connection.execute(statement)
