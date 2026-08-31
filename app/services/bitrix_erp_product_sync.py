@@ -539,7 +539,9 @@ class BitrixERPProductSync:
         )
         incoming_article = _text(product.get("external_sku"))
         article = _text(existing.get("excel_article"))
-        if not article and reliable_article(incoming_article):
+        # Matching remains conservative, but an explicit SKU on an already
+        # identified Bitrix card is source data and must remain searchable.
+        if not article and incoming_article:
             article = incoming_article
         preserve_empty_enrichment = (
             "bitrix_name",

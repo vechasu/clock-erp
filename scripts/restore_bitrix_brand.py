@@ -19,7 +19,9 @@ from app.services.brand_values import normalize_brand  # noqa: E402
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter  # noqa: E402
 from app.services.bitrix_erp_product_sync import BitrixERPProductSync  # noqa: E402
 from app.services.bitrix_stock_sync import BitrixStockSync  # noqa: E402
+from app.services.inventory_lock import assert_no_active_inventory  # noqa: E402
 from app.services.product_images import ProductImageImporter, ProductImageStore  # noqa: E402
+from app.services.shared_catalog import SharedCatalog  # noqa: E402
 from scripts.import_catalog_images import backup_runtime  # noqa: E402
 
 
@@ -75,6 +77,36 @@ def _other_products_digest(database, brand):
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _brand_taxonomy_rows(database, brand):
+    with database.connect() as connection:
+        rows = connection.execute(
+            "SELECT id, name, normalized_name FROM erp_brands "
+            "WHERE active = 1 ORDER BY id"
+        ).fetchall()
+    return [dict(row) for row in rows if exact_brand(row["name"], brand)]
+
+
+def _canonicalize_brand_taxonomy(database, brand, apply=False):
+    target = normalize_brand(brand)
+    rows = _brand_taxonomy_rows(database, target)
+    if len(rows) > 1:
+        raise RuntimeError("Multiple ERP brand aliases require manual merge")
+    if not rows:
+        return {"status": "not_found", "brand_id": None, "old": None, "new": target}
+    row = rows[0]
+    if row["name"] == target:
+        return {
+            "status": "unchanged", "brand_id": row["id"],
+            "old": target, "new": target,
+        }
+    if apply:
+        SharedCatalog(database).rename_brand(row["id"], target)
+    return {
+        "status": "renamed" if apply else "would_rename",
+        "brand_id": row["id"], "old": row["name"], "new": target,
+    }
+
+
 def _image_record(product):
     record = dict(product)
     record.update({
@@ -112,13 +144,17 @@ def restore_brand(client, database, brand="Луч", apply=False,
     image_report = ProductImageImporter(database, store).run(
         [_image_record(product) for product in active], "bitrix", apply=False
     )
+    taxonomy = _canonicalize_brand_taxonomy(database, brand, apply=False)
 
     if apply:
         if conflicts:
             raise RuntimeError("Brand restore has unresolved product matches")
         if not backup_root:
             raise ValueError("backup_root is required in apply mode")
+        with database.connect() as connection:
+            assert_no_active_inventory(connection)
         backup_path = backup_runtime(database.path, [store.root], Path(backup_root))
+        taxonomy = _canonicalize_brand_taxonomy(database, brand, apply=True)
         source_result = BitrixCatalogImporter(database).import_products(
             active, "full_sync"
         )
@@ -191,6 +227,7 @@ def restore_brand(client, database, brand="Луч", apply=False,
             "errors": image_report["errors"],
         },
         "backup_path": str(backup_path) if backup_path else None,
+        "taxonomy": taxonomy,
         "other_brands_changed": int(
             before_other != _other_products_digest(database, brand)
         ),
