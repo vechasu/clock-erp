@@ -69,6 +69,7 @@
         if (!toggle || !storageKey) {
             return null;
         }
+        const labelSuffix = toggle.dataset.focusModeLabelSuffix || "";
 
         root.dataset.focusModeReady = "1";
         const hiddenElements = elementsForSelectors(
@@ -127,7 +128,7 @@
             toggle.setAttribute("aria-label", action + " " + subject);
             toggle.title = action + " " + subject;
             if (label) {
-                label.textContent = action;
+                label.textContent = action + labelSuffix;
             }
             if (expandIcon) {
                 expandIcon.hidden = enabled;

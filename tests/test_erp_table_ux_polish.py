@@ -19,10 +19,13 @@ class ErpTableUxPolishTest(unittest.TestCase):
             "function initializeWarehouseColumnSettings", 1
         )[1].split("function initializeWarehouseTableView", 1)[0]
 
+        self.assertIn('id="warehouseMoreTrigger"', toolbar)
+        self.assertIn('id="warehouseMoreMenu"', toolbar)
+        self.assertIn('id="warehouseCollectionModeTrigger"', toolbar)
         self.assertIn('id="warehouseColumnSettingsTrigger"', toolbar)
         self.assertIn('id="warehouseColumnSettingsPanel"', toolbar)
-        self.assertNotIn('id="warehouseMoreMenu"', toolbar)
-        self.assertNotIn(">Ещё<", toolbar)
+        self.assertIn('data-focus-mode-label-suffix=" таблицу"', toolbar)
+        self.assertIn("Ещё", toolbar)
         self.assertIn('reset.id = "warehouseTableReset"', column_settings)
         self.assertIn(
             'reset.textContent = "Сбросить вид таблицы"',
