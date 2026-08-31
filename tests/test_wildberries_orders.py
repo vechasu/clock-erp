@@ -40,9 +40,10 @@ def raw_order(identifier, order_uid="buyer-order", status="new", article="WB-ART
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, payload=None):
+    def __init__(self, status_code=200, payload=None, headers=None):
         self.status_code = status_code
         self._payload = payload
+        self.headers = headers or {}
 
     def json(self):
         if isinstance(self._payload, Exception):
@@ -60,7 +61,9 @@ class WildberriesClientTest(unittest.TestCase):
         session.get.assert_called_once_with(
             "https://marketplace-api.wildberries.ru/api/v3/orders/new",
             headers={"Authorization": "secret", "Accept": "application/json"},
+            params=None,
             timeout=(3.05, 15),
+            allow_redirects=False,
         )
 
     def test_absent_token_and_http_failures_are_safe(self):
@@ -76,7 +79,8 @@ class WildberriesClientTest(unittest.TestCase):
                 session = mock.Mock()
                 session.get.return_value = FakeResponse(status, {})
                 client = WildberriesOrdersReadOnlyClient(
-                    "" if status is None else "secret", session=session
+                    "" if status is None else "secret", session=session,
+                    max_retries=0,
                 )
                 with self.assertRaises(WildberriesReadOnlyError) as raised:
                     client.get_new_orders()
@@ -87,7 +91,9 @@ class WildberriesClientTest(unittest.TestCase):
         session = mock.Mock()
         session.get.side_effect = requests.Timeout("token=secret")
         with self.assertRaises(WildberriesReadOnlyError) as raised:
-            WildberriesOrdersReadOnlyClient("secret", session=session).get_new_orders()
+            WildberriesOrdersReadOnlyClient(
+                "secret", session=session, max_retries=0
+            ).get_new_orders()
         self.assertEqual(raised.exception.code, "WB_TIMEOUT")
         self.assertNotIn("secret", str(raised.exception))
 
