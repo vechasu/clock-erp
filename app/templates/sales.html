@@ -6852,18 +6852,32 @@
         setSaleFormPending(true, saleSubmitButton.textContent.trim());
 
         try {
+            const submittedForm = new FormData(manualSaleForm);
             const response = await fetch(manualSaleForm.action, {
                 method: "POST",
                 headers: {
                     "X-Requested-With": "XMLHttpRequest",
                     "Idempotency-Key": saleEditIdempotencyKey,
                 },
-                body: new FormData(manualSaleForm),
+                body: submittedForm,
             });
             const result = await response.json();
             if (!response.ok || !result.ok) {
                 throw new Error(
                     result.message || "Не удалось сохранить изменения"
+                );
+            }
+            const persistedSale = result.data;
+            const expectedFields = ["track_number", "invoice_number", "note"]
+                .filter((field) => submittedForm.has(field));
+            const notApplied = expectedFields.filter((field) =>
+                String(persistedSale?.[field] || "").trim()
+                !== String(submittedForm.get(field) || "").trim()
+            );
+            if (!persistedSale || notApplied.length) {
+                throw new Error(
+                    "Backend не подтвердил сохранение полей: "
+                    + (notApplied.join(", ") || "данные продажи")
                 );
             }
             reloadSalesWithNotice(
