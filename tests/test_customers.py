@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from app import web
+from app.customer_registry_migrations import CRM_V2_VERSION
 from app.domain_schema_migrations import apply_domain_migrations
 from app.services.customer_identity import (
     CustomerStore,
@@ -21,8 +22,9 @@ from app.services.customer_registry import (
     CustomerRegistry, masked_email, migrate_database,
     normalize_email as registry_normalize_email,
     normalize_phone as registry_normalize_phone,
+    order_number_query,
 )
-from scripts.backfill_customers import read_sales
+from scripts.backfill_customers import order_operation, read_sales
 
 
 def order(order_id, name="Иван Иванов", phone="+7 921 123-45-67", email="ivan@example.ru", **values):
@@ -320,6 +322,89 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         self.assertEqual(len(third["rows"]), 25)
         self.assertEqual(search["total"], 1)
 
+    def test_order_number_search_variants_are_exact_unique_and_keep_contact_search(self):
+        owner = self.add(
+            20078, name="Иван Иванов", phone="+7 921 123-45-67",
+            email="ivan@example.ru",
+        )
+        self.add(
+            20080, name="Иван Иванов", phone="+7 921 123-45-67",
+            email="ivan@example.ru",
+        )
+        unnamed = self.add(20079, name="", phone="+7 999 000-00-79")
+        with self.registry.connection() as connection:
+            self.registry.upsert_operation(connection, {
+                "operation_type": "sale", "source": "erp", "external_id": "sale-20078",
+                "related_order_source": "tictactoy", "related_order_id": "20078",
+                "occurred_at": "2026-02-10", "completed": True, "amount": 1200,
+            })
+            self.registry.upsert_operation(connection, {
+                "operation_type": "repair", "source": "erp", "external_id": "repair-20078",
+                "related_order_source": "tictactoy", "related_order_id": "20078",
+                "occurred_at": "2026-02-11",
+            })
+            self.registry.recompute(connection)
+
+        self.assertEqual(order_number_query("20078"), "20078")
+        self.assertEqual(order_number_query("№20078"), "20078")
+        self.assertEqual(order_number_query("заказ 20078"), "20078")
+        for query in ("20078", "№20078", "заказ 20078"):
+            with self.subTest(query=query):
+                result = self.registry.list(query=query)
+                self.assertEqual(result["total"], 1)
+                self.assertEqual(result["rows"][0]["id"], owner["customer_id"])
+
+        customer = self.registry.get(owner["customer_id"])
+        orders = self.registry.operations(owner["customer_id"], "order")
+        self.assertEqual(customer["orders_count"], 2)
+        self.assertEqual(customer["sales_count"], 1)
+        self.assertEqual(customer["repairs_count"], 1)
+        self.assertEqual(orders["total"], 2)
+        self.assertEqual([row["external_id"] for row in orders["rows"]], ["20080", "20078"])
+        self.assertEqual(self.registry.list(query="Иван Иванов")["total"], 1)
+        self.assertEqual(self.registry.list(query="9211234567")["total"], 1)
+        self.assertEqual(self.registry.list(query="ivan@example.ru")["total"], 1)
+        self.assertEqual(self.registry.list(query="20079")["rows"][0]["id"], unnamed["customer_id"])
+        self.assertEqual(self.registry.list(query="заказ 99999")["total"], 0)
+
+    def test_order_search_uses_migrated_index_and_operation_payload_is_presented(self):
+        created = self.add(
+            20078, payload={"number": "20078", "status_name": "Подтверждён", "item_count": 2}
+        )
+        rows = self.registry.operations(created["customer_id"], "order")["rows"]
+        self.assertEqual(rows[0]["number"], "20078")
+        self.assertEqual(rows[0]["status_display"], "Подтверждён")
+        self.assertEqual(rows[0]["item_count"], 2)
+        with self.registry.connection() as connection:
+            plan = " ".join(str(value) for row in connection.execute(
+                "EXPLAIN QUERY PLAN SELECT customer_id FROM customer_operations "
+                "WHERE operation_type='order' AND external_id='20078'"
+            ) for value in row)
+            indexes = {row[1] for row in connection.execute("PRAGMA index_list(customer_operations)")}
+        self.assertIn("idx_registry_order_number", indexes)
+        self.assertIn("idx_registry_order_number", plan)
+
+    def test_customer_registry_v2_upgrades_to_order_search_indexes(self):
+        with sqlite3.connect(str(self.path)) as connection:
+            connection.execute("DROP INDEX idx_registry_order_number")
+            connection.execute("DROP INDEX idx_registry_operations_customer_type")
+            connection.execute(
+                "UPDATE registry_meta SET value=? WHERE key='schema_version'",
+                (CRM_V2_VERSION,),
+            )
+        migrate_database(self.path)
+        with sqlite3.connect(str(self.path)) as connection:
+            indexes = {row[1] for row in connection.execute("PRAGMA index_list(customer_operations)")}
+        self.assertIn("idx_registry_order_number", indexes)
+        self.assertIn("idx_registry_operations_customer_type", indexes)
+
+    def test_order_backfill_keeps_available_status_and_position_count(self):
+        operation = order_operation(order(
+            20078, status_name="Подтверждён", products=[{"id": 1}, {"id": 2}]
+        ))
+        self.assertEqual(operation["payload"]["status_name"], "Подтверждён")
+        self.assertEqual(operation["payload"]["item_count"], 2)
+
     def test_quality_counters_segments_merge_unmerge_and_candidates(self):
         first = self.add(201, name="Первый", phone="+7 900 100-00-01", city="4334")
         second = self.add(202, name="Второй", phone="+7 900 100-00-02", email="One@EXAMPLE.RU")
@@ -382,6 +467,7 @@ class CustomerRoutesTest(unittest.TestCase):
                 "operation_type": "order", "source": "tictactoy", "external_id": "1",
                 "name": "Иван Иванов", "phone": "+7 921 123-45-67",
                 "email": "ivan@example.ru", "occurred_at": "2026-08-01", "completed": True,
+                "payload": {"number": "1", "status_name": "Подтверждён", "item_count": 2},
             })
             registry.recompute(connection)
         web.app.config.update(TESTING=True)
@@ -415,6 +501,21 @@ class CustomerRoutesTest(unittest.TestCase):
         self.assertEqual(self.client.get("/app/customers/999999").status_code, 404)
 
         self.assertIn("Продажи", overview.get_data(as_text=True))
+
+        for query in ("1", "№1", "заказ 1"):
+            with self.subTest(query=query):
+                searched = self.client.get("/app/customers", query_string={"q": query})
+                self.assertEqual(searched.status_code, 200)
+                self.assertIn("Найдено: 1 клиентов", searched.get_data(as_text=True))
+        listing_html = self.client.get("/app/customers").get_data(as_text=True)
+        self.assertIn("Заказы 1", listing_html)
+        self.assertIn("Продажи 0", listing_html)
+        self.assertIn("Ремонты 0", listing_html)
+        self.assertIn("tab=orders", listing_html)
+        orders_html = orders_tab.get_data(as_text=True)
+        self.assertIn('href="/order/1"', orders_html)
+        self.assertIn("Подтверждён", orders_html)
+        self.assertIn("2 поз.", orders_html)
 
         tasks_path = Path(os.environ["ERP_TASKS_DATABASE"])
         with sqlite3.connect(str(tasks_path)) as connection:
