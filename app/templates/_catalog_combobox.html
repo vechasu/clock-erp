@@ -1,4 +1,4 @@
-{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none, shared_catalog_kind="", selected_id="", id_input_name="", selected_label="", selected_item=none, search_placeholder="", floating_layer=false, dropdown_max_height=340) %}
+{% macro render_catalog_combobox(component_id, input_name, options, selected_value="", include_all=false, item_label="значение", all_label="Все", disabled=false, prefix_search=true, empty_label="Ничего не найдено", component_class="", clear_selection_on_search_clear=false, input_id="", search_enabled=true, form_id="", action_kind="", action_label="", all_count=none, shared_catalog_kind="", selected_id="", id_input_name="", selected_label="", selected_item=none, search_placeholder="", floating_layer=false, dropdown_max_height=340, required=false) %}
     <div
         id="{{ component_id }}"
         class="brand-combobox{% if component_class %} {{ component_class }}{% endif %}"
@@ -44,6 +44,7 @@
             aria-expanded="false"
             aria-controls="{{ component_id }}Listbox"
             aria-label="Выберите {{ item_label }}"
+            {% if required %}aria-required="true"{% endif %}
             {% if disabled %}disabled{% endif %}
         >
             <span class="brand-combobox-value">

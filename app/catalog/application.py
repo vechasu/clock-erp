@@ -288,23 +288,36 @@ class CatalogApplication:
         in_stock=False,
         available_for_sale=False,
         product_kind="",
+        catalog_scope="",
     ):
         catalog = self._shared_catalog_factory()
         if kind == "brand":
-            items = catalog.list_brands(
-                query=query,
-                limit=limit,
-                available_for_sale=available_for_sale,
-                product_kind=product_kind,
+            items = (
+                catalog.list_strap_brands(query=query, limit=limit)
+                if catalog_scope == "straps"
+                else catalog.list_brands(
+                    query=query,
+                    limit=limit,
+                    available_for_sale=available_for_sale,
+                    product_kind=product_kind,
+                )
             )
         elif kind == "category":
-            items = catalog.list_category_options(
-                brand_id=brand_id,
-                query=query,
-                limit=limit,
-                only_used_by_brand=only_used_by_brand,
-                available_for_sale=available_for_sale,
-                product_kind=product_kind,
+            items = (
+                catalog.list_strap_categories(
+                    brand_id=brand_id,
+                    query=query,
+                    limit=limit,
+                )
+                if catalog_scope == "straps"
+                else catalog.list_category_options(
+                    brand_id=brand_id,
+                    query=query,
+                    limit=limit,
+                    only_used_by_brand=only_used_by_brand,
+                    available_for_sale=available_for_sale,
+                    product_kind=product_kind,
+                )
             )
         elif kind == "model":
             if brand_id in (None, "") or category_id in (None, ""):
