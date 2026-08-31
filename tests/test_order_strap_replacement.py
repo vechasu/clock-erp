@@ -376,6 +376,15 @@ class OrderStrapReplacementTest(unittest.TestCase):
         self.assertIn("После проведения", template)
         self.assertIn("Number(item.stock||0)<=0", template)
         self.assertIn("product_kind:picker.dataset.productKind", template)
+        self.assertIn("data-catalog-scope=\"{{ 'straps'", template)
+        self.assertIn("shared_catalog_kind='brand'", template)
+        self.assertIn("shared_catalog_kind='category'", template)
+        self.assertIn("data-auto-select-single-category=\"true\"", template)
+        component = (
+            root / "app/static/js/catalog-combobox.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn('scope?.dataset.catalogScope', component)
+        self.assertIn('availableItems.length === 1', component)
         self.assertIn("Часы-основа: не выбрано", template)
         self.assertIn("Устанавливаемый ремешок: не выбрано", template)
         self.assertIn("updateStrapSubmitState", template)

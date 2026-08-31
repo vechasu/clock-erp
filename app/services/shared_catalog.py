@@ -1,6 +1,7 @@
 """Stable shared brand/category/product references for ERP workflows."""
 
 from datetime import datetime, timezone
+import json
 import re
 import sqlite3
 import unicodedata
@@ -23,6 +24,31 @@ class CatalogReferenceError(ValueError):
 PRODUCT_KIND_WATCH = "watch"
 PRODUCT_KIND_STRAP_COMPONENT = "strap_component"
 PRODUCT_KINDS = {PRODUCT_KIND_WATCH, PRODUCT_KIND_STRAP_COMPONENT}
+
+
+def catalog_category_is_strap(name, path_json=""):
+    """Recognize strap catalog sections from their real catalog path."""
+    values = [name]
+    try:
+        path = json.loads(path_json or "[]")
+    except (TypeError, ValueError):
+        path = []
+    if isinstance(path, list):
+        for item in path:
+            values.append(item.get("name") if isinstance(item, dict) else item)
+    for value in values:
+        normalized = catalog_search_key(value)
+        if (
+            "ремеш" in normalized
+            or normalized == "ремни"
+            or "браслет" in normalized
+            or "strap" in normalized
+            or "watch band" in normalized
+            or "wristband" in normalized
+            or "bracelet" in normalized
+        ):
+            return True
+    return False
 
 
 def normalize_product_kind(value):
@@ -389,6 +415,124 @@ class SharedCatalog:
                 parameters,
             ).fetchall()
         return [self._brand(row) for row in rows]
+
+    def _strap_reference_rows(self):
+        """Return active ERP products proven to belong to real strap sections."""
+        self.database.initialize()
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT p.id AS product_id, p.stock, b.id AS brand_id, "
+                "b.name AS brand_name, b.active AS brand_active, "
+                "c.id AS category_id, c.name AS category_name, "
+                "c.active AS category_active, source_category.name "
+                "AS source_category_name, source_category.path_json "
+                "FROM catalog_excel_products p "
+                "JOIN erp_brands b ON b.id = p.brand_id AND b.active = 1 "
+                "JOIN erp_categories c "
+                "ON c.id = p.category_id AND c.active = 1 "
+                "JOIN catalog_products source_product "
+                "ON source_product.id = p.bitrix_catalog_product_id "
+                "AND source_product.active = 1 "
+                "JOIN catalog_product_categories source_link "
+                "ON source_link.product_id = source_product.id "
+                "JOIN catalog_categories source_category "
+                "ON source_category.id = source_link.category_id "
+                "AND source_category.active = 1 "
+                "WHERE p.active = 1 AND p.deleted_at IS NULL "
+                "AND trim(b.name) <> '' AND trim(c.name) <> '' AND ("
+                "lower(source_category.name) LIKE '%ремеш%' OR "
+                "lower(source_category.path_json) LIKE '%ремеш%' OR "
+                "lower(source_category.name) LIKE '%ремни%' OR "
+                "lower(source_category.path_json) LIKE '%ремни%' OR "
+                "lower(source_category.name) LIKE '%браслет%' OR "
+                "lower(source_category.path_json) LIKE '%браслет%' OR "
+                "lower(source_category.name) LIKE '%strap%' OR "
+                "lower(source_category.path_json) LIKE '%strap%' OR "
+                "lower(source_category.name) LIKE '%watch band%' OR "
+                "lower(source_category.path_json) LIKE '%watch band%' OR "
+                "lower(source_category.name) LIKE '%wristband%' OR "
+                "lower(source_category.path_json) LIKE '%wristband%' OR "
+                "lower(source_category.name) LIKE '%bracelet%' OR "
+                "lower(source_category.path_json) LIKE '%bracelet%')"
+                + " ORDER BY b.name COLLATE NOCASE, c.name COLLATE NOCASE, p.id"
+            ).fetchall()
+        return [
+            row for row in rows
+            if catalog_category_is_strap(
+                row["source_category_name"], row["path_json"]
+            )
+        ]
+
+    def list_strap_brands(self, query="", limit=50):
+        """Brands backed by at least one active strap catalog product."""
+        query = catalog_search_key(query)
+        grouped = {}
+        for row in self._strap_reference_rows():
+            if query and not catalog_search_key(row["brand_name"]).startswith(query):
+                continue
+            group = grouped.setdefault(int(row["brand_id"]), {
+                "id": int(row["brand_id"]),
+                "name": row["brand_name"],
+                "active": bool(row["brand_active"]),
+                "products": {},
+            })
+            group["products"].setdefault(
+                int(row["product_id"]), normalized_stock_value(row["stock"])
+            )
+        result = []
+        for group in grouped.values():
+            products = group.pop("products")
+            stock_total = normalized_stock_value(sum(products.values()))
+            result.append({
+                **group,
+                "product_count": len(products),
+                "stock_total": stock_total,
+                "stock_display": format_stock_value(stock_total),
+            })
+        return sorted(
+            result, key=lambda item: (normalized_name(item["name"]), item["id"])
+        )[:max(1, min(int(limit), 200))]
+
+    def list_strap_categories(self, brand_id, query="", limit=50):
+        """Active strap categories that actually occur under one brand."""
+        try:
+            brand_id = int(brand_id)
+        except (TypeError, ValueError):
+            raise ValueError("Сначала выберите бренд.")
+        query = catalog_search_key(query)
+        grouped = {}
+        for row in self._strap_reference_rows():
+            if int(row["brand_id"]) != brand_id:
+                continue
+            if query and not catalog_search_key(row["category_name"]).startswith(query):
+                continue
+            group = grouped.setdefault(int(row["category_id"]), {
+                "id": int(row["category_id"]),
+                "brand_id": brand_id,
+                "name": row["category_name"],
+                "active": bool(row["category_active"]),
+                "brand_name": row["brand_name"],
+                "products": {},
+            })
+            group["products"].setdefault(
+                int(row["product_id"]), normalized_stock_value(row["stock"])
+            )
+        result = []
+        for group in grouped.values():
+            products = group.pop("products")
+            stock_total = normalized_stock_value(sum(products.values()))
+            result.append({
+                **group,
+                "product_count": len(products),
+                "stock_total": stock_total,
+                "stock_display": format_stock_value(stock_total),
+                "selected_product_count": len(products),
+                "used_by_brand": True,
+                "category_ids": [group["id"]],
+            })
+        return sorted(
+            result, key=lambda item: (normalized_name(item["name"]), item["id"])
+        )[:max(1, min(int(limit), 100))]
 
     def list_brand_overviews(self, query="", limit=200, brand_id=None):
         """Load brands and their category aggregates in two batch queries."""

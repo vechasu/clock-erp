@@ -458,6 +458,9 @@ body.orders-page.has-open-sale-dialog { overflow:hidden; }
 .orders-page .strap-picker-tabs .button { min-height:30px; padding:4px 9px; font-size:12px; }
 .orders-page .strap-picker-tabs .is-active { border-color:var(--theme-accent,#2563eb); color:var(--theme-accent,#2563eb); }
 .orders-page .strap-picker-catalog,.orders-page .strap-fields-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.orders-page .strap-picker-reference { min-width:0; }
+.orders-page .strap-picker-reference > label { display:block; margin-bottom:4px; font-size:12px; color:var(--theme-text-muted,#64748b); }
+.orders-page .strap-picker-reference .brand-combobox { width:100%; }
 .orders-page .strap-picker-results { display:grid; max-height:170px; margin-top:4px; overflow:auto; border:1px solid var(--theme-border,var(--line)); border-radius:var(--erp-control-radius); background:var(--theme-surface,#fff); }
 .orders-page .strap-picker-results:empty { display:none; }
 .orders-page .strap-picker-option { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; padding:8px 10px; border:0; border-bottom:1px solid var(--theme-border,var(--line)); background:transparent; color:inherit; text-align:left; cursor:pointer; }

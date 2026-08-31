@@ -20168,6 +20168,7 @@ def api_catalog_options():
                 .strip().lower() in {"1", "true", "yes"}
             ),
             product_kind=request.args.get("product_kind") or "",
+            catalog_scope=(request.args.get("catalog_scope") or "").strip(),
         )
         if result is None:
             return api_error(

@@ -1600,6 +1600,12 @@
                     : "brand"
             );
         }
+        if (scope?.dataset.catalogScope) {
+            parameters.set("catalog_scope", scope.dataset.catalogScope);
+        }
+        if (scope?.dataset.productKind) {
+            parameters.set("product_kind", scope.dataset.productKind);
+        }
         if (scope?.dataset.catalogInStock === "true") {
             parameters.set("available_for_sale", "1");
         }
@@ -1718,6 +1724,18 @@
                     : "Ничего не найдено"
             );
             window.filterBrandList(query, combobox);
+            if (
+                kind === "category"
+                && query === ""
+                && scope?.dataset.autoSelectSingleCategory === "true"
+                && selectedSharedCatalogId(combobox) === ""
+                && availableItems.length === 1
+            ) {
+                window.setSharedCatalogComboboxValue(
+                    combobox,
+                    availableItems[0]
+                );
+            }
             return availableItems;
         } catch (error) {
             if (error.name === "AbortError") {
