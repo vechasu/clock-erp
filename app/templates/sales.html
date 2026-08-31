@@ -1150,6 +1150,71 @@
             white-space: nowrap;
         }
 
+        .wb-assembly-workspace {
+            display: grid;
+            gap: 14px;
+            padding: 18px;
+            border: 1px solid #dfe3e8;
+            border-radius: 14px;
+            background: #fff;
+        }
+
+        .wb-assembly-header,
+        .wb-assembly-card,
+        .wb-assembly-products,
+        .wb-assembly-product {
+            display: flex;
+            gap: 12px;
+        }
+
+        .wb-assembly-header,
+        .wb-assembly-card {
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .wb-assembly-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .wb-assembly-card {
+            padding: 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+
+        .wb-assembly-copy {
+            display: grid;
+            min-width: 0;
+            gap: 7px;
+        }
+
+        .wb-assembly-meta,
+        .wb-assembly-product-meta {
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .wb-assembly-products {
+            flex-wrap: wrap;
+        }
+
+        .wb-assembly-product {
+            flex-direction: column;
+            padding-left: 10px;
+            border-left: 3px solid #cbd5e1;
+        }
+
+        .wb-match-ok { color: #15803d; font-weight: 800; }
+        .wb-match-missing { color: #b45309; font-weight: 800; }
+
+        @media (max-width: 760px) {
+            .wb-assembly-header,
+            .wb-assembly-card { align-items: stretch; flex-direction: column; }
+        }
+
         .sales-table td > span:not(.source-badge):not(.sale-status-badge):not(.erp-datetime-cell) {
             display: block;
             width: 100%;
@@ -1652,6 +1717,12 @@
                     <span data-report-label>Отчёт</span>
                 </a>
 
+                <a
+                    class="button button-secondary erp-secondary-action{% if wb_assembly_mode %} is-active{% endif %}"
+                    href="{{ wb_assembly_url }}"
+                    data-open-wb-assembly
+                >Собрать заказ</a>
+
                 <button
                     id="openManualSaleModal"
                     class="button sales-add-button button-primary erp-primary-action erp-workspace-primary"
@@ -1681,6 +1752,58 @@
             </div>
         </nav>
 
+        {% if wb_assembly_mode %}
+        <section class="wb-assembly-workspace" aria-label="Заказы Wildberries на сборку">
+            <header class="wb-assembly-header">
+                <div>
+                    <h2>Собрать заказ</h2>
+                    <p>Новые FBS-заказы Wildberries. Эти записи не являются завершёнными продажами.</p>
+                </div>
+                <div>
+                    <button class="button button-primary" type="button" data-sales-wb-sync>Обновить WB-заказы</button>
+                    <input type="hidden" value="{{ csrf_token() }}" data-sales-wb-sync-csrf>
+                </div>
+            </header>
+            {% if wb_assembly_error %}
+                <div class="notice notice-error" role="alert">{{ wb_assembly_error }}</div>
+            {% endif %}
+            <div class="wb-assembly-list" data-wb-assembly-list>
+                {% for order in wb_assembly_orders %}
+                <article class="wb-assembly-card" data-wb-order-id="{{ order.wb_order_id }}">
+                    <div class="wb-assembly-copy">
+                        <div><span class="source-badge source-badge--wildberries">WB</span> <strong>Заказ №{{ order.wb_order_id }}</strong></div>
+                        <div class="wb-assembly-meta">
+                            {{ order.created_at or 'Дата не передана' }} · статус: {{ order.status }}
+                            {% if order.supply_id %} · поставка: {{ order.supply_id }}{% endif %}
+                            {% if order.warehouse_id is not none %} · склад: {{ order.warehouse_id }}{% endif %}
+                        </div>
+                        <div class="wb-assembly-products">
+                            {% for product in order.products %}
+                            <div class="wb-assembly-product">
+                                <strong>{{ product.name }}</strong>
+                                <span class="wb-assembly-product-meta">
+                                    {{ product.quantity }} шт. · vendorCode: {{ product.vendor_code or '—' }} · barcode: {{ product.barcode or '—' }} · nmId: {{ product.nm_id if product.nm_id is not none else '—' }}{% if product.chrt_id is not none %} · chrtId: {{ product.chrt_id }}{% endif %}
+                                </span>
+                                {% if product.matching_status == 'matched' %}
+                                    <span class="wb-match-ok">Сопоставлен · ERP #{{ product.erp_product_id }}</span>
+                                {% else %}
+                                    <span class="wb-match-missing">Не сопоставлен</span>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <a class="button button-primary" href="{{ order.href }}">Открыть заказ</a>
+                </article>
+                {% else %}
+                <div class="sales-empty-state erp-empty-state" role="status">
+                    <strong>Новых WB FBS-заказов нет</strong>
+                    <span>Нажмите «Обновить WB-заказы», чтобы повторить безопасное чтение.</span>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% else %}
         <div class="stats sales-kpis erp-stats erp-workspace-metrics">
             <div class="stat-card erp-stat-card erp-workspace-metric">
                 <span class="stat-label erp-stat-label">
@@ -2681,6 +2804,7 @@
             </section>
             {{ render_erp_pagination(pagination, "Страницы продаж") }}
         </section>
+        {% endif %}
     </main>
 </div>
 
@@ -9154,6 +9278,41 @@
     }, {once: true});
 </script>
 {% endif %}
+<script>
+    (() => {
+        const button = document.querySelector("[data-sales-wb-sync]");
+        if (!button) return;
+        button.addEventListener("click", async () => {
+            if (button.disabled) return;
+            button.disabled = true;
+            button.setAttribute("aria-busy", "true");
+            button.textContent = "Обновляем WB…";
+            try {
+                const csrf = document.querySelector("[data-sales-wb-sync-csrf]")?.value || "";
+                const response = await fetch("/api/orders/wildberries/sync", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {Accept: "application/json", "X-CSRF-Token": csrf},
+                });
+                const payload = await response.json();
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.error?.message || "Не удалось обновить WB-заказы");
+                }
+                const result = payload.result;
+                window.VechasuNotify?.success(
+                    `WB: получено ${result.received}, новых ${result.added}, обновлено ${result.updated}, сопоставлено ${result.matched}, не сопоставлено ${result.unmatched}`
+                );
+                window.location.reload();
+            } catch (error) {
+                window.VechasuNotify?.error(error.message || "Не удалось обновить WB-заказы");
+            } finally {
+                button.disabled = false;
+                button.removeAttribute("aria-busy");
+                button.textContent = "Обновить WB-заказы";
+            }
+        });
+    })();
+</script>
 </body>
 {% if pagination_e2e %}<script src="{{ url_for('static', filename='js/pagination-e2e.js') }}"></script>{% endif %}
 </html>
