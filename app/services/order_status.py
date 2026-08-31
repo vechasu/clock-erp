@@ -264,7 +264,7 @@ class OrderStatusService:
 
     def change(
         self, order_id, target, actor, sale_id=None, connection=None,
-        order_number=None,
+        order_number=None, clear_sale=False,
     ):
         if target not in ERP_STATUS_NAMES:
             raise OrderStatusError("Недопустимый статус заказа")
@@ -283,6 +283,17 @@ class OrderStatusService:
                 current = self.get(order_id, connection)
             old = current["erp_status"]
             if old == target:
+                if clear_sale and current.get("sale_id"):
+                    now = _now()
+                    connection.execute(
+                        "UPDATE erp_order_statuses SET sale_id=NULL,updated_at=? "
+                        "WHERE external_order_id=?",
+                        (now, str(order_id)),
+                    )
+                    result = self.get(order_id, connection)
+                    if owns:
+                        context.__exit__(None, None, None)
+                    return result
                 if target == ERP_ASSEMBLED and sale_id:
                     linked_sale_id = str(current.get("sale_id") or "").strip()
                     if linked_sale_id and linked_sale_id != str(sale_id):
@@ -305,11 +316,19 @@ class OrderStatusService:
                 return current
             bitrix_code = self.mapping.outbound[target]
             now = _now()
-            connection.execute(
-                "UPDATE erp_order_statuses SET erp_status=?, sale_id=COALESCE(?, sale_id), "
-                "sync_status='pending', updated_at=? WHERE external_order_id=?",
-                (target, sale_id, now, str(order_id)),
-            )
+            if clear_sale:
+                connection.execute(
+                    "UPDATE erp_order_statuses SET erp_status=?, sale_id=NULL, "
+                    "sync_status='pending', updated_at=? WHERE external_order_id=?",
+                    (target, now, str(order_id)),
+                )
+            else:
+                connection.execute(
+                    "UPDATE erp_order_statuses SET erp_status=?, "
+                    "sale_id=COALESCE(?, sale_id), sync_status='pending', "
+                    "updated_at=? WHERE external_order_id=?",
+                    (target, sale_id, now, str(order_id)),
+                )
             self._queue(connection, order_id, target, bitrix_code)
             self._event(
                 connection, order_id, old, target, actor, "erp", "pending",

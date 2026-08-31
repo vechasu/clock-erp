@@ -797,6 +797,42 @@ CREATE INDEX IF NOT EXISTS idx_erp_sale_items_sale
 CREATE INDEX IF NOT EXISTS idx_erp_sale_items_product
     ON erp_sale_items(product_id, created_at);
 
+CREATE TABLE IF NOT EXISTS erp_order_strap_operations (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL DEFAULT 'order_strap_replacement_sale' CHECK (
+        event_type IN (
+            'order_strap_replacement_sale',
+            'order_strap_replacement_cancelled'
+        )
+    ),
+    external_order_id TEXT NOT NULL,
+    sale_id TEXT NOT NULL UNIQUE REFERENCES erp_sales(id) ON DELETE RESTRICT,
+    sale_item_id INTEGER NOT NULL UNIQUE REFERENCES erp_sale_items(id) ON DELETE RESTRICT,
+    ordered_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    base_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    removed_strap_mode TEXT NOT NULL CHECK (
+        removed_strap_mode IN ('none', 'existing', 'created')
+    ),
+    removed_strap_product_id INTEGER REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    installed_strap_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    created_removed_strap INTEGER NOT NULL DEFAULT 0 CHECK (created_removed_strap IN (0, 1)),
+    status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed', 'cancelled')),
+    actor_id TEXT,
+    actor_name TEXT NOT NULL,
+    comment TEXT,
+    stock_changes_json TEXT NOT NULL DEFAULT '{}',
+    details_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    cancelled_at TEXT,
+    cancelled_by TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_erp_order_strap_order_active
+    ON erp_order_strap_operations(external_order_id, status);
+CREATE INDEX IF NOT EXISTS idx_erp_order_strap_products
+    ON erp_order_strap_operations(base_product_id, installed_strap_product_id, created_at);
+
 CREATE TABLE IF NOT EXISTS erp_receipts (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL DEFAULT 'default',
@@ -1018,6 +1054,44 @@ def apply_fresh_catalog_schema(connection, ddl_observer=None):
     _apply_inventory_constraints(connection)
     _apply_stock_movement_constraints(connection)
     _apply_order_item_mapping_schema(connection)
+
+
+ORDER_STRAP_SCHEMA_SQL = (
+    "CREATE TABLE IF NOT EXISTS erp_order_strap_operations ("
+        "id TEXT PRIMARY KEY,"
+        "event_type TEXT NOT NULL DEFAULT 'order_strap_replacement_sale' CHECK ("
+            "event_type IN ('order_strap_replacement_sale','order_strap_replacement_cancelled')"
+        "),"
+        "external_order_id TEXT NOT NULL,"
+        "sale_id TEXT NOT NULL UNIQUE REFERENCES erp_sales(id) ON DELETE RESTRICT,"
+        "sale_item_id INTEGER NOT NULL UNIQUE REFERENCES erp_sale_items(id) ON DELETE RESTRICT,"
+        "ordered_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,"
+        "base_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,"
+        "removed_strap_mode TEXT NOT NULL CHECK (removed_strap_mode IN ('none','existing','created')),"
+        "removed_strap_product_id INTEGER REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,"
+        "installed_strap_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,"
+        "quantity INTEGER NOT NULL CHECK (quantity > 0),"
+        "created_removed_strap INTEGER NOT NULL DEFAULT 0 CHECK (created_removed_strap IN (0,1)),"
+        "status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','cancelled')),"
+        "actor_id TEXT,actor_name TEXT NOT NULL,comment TEXT,"
+        "stock_changes_json TEXT NOT NULL DEFAULT '{}',"
+        "details_json TEXT NOT NULL DEFAULT '{}',"
+        "created_at TEXT NOT NULL,cancelled_at TEXT,cancelled_by TEXT"
+    ")",
+    "CREATE INDEX IF NOT EXISTS idx_erp_order_strap_order_active "
+    "ON erp_order_strap_operations(external_order_id,status)",
+    "CREATE INDEX IF NOT EXISTS idx_erp_order_strap_products "
+    "ON erp_order_strap_operations(base_product_id,installed_strap_product_id,created_at)",
+)
+
+
+def apply_order_strap_replacement_schema(connection, ddl_observer=None):
+    """Add the structured, append-preserving strap replacement operation."""
+    if ddl_observer is not None:
+        ddl_observer("ERP_ORDER_STRAP_OPERATIONS")
+    for statement in ORDER_STRAP_SCHEMA_SQL:
+        connection.execute(statement)
+    return None
 
 
 def migration_source_checksum():

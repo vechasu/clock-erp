@@ -8,8 +8,17 @@ from decimal import Decimal, InvalidOperation
 
 from app.catalog_db import CatalogDatabase
 from app.services.audit_journal import AuditJournal
+from app.services.brand_values import is_numeric_brand, normalize_brand
+from app.services.excel_product_catalog import (
+    _empty_enrichment,
+    canonical_model_text,
+    get_or_create_model_record,
+    require_unique_article,
+)
 from app.services.inventory_lock import assert_products_unlocked
+from app.services.product_reconciliation import article_quality, normalize_text, text
 from app.services.sale_pricing import calculate_sale_pricing
+from app.services.shared_catalog import get_or_create_brand, get_or_create_category
 
 
 class SalesInventoryError(ValueError):
@@ -32,6 +41,15 @@ class ReturnConflictError(SalesInventoryError):
 
 class CancellationConflictError(SalesInventoryError):
     pass
+
+
+class PotentialStrapDuplicateError(SalesInventoryError):
+    def __init__(self, matches):
+        self.matches = [dict(item) for item in matches]
+        super().__init__(
+            "Найдены похожие ремешки. Выберите существующий товар или "
+            "подтвердите создание новой карточки."
+        )
 
 
 def validate_performed_sale_update(current, requested):
@@ -174,6 +192,454 @@ class SalesInventory:
                 ).fetchone() is not None
         except Exception:
             return False
+
+    @staticmethod
+    def _product_snapshot(connection, product_id):
+        return connection.execute(
+            "SELECT p.id, p.stock, p.brand_id, p.category_id, "
+            "p.excel_name_raw AS name, p.model, p.excel_article AS article, "
+            "COALESCE(b.name, p.excel_brand, '') AS brand, "
+            "COALESCE(c.name, p.excel_category, '') AS category "
+            "FROM catalog_excel_products p "
+            "LEFT JOIN erp_brands b ON b.id=p.brand_id "
+            "LEFT JOIN erp_categories c ON c.id=p.category_id "
+            "WHERE p.id=? AND p.active=1",
+            (int(product_id),),
+        ).fetchone()
+
+    @staticmethod
+    def _potential_removed_strap_duplicates(
+        connection, brand, name, model="", article=""
+    ):
+        brand_key = normalize_text(normalize_brand(brand))
+        name_key = normalize_text(name)
+        model_key = normalize_text(canonical_model_text(model))
+        article = text(article)
+        rows = connection.execute(
+            "SELECT p.id, p.excel_name_raw AS name, p.model, "
+            "p.excel_article AS article, p.stock, "
+            "COALESCE(b.name,p.excel_brand,'') AS brand, "
+            "COALESCE(c.name,p.excel_category,'') AS category "
+            "FROM catalog_excel_products p "
+            "LEFT JOIN erp_brands b ON b.id=p.brand_id "
+            "LEFT JOIN erp_categories c ON c.id=p.category_id "
+            "WHERE p.active=1 AND COALESCE(c.normalized_name,'') "
+            "LIKE '%ремеш%' AND ("
+            "(?<>'' AND trim(COALESCE(p.excel_article,''))=?) OR "
+            "(COALESCE(p.normalized_name,'')=? AND "
+            "COALESCE(b.normalized_name,'')=?) OR "
+            "(?<>'' AND lower(replace(trim(COALESCE(p.model,'')),' ',''))="
+            "lower(replace(trim(?),' ','')) AND "
+            "COALESCE(b.normalized_name,'')=?)"
+            ") ORDER BY p.stock DESC,p.id LIMIT 10",
+            (
+                article, article, name_key, brand_key,
+                model_key, model_key, brand_key,
+            ),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _create_removed_strap_product(
+        self, connection, values, actor_id="", actor_name=""
+    ):
+        name = text(values.get("name") or values.get("model"))
+        brand = normalize_brand(values.get("brand"))
+        model = canonical_model_text(values.get("model") or name)
+        article = text(values.get("article"))
+        if not name:
+            raise SalesInventoryError("Название снятого ремешка обязательно.")
+        if not brand or is_numeric_brand(brand):
+            raise SalesInventoryError("Бренд снятого ремешка обязателен.")
+        require_unique_article(connection, article)
+        brand_row = get_or_create_brand(connection, name=brand, create=True)
+        category_row = get_or_create_category(
+            connection, brand_row["id"], name="Ремешки", create=True
+        )
+        model_id = get_or_create_model_record(connection, brand_row["id"], model)
+        batch = connection.execute(
+            "SELECT * FROM catalog_excel_batches WHERE status='active' "
+            "ORDER BY applied_at DESC LIMIT 1"
+        ).fetchone()
+        if batch is None:
+            raise SalesInventoryError("Не удалось создать карточку снятого ремешка.")
+        now = now_iso()
+        enrichment = _empty_enrichment()
+        columns = (
+            "source_key", "created_batch_id", "current_batch_id", "active",
+            "raw_excel_json", "excel_row", "excel_name_raw", "model", "model_id",
+            "normalized_name", "excel_article", "article_quality", "excel_brand",
+            "excel_category", "brand_id", "category_id", "stock", "cell",
+            "stock_source", "file_sha256", "match_status", "match_method",
+            "match_confidence", "match_decision", "candidates_json",
+            "bitrix_link_cardinality", "shared_bitrix_row_count",
+        ) + tuple(enrichment) + (
+            "moysklad_product_id", "moysklad_sync_status", "local_image_path",
+            "local_image_source", "local_image_sha256", "local_image_updated_at",
+            "created_at", "updated_at",
+        )
+        raw = {
+            "source": "order_strap_replacement", "name": name, "model": model,
+            "article": article, "brand": brand_row["name"],
+            "category": category_row["name"], "stock": 0,
+            "color": text(values.get("color")),
+            "condition": text(values.get("condition") or "new"),
+            "comment": text(values.get("comment")),
+        }
+        excel_row = connection.execute(
+            "SELECT COALESCE(MAX(excel_row),1)+1 FROM catalog_excel_products"
+        ).fetchone()[0]
+        values_to_insert = (
+            "manual:{}".format(uuid.uuid4()), batch["id"], batch["id"], 1,
+            json.dumps(raw, ensure_ascii=False, sort_keys=True), excel_row, name,
+            model or None, model_id, normalize_text(name), article or None,
+            article_quality(article), brand_row["name"], category_row["name"],
+            brand_row["id"], category_row["id"], 0, None,
+            "order_strap_replacement", batch["file_sha256"], "not_found",
+            "manual_create", 0.0, "unmatched", "[]", "unlinked", 0,
+        ) + tuple(enrichment.values()) + (
+            None, "not_linked", None, None, None, None, now, now,
+        )
+        connection.execute(
+            "INSERT INTO catalog_excel_products ({}) VALUES ({})".format(
+                ", ".join(columns), ", ".join("?" for _ in columns)
+            ),
+            values_to_insert,
+        )
+        product_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+        AuditJournal(self.database).record(
+            "product", product_id, "created", name, article,
+            after={
+                "name": name, "model": model, "article": article,
+                "brand": brand_row["name"], "category": category_row["name"],
+                "stock": 0,
+            },
+            metadata={
+                "article": article,
+                "event_type": "order_strap_replacement_sale",
+            },
+            actor_id=actor_id, actor_name=actor_name, connection=connection,
+        )
+        return self._product_snapshot(connection, product_id)
+
+    def create_order_strap_replacement_sale(
+        self,
+        payload,
+        items,
+        replacement,
+        user_name="",
+        idempotency_key="",
+        enforce_external_unique=True,
+        failure_hook=None,
+        audit_actor=None,
+    ):
+        """Sell the ordered SKU while atomically consuming the real components."""
+        payload = dict(payload or {})
+        replacement = dict(replacement or {})
+        if not isinstance(items, list) or not items:
+            raise SalesInventoryError("В продаже нет товаров.")
+        try:
+            replacement_index = int(replacement.get("line_index"))
+        except (TypeError, ValueError):
+            raise SalesInventoryError("Выберите позицию заказа для замены ремешка.")
+        prepared = []
+        for index, item in enumerate(items):
+            try:
+                product_id = int(item.get("product_id"))
+            except (TypeError, ValueError):
+                raise SalesInventoryError("Товар продажи не найден.")
+            quantity = positive_integer(item.get("quantity"), "Количество")
+            pricing = calculate_sale_pricing(
+                item.get("original_unit_price", item.get("unit_price")),
+                item.get("discount_type", "none"),
+                item.get("discount_value", 0), item.get("discount_reason", ""),
+            )
+            prepared.append(dict(item, line_index=index, product_id=product_id,
+                                 quantity=quantity, **pricing))
+        if replacement_index < 0 or replacement_index >= len(prepared):
+            raise SalesInventoryError("Позиция заказа для замены ремешка не найдена.")
+        replaced = prepared[replacement_index]
+        quantity = replaced["quantity"]
+        try:
+            base_id = int(replacement.get("base_product_id"))
+            installed_id = int(replacement.get("installed_strap_product_id"))
+        except (TypeError, ValueError):
+            raise SalesInventoryError("Выберите часы-основу и устанавливаемый ремешок.")
+        removed_mode = str(replacement.get("removed_strap_mode") or "none")
+        if removed_mode not in {"none", "existing", "created"}:
+            raise SalesInventoryError("Выберите, какой ремешок снимается с часов.")
+        removed_id = None
+        if removed_mode == "existing":
+            try:
+                removed_id = int(replacement.get("removed_strap_product_id"))
+            except (TypeError, ValueError):
+                raise SalesInventoryError("Выберите снимаемый ремешок.")
+        if base_id == installed_id or (
+            removed_id is not None
+            and removed_id in {base_id, installed_id}
+        ):
+            raise SalesInventoryError("Часы и ремешки операции должны быть разными товарами.")
+        new_removed = dict(replacement.get("new_removed_strap") or {})
+
+        sale_id = str(payload.get("id") or uuid.uuid4().hex)
+        operation_id = str(replacement.get("operation_id") or uuid.uuid4().hex)
+        created_at = sale_created_at(payload)
+        inserted_at = now_iso()
+        source = str(payload.get("source") or "tictactoy").strip().casefold()
+        external_order_id = str(
+            payload.get("external_order_id") or payload.get("order_id")
+            or payload.get("order_number") or ""
+        ).strip() or None
+        idempotency_key = str(idempotency_key or "").strip() or None
+        actor = dict(audit_actor or {})
+        actor_id = actor.get("actor_id") or user_name
+        actor_name = actor.get("actor_name") or user_name or source
+        comment = text(replacement.get("comment"))
+
+        self.initialize()
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT id FROM erp_sales WHERE id=? OR "
+                "(? IS NOT NULL AND idempotency_key=?) OR "
+                "(? IS NOT NULL AND source=? AND external_order_id=? "
+                "AND cancelled_at IS NULL AND deleted_at IS NULL) LIMIT 1",
+                (sale_id, idempotency_key, idempotency_key,
+                 external_order_id, source, external_order_id),
+            ).fetchone()
+            if existing is not None:
+                return self._sale_from_connection(connection, existing["id"])
+
+            if removed_mode == "created":
+                duplicates = self._potential_removed_strap_duplicates(
+                    connection, new_removed.get("brand"), new_removed.get("name"),
+                    new_removed.get("model"), new_removed.get("article"),
+                )
+                if duplicates and not replacement.get("confirm_duplicate"):
+                    raise PotentialStrapDuplicateError(duplicates)
+                try:
+                    removed = self._create_removed_strap_product(
+                        connection, new_removed, actor_id=actor_id,
+                        actor_name=actor_name,
+                    )
+                except SalesInventoryError:
+                    raise
+                except ValueError as error:
+                    raise SalesInventoryError(
+                        "Не удалось создать карточку снятого ремешка: {}".format(
+                            error
+                        )
+                    )
+                removed_id = int(removed["id"])
+
+            product_ids = {item["product_id"] for item in prepared}
+            product_ids.update([base_id, installed_id])
+            if removed_id is not None:
+                product_ids.add(removed_id)
+            products = {
+                product_id: self._product_snapshot(connection, product_id)
+                for product_id in product_ids
+            }
+            if any(value is None for value in products.values()):
+                raise SalesInventoryError("Один или несколько товаров отсутствуют или архивированы.")
+            assert_products_unlocked(connection, product_ids, SalesInventoryError)
+
+            required = {}
+            for index, item in enumerate(prepared):
+                if index != replacement_index:
+                    required[item["product_id"]] = required.get(item["product_id"], 0) + item["quantity"]
+            required[base_id] = required.get(base_id, 0) + quantity
+            required[installed_id] = required.get(installed_id, 0) + quantity
+            for product_id, needed in required.items():
+                available = float(products[product_id]["stock"] or 0)
+                if available < needed:
+                    if product_id == base_id:
+                        raise SalesInventoryError(
+                            "Часы-основа закончились: требуется {}, доступно {}".format(
+                                format_number(needed), format_number(available)
+                            )
+                        )
+                    if product_id == installed_id:
+                        raise SalesInventoryError(
+                            "Выбранный ремешок закончился: требуется {}, доступно {}".format(
+                                format_number(needed), format_number(available)
+                            )
+                        )
+                    raise InsufficientStockError(available)
+
+            stored_payload = dict(payload)
+            stored_payload.update({
+                "id": sale_id, "created_at": created_at, "source": source,
+                "inventory_managed": True, "automatic_stock_applied": True,
+                "inventory_operation_type": "order_strap_replacement_sale",
+                "strap_operation_id": operation_id,
+                "actual_stock_product_id": str(base_id),
+            })
+            connection.execute(
+                "INSERT INTO erp_sales (id,source,external_order_id,idempotency_key,status,"
+                "created_at,user_name,metadata_json,inserted_at,updated_at) "
+                "VALUES (?,?,?,?, 'completed',?,?,?,?,?)",
+                (sale_id, source, external_order_id, idempotency_key, created_at,
+                 user_name or None, "{}", inserted_at, inserted_at),
+            )
+
+            stock_changes = []
+            item_snapshots = []
+
+            def move(product_id, delta, sale_item_id, kind, movement_type):
+                row = connection.execute(
+                    "SELECT stock FROM catalog_excel_products WHERE id=? AND active=1",
+                    (product_id,),
+                ).fetchone()
+                before = float(row["stock"] or 0)
+                after = before + float(delta)
+                if after < -0.000001:
+                    raise InsufficientStockError(before)
+                cursor = connection.execute(
+                    "UPDATE catalog_excel_products SET stock=?,stock_source=?,updated_at=? "
+                    "WHERE id=? AND active=1 AND (? >= 0 OR stock >= ?)",
+                    (after, "order_strap_replacement", inserted_at, product_id,
+                     delta, abs(delta)),
+                )
+                if cursor.rowcount != 1:
+                    latest = connection.execute(
+                        "SELECT stock FROM catalog_excel_products WHERE id=?",
+                        (product_id,),
+                    ).fetchone()
+                    raise InsufficientStockError(latest["stock"] if latest else before)
+                connection.execute(
+                    "INSERT INTO catalog_stock_movements (id,product_id,movement_type,"
+                    "quantity_delta,stock_before,stock_after,sale_id,sale_item_id,"
+                    "idempotency_key,source_type,source_id,source_line_id,operation_kind,"
+                    "source,user_name,comment,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (str(uuid.uuid4()), product_id, movement_type, delta, before, after,
+                     sale_id, sale_item_id,
+                     "{}:{}".format(idempotency_key, kind) if idempotency_key else None,
+                     "order_strap_replacement", operation_id, str(replacement_index),
+                     kind, source, user_name or None,
+                     "Переукомплектация заказа №{}".format(
+                         stored_payload.get("order_number") or external_order_id or sale_id
+                     ), inserted_at),
+                )
+                stock_changes.append({
+                    "product_id": str(product_id), "kind": kind,
+                    "before": before, "delta": float(delta), "after": after,
+                })
+
+            replacement_sale_item_id = None
+            for index, item in enumerate(prepared):
+                product = products[item["product_id"]]
+                connection.execute(
+                    "INSERT INTO erp_sale_items (sale_id,product_id,brand_id,category_id,"
+                    "quantity,original_unit_price,discount_type,discount_value,discount_amount,"
+                    "discount_reason,unit_price,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (sale_id, item["product_id"], product["brand_id"], product["category_id"],
+                     item["quantity"], item["original_unit_price"], item["discount_type"],
+                     item["discount_value"], item["discount_amount"],
+                     item["discount_reason"] or None, item["unit_price"], created_at),
+                )
+                item_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+                snapshot = dict(item)
+                snapshot.update({"sale_item_id": int(item_id), "product_id": str(item["product_id"])})
+                item_snapshots.append(snapshot)
+                if index == replacement_index:
+                    replacement_sale_item_id = int(item_id)
+                else:
+                    move(item["product_id"], -item["quantity"], item_id,
+                         "ordered_item:{}".format(index), "sale")
+
+            move(base_id, -quantity, replacement_sale_item_id, "base_out", "sale")
+            if removed_id is not None:
+                move(removed_id, quantity, replacement_sale_item_id, "removed_in", "receipt")
+            move(installed_id, -quantity, replacement_sale_item_id, "installed_out", "sale")
+
+            details = {
+                "event_type": "order_strap_replacement_sale",
+                "operation_id": operation_id,
+                "order_id": external_order_id,
+                "sale_id": sale_id,
+                "ordered_product": dict(products[replaced["product_id"]]),
+                "base_product": dict(products[base_id]),
+                "removed_strap_mode": removed_mode,
+                "removed_strap": dict(products[removed_id]) if removed_id else None,
+                "installed_strap": dict(products[installed_id]),
+                "created_removed_strap": removed_mode == "created",
+                "quantity": quantity, "comment": comment,
+            }
+            connection.execute(
+                "INSERT INTO erp_order_strap_operations (id,event_type,external_order_id,"
+                "sale_id,sale_item_id,ordered_product_id,base_product_id,removed_strap_mode,"
+                "removed_strap_product_id,installed_strap_product_id,quantity,"
+                "created_removed_strap,status,actor_id,actor_name,comment,stock_changes_json,"
+                "details_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'completed',?,?,?,?,?,?)",
+                (operation_id, "order_strap_replacement_sale", external_order_id,
+                 sale_id, replacement_sale_item_id, replaced["product_id"], base_id,
+                 removed_mode, removed_id, installed_id, quantity,
+                 1 if removed_mode == "created" else 0, actor_id or None, actor_name,
+                 comment or None, json.dumps(stock_changes, ensure_ascii=False, sort_keys=True),
+                 json.dumps(details, ensure_ascii=False, sort_keys=True), inserted_at),
+            )
+            stored_payload["items"] = item_snapshots
+            stored_payload["strap_replacement"] = details
+            connection.execute(
+                "UPDATE erp_sales SET metadata_json=? WHERE id=?",
+                (json.dumps(stored_payload, ensure_ascii=False, sort_keys=True), sale_id),
+            )
+            if failure_hook:
+                failure_hook(connection)
+
+            removed_text = (
+                "Снимаемый ремешок отсутствовал, движение по складу не создавалось."
+                if removed_id is None else
+                "Снят {} и возвращён на склад +{} шт.".format(
+                    products[removed_id]["name"], format_number(quantity)
+                )
+            )
+            human_text = (
+                "Переукомплектация и продажа. Заказ №{}. Клиенту продан {}. "
+                "Фактически списан {} — {} шт. {} Установлен {}, списан со склада −{} шт."
+            ).format(
+                stored_payload.get("order_number") or external_order_id,
+                products[replaced["product_id"]]["name"], products[base_id]["name"],
+                format_number(quantity), removed_text, products[installed_id]["name"],
+                format_number(quantity),
+            )
+            audit_metadata = {
+                "number": stored_payload.get("order_number") or external_order_id,
+                "event_type": "order_strap_replacement_sale",
+                "operation_id": operation_id, "sale_id": sale_id,
+                "text_snapshot": human_text, "stock_changes": stock_changes,
+            }
+            journal = AuditJournal(self.database)
+            journal.record(
+                "sale", sale_id, "created", "Продажа #{}".format(
+                    stored_payload.get("order_number") or external_order_id
+                ), source, after={"status": "completed", "quantity": quantity,
+                                  "source": source, "order_number": external_order_id},
+                metadata=audit_metadata, actor_id=actor_id, actor_name=actor_name,
+                status="completed", source=source, connection=connection,
+            )
+            journal.record(
+                "order", external_order_id, "completed",
+                "Заказ #{}".format(stored_payload.get("order_number") or external_order_id),
+                source, metadata=audit_metadata, actor_id=actor_id,
+                actor_name=actor_name, status="assembled", source=source,
+                connection=connection,
+            )
+            for product_id in sorted(product_ids):
+                relevant = [change for change in stock_changes
+                            if change["product_id"] == str(product_id)]
+                if not relevant:
+                    continue
+                journal.record(
+                    "product", product_id, "updated", products[product_id]["name"],
+                    products[product_id]["article"] or "",
+                    before={"stock": relevant[0]["before"]},
+                    after={"stock": relevant[-1]["after"]},
+                    metadata=audit_metadata, actor_id=actor_id,
+                    actor_name=actor_name, status="completed", source=source,
+                    connection=connection,
+                )
+
+        return self.get_sale(sale_id)
 
     def create_sale(
         self,
@@ -686,6 +1152,13 @@ class SalesInventory:
             ).fetchone()
             if sale is None or item is None:
                 raise ReturnConflictError("Продажа не найдена.")
+            if connection.execute(
+                "SELECT 1 FROM erp_order_strap_operations WHERE sale_id=?",
+                (sale_id,),
+            ).fetchone() is not None:
+                raise ReturnConflictError(
+                    "Продажа с заменой ремешка отменяется только целиком."
+                )
             if sale["deleted_at"]:
                 raise ReturnConflictError("Продажа удалена.")
             if sale["cancelled_at"]:
@@ -1113,25 +1586,48 @@ class SalesInventory:
                     "Возвращённую продажу нельзя отменить."
                 )
 
-            assert_products_unlocked(
-                connection,
-                [item["product_id"] for item in items],
-                CancellationConflictError,
-            )
-
-            plan = self._movement_plan_from_connection(connection, sale_id)
+            strap_operation = connection.execute(
+                "SELECT * FROM erp_order_strap_operations WHERE sale_id=?",
+                (sale_id,),
+            ).fetchone()
+            if strap_operation is not None:
+                movement_rows = connection.execute(
+                    "SELECT product_id,SUM(quantity_delta) AS net_delta,"
+                    "COUNT(*) AS movement_count FROM catalog_stock_movements "
+                    "WHERE sale_id=? GROUP BY product_id",
+                    (sale_id,),
+                ).fetchall()
+                plan = {
+                    "safe": bool(movement_rows),
+                    "reversals": [
+                        {
+                            "product_id": int(row["product_id"]),
+                            "quantity": -float(row["net_delta"] or 0),
+                        }
+                        for row in movement_rows
+                        if abs(float(row["net_delta"] or 0)) > 0.000001
+                    ],
+                }
+            else:
+                plan = self._movement_plan_from_connection(connection, sale_id)
             if not plan["safe"]:
                 raise CancellationConflictError(
                     "Не удалось безопасно определить складское движение "
                     "этой продажи. Остаток не изменён, продажа не отменена."
                 )
 
+            assert_products_unlocked(
+                connection,
+                [reversal["product_id"] for reversal in plan["reversals"]],
+                CancellationConflictError,
+            )
+
             item_by_product = {
                 int(item["product_id"]): item for item in items
             }
             for index, reversal in enumerate(plan["reversals"]):
                 product_id = reversal["product_id"]
-                quantity = reversal["quantity"]
+                quantity_delta = reversal["quantity"]
                 product = connection.execute(
                     "SELECT stock FROM catalog_excel_products WHERE id = ?",
                     (product_id,),
@@ -1142,7 +1638,25 @@ class SalesInventory:
                         "Продажа не отменена."
                     )
                 stock_before = float(product["stock"] or 0)
-                stock_after = stock_before + quantity
+                stock_after = stock_before + quantity_delta
+                if stock_after < -0.000001:
+                    if (
+                        strap_operation is not None
+                        and int(product_id) == int(
+                            strap_operation["removed_strap_product_id"] or 0
+                        )
+                    ):
+                        raise CancellationConflictError(
+                            "Снятый ремешок уже использован: для отмены требуется {}, "
+                            "доступно {}. Требуется ручное разрешение.".format(
+                                format_number(abs(quantity_delta)),
+                                format_number(stock_before),
+                            )
+                        )
+                    raise CancellationConflictError(
+                        "Отмена создаст отрицательный остаток товара. "
+                        "Требуется ручное разрешение."
+                    )
                 connection.execute(
                     "UPDATE catalog_excel_products SET stock = ?, "
                     "stock_source = 'sale_cancel', updated_at = ? WHERE id = ?",
@@ -1157,7 +1671,7 @@ class SalesInventory:
                     "idempotency_key, source, user_name, comment, created_at"
                     ") VALUES (?, ?, 'cancellation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        str(uuid.uuid4()), product_id, quantity, stock_before,
+                        str(uuid.uuid4()), product_id, quantity_delta, stock_before,
                         stock_after, sale_id, item["id"], movement_key,
                         sale["source"], user_name or None,
                         "Отмена продажи №{}: {}{}".format(
@@ -1200,6 +1714,14 @@ class SalesInventory:
                 raise CancellationConflictError(
                     "Продажа уже была изменена другим запросом."
                 )
+            if strap_operation is not None:
+                connection.execute(
+                    "UPDATE erp_order_strap_operations SET "
+                    "event_type='order_strap_replacement_cancelled',"
+                    "status='cancelled',cancelled_at=?,cancelled_by=? "
+                    "WHERE id=? AND status='completed'",
+                    (cancelled_at, user_name or None, strap_operation["id"]),
+                )
             if failure_hook:
                 failure_hook(connection)
             action = (
@@ -1216,6 +1738,13 @@ class SalesInventory:
                 metadata={
                     "number": self._sale_number(sale), "reason": reason,
                     "text_snapshot": comment,
+                    "event_type": (
+                        "order_strap_replacement_cancelled"
+                        if strap_operation is not None else "sale_cancelled"
+                    ),
+                    "operation_id": (
+                        strap_operation["id"] if strap_operation is not None else ""
+                    ),
                 }, actor_id=(audit_actor or {}).get("actor_id") or user_name,
                 actor_name=(audit_actor or {}).get("actor_name") or user_name,
                 actor_type=(audit_actor or {}).get("actor_type") or (
@@ -1224,6 +1753,24 @@ class SalesInventory:
                 status="refusal" if action == "refused" else "cancelled",
                 source=sale["source"], connection=connection,
             )
+            if strap_operation is not None:
+                AuditJournal(self.database).record(
+                    "order", strap_operation["external_order_id"], "cancelled",
+                    "Заказ #{}".format(strap_operation["external_order_id"]),
+                    sale["source"],
+                    metadata={
+                        "number": strap_operation["external_order_id"],
+                        "event_type": "order_strap_replacement_cancelled",
+                        "operation_id": strap_operation["id"],
+                        "sale_id": sale_id,
+                        "text_snapshot": "Переукомплектация и продажа отменены зеркально.",
+                    },
+                    actor_id=(audit_actor or {}).get("actor_id") or user_name,
+                    actor_name=(audit_actor or {}).get("actor_name") or user_name,
+                    actor_type=(audit_actor or {}).get("actor_type") or "user",
+                    status="confirmed", source=sale["source"],
+                    connection=connection,
+                )
 
         return self.get_sale(sale_id)
 
@@ -1435,9 +1982,31 @@ class SalesInventory:
         grouped = {sale_id: [] for sale_id in sale_ids}
         for row in rows:
             grouped.setdefault(str(row["sale_id"]), []).append(row)
+        strap_sale_ids = {
+            str(row["sale_id"])
+            for row in connection.execute(
+                "SELECT sale_id FROM erp_order_strap_operations WHERE sale_id IN ({})"
+                .format(placeholders),
+                sale_ids,
+            ).fetchall()
+        }
         return {
-            sale_id: cls._movement_plan_from_rows(grouped.get(sale_id, []))
+            sale_id: (
+                cls._strap_movement_plan_from_rows(grouped.get(sale_id, []))
+                if sale_id in strap_sale_ids
+                else cls._movement_plan_from_rows(grouped.get(sale_id, []))
+            )
             for sale_id in sale_ids
+        }
+
+    @staticmethod
+    def _strap_movement_plan_from_rows(rows):
+        net = [float(row["net_delta"] or 0) for row in rows]
+        return {
+            "safe": bool(rows),
+            "reversals": [],
+            "quantity": sum(abs(value) for value in net if value < -0.000001),
+            "movement_count": sum(int(row["movement_count"] or 0) for row in rows),
         }
 
     @classmethod
