@@ -48,7 +48,7 @@
     },
     {
       "file": "app/schema_migrations.py",
-      "sha256": "3e52ca7036766140cd6eabd2cf15846c36f1bc7bd100244b8483396ba8d752a7",
+      "sha256": "c15e5f9c7ce4ebaae112e5ee1c9ce2d0b7326a6eee599e6baebf169a9501b08c",
       "owner": "migration-platform"
     },
     {

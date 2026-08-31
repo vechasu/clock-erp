@@ -449,7 +449,10 @@ def business_snapshot(connection):
     result = {}
     for label, table, condition in BUSINESS_TABLES:
         if table not in tables:
-            result[label] = None
+            # Missing business tables contain zero rows. Treating that as the
+            # same aggregate as a newly created empty table lets additive
+            # migrations pass the preservation gate without masking lost rows.
+            result[label] = 0
             continue
         statement = "SELECT COUNT(*) FROM {}".format(table)
         if condition:

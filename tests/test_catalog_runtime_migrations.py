@@ -37,6 +37,11 @@ class CatalogRuntimeMigrationTest(unittest.TestCase):
     def migrate(self):
         return apply_migrations(self.database, app_commit="catalog-runtime-test")
 
+    def test_missing_business_table_counts_as_zero_for_additive_migration(self):
+        with sqlite3.connect(":memory:") as connection:
+            snapshot = business_snapshot(connection)
+        self.assertEqual(snapshot["strap_operations"], 0)
+
     def schema_hash(self):
         with sqlite3.connect(str(self.database)) as connection:
             return schema_fingerprint(connection)
