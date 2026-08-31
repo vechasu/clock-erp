@@ -1678,7 +1678,15 @@ def wildberries_orders_sync_api():
             token=os.getenv("WB_API_TOKEN"),
             base_url=os.getenv("WB_API_BASE_URL", WB_DEFAULT_BASE_URL),
         )
-        result = synchronize_wildberries_orders(client, OrdersSnapshotStore())
+        store = OrdersSnapshotStore()
+        result = synchronize_wildberries_orders(client, store)
+        assembly_rows = build_wb_fbs_assembly_rows(store=store)
+        result["matched"] = sum(
+            1 for row in assembly_rows if row["matching_status"] == "matched"
+        )
+        result["unmatched"] = sum(
+            1 for row in assembly_rows if row["matching_status"] != "matched"
+        )
         return jsonify({"ok": True, "result": result})
     except WildberriesReadOnlyError as error:
         app.logger.warning("Wildberries order sync unavailable code=%s", error.code)
@@ -2188,6 +2196,9 @@ def bitrix_order_product_identity(product):
         "article": str(first_order_product_value(
             product, "article", "ARTICLE", "vendorCode", "vendor_code"
         )).strip(),
+        "nm_id": str(first_order_product_value(
+            product, "nm_id", "nmId", "nmID"
+        )).strip(),
     }
 
 
@@ -2268,23 +2279,37 @@ def build_order_product_mapping_context(
         if isinstance(row, dict) and row.get("product_id") not in (None, "")
     ]
     automatic_ids = []
+    automatic_methods = []
     catalog.database.initialize()
     with catalog.database.connect() as connection:
         for identity, saved in zip(identities, saved_rows):
             if isinstance(saved, dict) and saved.get("product_id"):
                 automatic_ids.append(None)
+                automatic_methods.append("")
                 continue
             attempts = []
             if identity["source"] == "wildberries":
-                if identity["barcode"]:
-                    attempts.append((
-                        ["lower(trim(COALESCE(cp.barcode, ''))) = lower(?)"],
-                        [identity["barcode"]],
-                    ))
                 if identity["article"]:
                     attempts.append((
                         ["lower(trim(COALESCE(p.excel_article, ''))) = lower(?)"],
                         [identity["article"]],
+                        "vendor_code",
+                    ))
+                if identity["barcode"]:
+                    attempts.append((
+                        ["lower(trim(COALESCE(cp.barcode, ''))) = lower(?)"],
+                        [identity["barcode"]],
+                        "barcode",
+                    ))
+                if identity["nm_id"]:
+                    attempts.append((
+                        [
+                            "(lower(trim(COALESCE(cp.external_source, ''))) = "
+                            "'wildberries' AND "
+                            "trim(COALESCE(cp.external_product_id, '')) = ?)"
+                        ],
+                        [identity["nm_id"]],
+                        "nm_id",
                     ))
             else:
                 clauses = []
@@ -2303,12 +2328,14 @@ def build_order_product_mapping_context(
                     )
                     parameters.append(xml_id)
                 if clauses:
-                    attempts.append((clauses, parameters))
+                    attempts.append((clauses, parameters, "bitrix_product_id"))
             if not attempts:
                 automatic_ids.append(None)
+                automatic_methods.append("")
                 continue
             rows = []
-            for clauses, parameters in attempts:
+            automatic_method = ""
+            for clauses, parameters, method in attempts:
                 rows = connection.execute(
                     "SELECT DISTINCT p.id FROM catalog_excel_products p "
                     "LEFT JOIN catalog_products cp ON cp.id = p.bitrix_catalog_product_id WHERE "
@@ -2317,9 +2344,13 @@ def build_order_product_mapping_context(
                     parameters,
                 ).fetchall()
                 if rows:
+                    automatic_method = method
                     break
             automatic_id = rows[0]["id"] if len(rows) == 1 else None
             automatic_ids.append(automatic_id)
+            automatic_methods.append(
+                automatic_method if automatic_id is not None else ""
+            )
             if automatic_id is not None:
                 product_ids.append(automatic_id)
     products_by_id = catalog.products_by_ids(
@@ -2327,8 +2358,8 @@ def build_order_product_mapping_context(
     )
     result = {}
 
-    for product, identity, saved, automatic_id in zip(
-        products, identities, saved_rows, automatic_ids
+    for product, identity, saved, automatic_id, automatic_method in zip(
+        products, identities, saved_rows, automatic_ids, automatic_methods
     ):
         key = identity["bitrix_product_id"]
         context = {
@@ -2376,10 +2407,8 @@ def build_order_product_mapping_context(
                     "state_label": "Сопоставлен",
                     "product": selected,
                     "mapping_method": (
-                        "manual" if isinstance(saved, dict) else (
-                            "wb_barcode_or_article" if identity["source"] == "wildberries"
-                            else "bitrix_product_id"
-                        )
+                        "manual" if isinstance(saved, dict)
+                        else automatic_method
                     ),
                 })
         mapping_key = order_product_mapping_key(product)
@@ -9928,16 +9957,20 @@ def respond_to_sales_action(
     notice="success",
     status_code=200,
     form=None,
+    data=None,
 ):
     if (
         request.headers.get("X-Requested-With")
         == "XMLHttpRequest"
     ):
-        return jsonify(
+        response = dict(
             ok=notice != "error",
             message=message,
             notice=notice,
-        ), status_code
+        )
+        if data is not None:
+            response["data"] = data
+        return jsonify(response), status_code
 
     return redirect_to_sales(
         message,
@@ -10150,19 +10183,21 @@ def manual_sale_add():
 def manual_sale_update():
     require_csrf_when_authenticated()
 
+    form_payload = normalize_sale_edit_aliases(request.form.to_dict())
+    requested_edits = requested_sale_edit_values(form_payload)
     managed_sale_id = (request.form.get("sale_id") or "").strip()
     managed_sale = SalesInventory().get_sale(managed_sale_id)
     if managed_sale is not None:
         try:
             validate_performed_sale_update(
                 managed_sale,
-                request.form.to_dict(),
+                form_payload,
             )
             normalized = normalize_api_sale_payload(
-                request.form.to_dict(),
+                form_payload,
                 existing=managed_sale,
             )
-            SalesInventory().update_sale(
+            updated = SalesInventory().update_sale(
                 managed_sale_id,
                 normalized,
                 quantity=normalized["quantity"],
@@ -10170,6 +10205,8 @@ def manual_sale_update():
                 user_name=current_sales_user_name(),
                 idempotency_key=request.headers.get("Idempotency-Key") or "",
             )
+            verify_sale_edit_persisted(updated, requested_edits)
+            refreshed = refreshed_api_sale(managed_sale_id, requested_edits)
         except (ValueError, SalesInventoryError) as error:
             return respond_to_sales_action(
                 str(error), notice="error", status_code=409
@@ -10182,7 +10219,8 @@ def manual_sale_update():
                 status_code=500,
             )
         return respond_to_sales_action(
-            "Продажа №{} сохранена".format(managed_sale_id)
+            "Продажа №{} сохранена".format(managed_sale_id),
+            data=serialize_api_sale(refreshed),
         )
 
     sale_id = (request.form.get("sale_id") or "").strip()
@@ -10427,8 +10465,15 @@ def manual_sale_update():
     if not managed_sale_updated:
         save_manual_sales(sales)
 
+    try:
+        refreshed = refreshed_api_sale(sale_id, requested_edits)
+    except SalesInventoryError as error:
+        return respond_to_sales_action(
+            str(error), notice="error", status_code=500
+        )
     return respond_to_sales_action(
         "Продажа №{} сохранена".format(sale_id),
+        data=serialize_api_sale(refreshed),
     )
 
 
@@ -10599,6 +10644,8 @@ def sale_status_update():
 def automatic_sale_update():
     require_csrf_when_authenticated()
 
+    form_payload = normalize_sale_edit_aliases(request.form.to_dict())
+    requested_edits = requested_sale_edit_values(form_payload)
     managed_operation_id = (request.form.get("operation_id") or "").strip()
     managed_record = find_api_sale(managed_operation_id)
     if (
@@ -10606,7 +10653,7 @@ def automatic_sale_update():
         and managed_record.get("sale_type") == "automatic"
     ):
         try:
-            payload = request.form.to_dict()
+            payload = form_payload
             current_protected = dict(managed_record)
             current_protected["quantity"] = managed_record.get(
                 "quantity_value", managed_record.get("quantity")
@@ -10623,12 +10670,16 @@ def automatic_sale_update():
             current.update(normalized)
             overrides[managed_operation_id] = current
             save_automatic_sales_overrides(overrides)
+            refreshed = refreshed_api_sale(
+                managed_operation_id, requested_edits
+            )
         except (ValueError, SalesInventoryError) as error:
             return respond_to_sales_action(
                 str(error), notice="error", status_code=409
             )
         return respond_to_sales_action(
-            "Продажа №{} сохранена".format(managed_operation_id)
+            "Продажа №{} сохранена".format(managed_operation_id),
+            data=serialize_api_sale(refreshed),
         )
 
     operation_id = (
@@ -10820,8 +10871,15 @@ def automatic_sale_update():
 
     save_automatic_sales_overrides(overrides)
 
+    try:
+        refreshed = refreshed_api_sale(operation_id, requested_edits)
+    except SalesInventoryError as error:
+        return respond_to_sales_action(
+            str(error), notice="error", status_code=500
+        )
     return respond_to_sales_action(
         "Продажа №{} сохранена".format(operation_id),
+        data=serialize_api_sale(refreshed),
     )
 
 
@@ -12905,9 +12963,86 @@ def build_legacy_sales_page():
     )
 
 
+def build_wb_fbs_assembly_rows(store=None, catalog=None):
+    """Build the Sales assembly queue without creating completed sales."""
+    store = store or OrdersSnapshotStore()
+    catalog = catalog or SharedCatalog()
+    state = store.query({
+        "source": "wildberries",
+        "page_size": "all",
+    })
+    rows = []
+    for order in state["rows"]:
+        order_id = str(order.get("id") or "").strip()
+        products = order.get("products") or []
+        mappings = load_order_product_mappings(
+            order_id, database=catalog.database
+        )
+        context = build_order_product_mapping_context(
+            products,
+            mappings=mappings,
+            catalog=catalog,
+        )
+        prepared_products = []
+        for product in products:
+            mapping = context.get(order_product_mapping_key(product)) or {}
+            matched_product = mapping.get("product") or {}
+            prepared_products.append({
+                "name": (
+                    matched_product.get("name")
+                    or product.get("name")
+                    or product.get("article")
+                    or "Товар Wildberries"
+                ),
+                "vendor_code": product.get("article") or "",
+                "barcode": product.get("barcode") or product.get("sku") or "",
+                "nm_id": product.get("nm_id"),
+                "chrt_id": product.get("chrt_id"),
+                "quantity": product.get("quantity") or 1,
+                "erp_product_id": matched_product.get("id"),
+                "matching_status": (
+                    "matched" if mapping.get("state") == "mapped"
+                    else "unmatched"
+                ),
+                "mapping_method": mapping.get("mapping_method") or "",
+            })
+        matching_status = (
+            "matched"
+            if prepared_products
+            and all(item["matching_status"] == "matched" for item in prepared_products)
+            else "unmatched"
+        )
+        rows.append({
+            "id": order_id,
+            "wb_order_id": str(order.get("wb_order_id") or ""),
+            "supply_id": str(order.get("supply_id") or ""),
+            "created_at": order.get("created_at") or order.get("date") or "",
+            "warehouse_id": order.get("warehouse_id"),
+            "office_id": order.get("office_id"),
+            "status": order.get("status_name") or order.get("supplier_status") or "new",
+            "matching_status": matching_status,
+            "products": prepared_products,
+            "href": url_for(
+                "wildberries_order_page",
+                wb_order_id=order.get("wb_order_id"),
+                source="wildberries",
+            ),
+        })
+    return rows
+
+
 @app.route("/sales")
 @app.route("/app/sales")
 def sales_page():
+    wb_assembly_mode = request.args.get("view") == "assembly"
+    wb_assembly_error = ""
+    wb_assembly_orders = []
+    if wb_assembly_mode:
+        try:
+            wb_assembly_orders = build_wb_fbs_assembly_rows()
+        except (OSError, sqlite3.Error, RuntimeError, ValueError):
+            app.logger.exception("Wildberries assembly queue unavailable")
+            wb_assembly_error = "Не удалось загрузить FBS-заказы Wildberries."
     category_groups = SharedCatalog().category_compatibility_groups()
     all_warehouse_items = get_warehouse_items()
     all_sales = build_sales_report_records(
@@ -13122,6 +13257,10 @@ def sales_page():
         pagination_e2e=(
             app.testing and request.args.get("pagination_e2e") == "1"
         ),
+        wb_assembly_mode=wb_assembly_mode,
+        wb_assembly_orders=wb_assembly_orders,
+        wb_assembly_error=wb_assembly_error,
+        wb_assembly_url=url_for("sales_page", view="assembly"),
     )
 
 
@@ -21493,6 +21632,54 @@ API_SALE_TEXT_FIELDS = (
 )
 
 
+def normalize_sale_edit_aliases(payload):
+    """Map public edit aliases to the sale's own persisted metadata fields."""
+    normalized = dict(payload or {})
+    if "track_number" not in normalized:
+        if "tracking" in normalized:
+            normalized["track_number"] = normalized.get("tracking")
+        elif "tracking_number" in normalized:
+            normalized["track_number"] = normalized.get("tracking_number")
+    if "note" not in normalized and "comment" in normalized:
+        normalized["note"] = normalized.get("comment")
+    return normalized
+
+
+def requested_sale_edit_values(payload):
+    """Return only explicitly requested mutable text values for verification."""
+    payload = normalize_sale_edit_aliases(payload)
+    requested = {}
+    for field in ("track_number", "invoice_number", "note"):
+        if field in payload:
+            requested[field] = str(payload.get(field) or "").strip()
+    return requested
+
+
+def verify_sale_edit_persisted(sale, requested):
+    """Reject a success response unless storage reads back every edited value."""
+    if not isinstance(sale, dict):
+        raise SalesInventoryError(
+            "Изменения не подтверждены: продажа не прочитана после сохранения."
+        )
+    mismatched = [
+        field for field, expected in requested.items()
+        if str(sale.get(field) or "").strip() != expected
+    ]
+    if mismatched:
+        raise SalesInventoryError(
+            "Изменения не подтверждены после сохранения: {}."
+            .format(", ".join(mismatched))
+        )
+
+
+def refreshed_api_sale(sale_id, requested=None):
+    """Read through the report cache after a write and verify edited fields."""
+    _cached_api_sales_records.cache_clear()
+    refreshed = find_api_sale(sale_id)
+    verify_sale_edit_persisted(refreshed, requested or {})
+    return refreshed
+
+
 def serialize_api_sale(sale):
     status_presentation = get_sale_status_presentation(sale)
     result = {
@@ -21653,6 +21840,7 @@ def api_sale_catalog_items():
 
 
 def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
+    payload = normalize_sale_edit_aliases(payload)
     existing = existing if isinstance(existing, dict) else {}
     created_at = (
         str(existing.get("created_at") or "")
@@ -22136,7 +22324,8 @@ def api_sale_resource(sale_id):
         return api_success({"id": str(sale_id), "deleted": True})
 
     try:
-        payload = api_json_payload()
+        payload = normalize_sale_edit_aliases(api_json_payload())
+        requested_edits = requested_sale_edit_values(payload)
         current_protected = dict(record)
         current_protected["quantity"] = record.get(
             "quantity_value", record.get("quantity")
@@ -22164,7 +22353,7 @@ def api_sale_resource(sale_id):
             normalized["inventory_managed"] = True
             normalized["automatic_stock_applied"] = True
             try:
-                SalesInventory().update_sale(
+                updated_sale = SalesInventory().update_sale(
                     sale_id,
                     normalized,
                     quantity=normalized["quantity"],
@@ -22175,6 +22364,7 @@ def api_sale_resource(sale_id):
                         or payload.get("idempotency_key")
                     ),
                 )
+                verify_sale_edit_persisted(updated_sale, requested_edits)
             except SalesInventoryError as error:
                 return api_error("SALE_NOT_EDITABLE", str(error), 409)
             except Exception:
@@ -22197,7 +22387,10 @@ def api_sale_resource(sale_id):
         save_automatic_sales_overrides(overrides)
     else:
         return api_error("SALE_SOURCE_UNSUPPORTED", "Источник продажи не поддержан.", 409)
-    updated = find_api_sale(sale_id)
+    try:
+        updated = refreshed_api_sale(sale_id, requested_edits)
+    except SalesInventoryError as error:
+        return api_error("SALE_UPDATE_NOT_APPLIED", str(error), 500)
     return api_success(serialize_api_sale(updated or {**record, **normalized}))
 
 

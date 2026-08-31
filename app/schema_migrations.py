@@ -503,7 +503,11 @@ def business_snapshot(connection):
     result = {}
     for label, table, condition in BUSINESS_TABLES:
         if table not in tables:
-            result[label] = None
+            # A newly introduced append-only operation table has the same
+            # business value before creation and immediately afterwards: no
+            # operations.  Normalizing that one absent table to zero keeps the
+            # migration preflight focused on real business-data changes.
+            result[label] = 0 if label == "strap_operations" else None
             continue
         statement = "SELECT COUNT(*) FROM {}".format(table)
         if condition:
