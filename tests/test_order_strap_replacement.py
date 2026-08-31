@@ -205,6 +205,32 @@ class OrderStrapReplacementTest(unittest.TestCase):
         ):
             self.conduct()
 
+    def test_server_rejects_wrong_product_types(self):
+        before = self.stocks()
+        cases = (
+            (
+                self.replacement(
+                    "none", base_product_id=self.removed["id"],
+                    removed_strap_product_id=None,
+                ),
+                "только часы",
+            ),
+            (
+                self.replacement(installed_strap_product_id=self.ordered["id"]),
+                "только ремешок или комплектующую",
+            ),
+            (
+                self.replacement(removed_strap_product_id=self.ordered["id"]),
+                "только ремешок или комплектующую",
+            ),
+        )
+        for replacement, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(SalesInventoryError, message):
+                    self.conduct(replacement, key="type-{}".format(message))
+                self.assertEqual(self.stocks(), before)
+                self.assertEqual(self.inventory.list_sales(), [])
+
     def test_stock_change_after_form_open_is_rechecked_in_transaction(self):
         selected_when_opened = self.catalog.get_product(self.installed["id"])
         self.assertEqual(selected_when_opened["stock"], 1)
@@ -349,6 +375,13 @@ class OrderStrapReplacementTest(unittest.TestCase):
         self.assertIn("По каталогу", template)
         self.assertIn("После проведения", template)
         self.assertIn("Number(item.stock||0)<=0", template)
+        self.assertIn("product_kind:picker.dataset.productKind", template)
+        self.assertIn("Часы-основа: не выбрано", template)
+        self.assertIn("Устанавливаемый ремешок: не выбрано", template)
+        self.assertIn("updateStrapSubmitState", template)
+        self.assertIn(
+            "if(!response.ok)throw new Error(payload?.message", template
+        )
 
     def test_migration_preserves_existing_business_rows(self):
         before = self.stocks()

@@ -20,6 +20,48 @@ class CatalogReferenceError(ValueError):
     pass
 
 
+PRODUCT_KIND_WATCH = "watch"
+PRODUCT_KIND_STRAP_COMPONENT = "strap_component"
+PRODUCT_KINDS = {PRODUCT_KIND_WATCH, PRODUCT_KIND_STRAP_COMPONENT}
+
+
+def normalize_product_kind(value):
+    kind = str(value or "").strip().casefold()
+    if kind and kind not in PRODUCT_KINDS:
+        raise ValueError("Неизвестный тип товара каталога.")
+    return kind
+
+
+def product_matches_kind(product, kind):
+    """Apply the strap-operation category contract in Python validations."""
+    kind = normalize_product_kind(kind)
+    if not kind:
+        return True
+    category = catalog_search_key(dict(product or {}).get("category"))
+    if kind == PRODUCT_KIND_WATCH:
+        return category in {"часы", "наручные часы", "watches"}
+    return (
+        "ремеш" in category
+        or category == "ремни"
+        or "комплектующ" in category
+        or "аксессуар" in category
+    )
+
+
+def product_kind_sql(category_alias="c", kind=""):
+    """Return a constant SQL predicate compatible with production SQLite."""
+    kind = normalize_product_kind(kind)
+    category = "COALESCE({}.normalized_name, '')".format(category_alias)
+    if kind == PRODUCT_KIND_WATCH:
+        return "{} IN ('часы','наручные часы','watches')".format(category)
+    if kind == PRODUCT_KIND_STRAP_COMPONENT:
+        return (
+            "({0} LIKE '%ремеш%' OR {0} = 'ремни' OR "
+            "{0} LIKE '%комплектующ%' OR {0} LIKE '%аксессуар%')"
+        ).format(category)
+    return "1 = 1"
+
+
 def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -284,11 +326,14 @@ class SharedCatalog:
         limit=50,
         include_archived=False,
         available_for_sale=False,
+        product_kind="",
     ):
         self.database.initialize()
         where = []
         if not include_archived:
             where.append("b.active = 1")
+        if product_kind:
+            where.append(product_kind_sql("c", product_kind))
         query = catalog_search_key(query)
         query_filter = (
             " WHERE catalog_search_key(normalized_name) "
@@ -300,13 +345,15 @@ class SharedCatalog:
             if query else (max(1, min(int(limit), 200)),)
         )
         where_sql = " WHERE " + " AND ".join(where) if where else ""
-        product_availability_sql = (
-            " AND p.stock > 0 AND p.deleted_at IS NULL AND "
-            + unlocked_product_sql("p")
-            if available_for_sale else ""
-        )
+        product_availability_sql = ""
+        if available_for_sale:
+            product_availability_sql += (
+                " AND p.stock > 0 AND p.deleted_at IS NULL AND "
+                + unlocked_product_sql("p")
+            )
         available_having_sql = (
-            " HAVING COUNT(p.id) > 0" if available_for_sale else ""
+            " HAVING COUNT(p.id) > 0"
+            if available_for_sale or product_kind else ""
         )
         with self.database.connect() as connection:
             if query:
@@ -319,6 +366,7 @@ class SharedCatalog:
                 "FROM erp_brands b LEFT JOIN catalog_excel_products p "
                 "ON p.brand_id = b.id AND p.active = 1 "
                 + product_availability_sql
+                + " LEFT JOIN erp_categories c ON c.id = p.category_id "
                 + where_sql
                 + " GROUP BY b.id"
                 + available_having_sql
@@ -328,8 +376,11 @@ class SharedCatalog:
                 "COUNT(p.id) AS product_count, "
                 "COALESCE(SUM(p.stock), 0) AS stock_total "
                 "FROM catalog_excel_products p "
+                "LEFT JOIN erp_categories c ON c.id = p.category_id "
                 "WHERE p.active = 1 AND p.brand_id IS NULL"
                 + product_availability_sql
+                + (" AND " + product_kind_sql("c", product_kind)
+                   if product_kind else "")
                 + " GROUP BY p.brand_id"
                 + available_having_sql
                 + ") AS brand_options "
@@ -1248,6 +1299,7 @@ class SharedCatalog:
         limit=50,
         only_used_by_brand=False,
         available_for_sale=False,
+        product_kind="",
     ):
         """Return global categories, optionally limited to a brand's products."""
         self.database.initialize()
@@ -1259,14 +1311,17 @@ class SharedCatalog:
                 "catalog_search_key(c.normalized_name) LIKE ? ESCAPE '\\'"
             )
             parameters.append(catalog_prefix_pattern(query))
+        if product_kind:
+            where.append(product_kind_sql("c", product_kind))
         selected_brand_id = (
             int(brand_id) if brand_id not in (None, "") else None
         )
-        product_availability_sql = (
-            " AND p.stock > 0 AND p.deleted_at IS NULL AND "
-            + unlocked_product_sql("p")
-            if available_for_sale else ""
-        )
+        product_availability_sql = ""
+        if available_for_sale:
+            product_availability_sql += (
+                " AND p.stock > 0 AND p.deleted_at IS NULL AND "
+                + unlocked_product_sql("p")
+            )
         brand_category_mapping_sql = (
             "" if available_for_sale else
             " OR EXISTS ("
@@ -1317,6 +1372,7 @@ class SharedCatalog:
                 "FROM catalog_excel_products p "
                 "WHERE p.active = 1 AND p.category_id IS NULL "
                 + product_availability_sql
+                + (" AND 0 = 1 " if product_kind else "")
                 + "GROUP BY p.category_id "
                 "HAVING COUNT(p.id) > 0 "
                 "AND (? = '' OR 'без категории' LIKE ? ESCAPE '\\')) "
@@ -1476,6 +1532,7 @@ class SharedCatalog:
         include_archived=False,
         in_stock=False,
         include_inventory_locked=False,
+        product_kind="",
     ):
         where = []
         parameters = []
@@ -1498,6 +1555,8 @@ class SharedCatalog:
                 parameters.append(int(category_id))
         if in_stock:
             where.append("p.stock > 0")
+        if product_kind:
+            where.append(product_kind_sql("c", product_kind))
         query = catalog_search_key(query)
         if query:
             where.append(
@@ -1518,6 +1577,7 @@ class SharedCatalog:
         include_archived=False,
         in_stock=False,
         include_inventory_locked=False,
+        product_kind="",
     ):
         self.database.initialize()
         where_sql, parameters = self._product_filter_sql(
@@ -1527,6 +1587,7 @@ class SharedCatalog:
             include_archived=include_archived,
             in_stock=in_stock,
             include_inventory_locked=include_inventory_locked,
+            product_kind=product_kind,
         )
         with self.database.connect() as connection:
             if catalog_search_key(query):
@@ -1549,6 +1610,7 @@ class SharedCatalog:
         include_archived=False,
         in_stock=False,
         include_inventory_locked=False,
+        product_kind="",
     ):
         self.database.initialize()
         where_sql, parameters = self._product_filter_sql(
@@ -1558,6 +1620,7 @@ class SharedCatalog:
             include_archived=include_archived,
             in_stock=in_stock,
             include_inventory_locked=include_inventory_locked,
+            product_kind=product_kind,
         )
         parameters.append(max(1, min(int(limit), 200)))
         with self.database.connect() as connection:
