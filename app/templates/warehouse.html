@@ -459,7 +459,7 @@
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
-        .warehouse-table-toolbar {
+        .warehouse-collection-bulk-toolbar {
             position: sticky;
             left: 0;
             display: flex;
@@ -4702,7 +4702,7 @@
                 data-metric-units="{{ product_metrics.units }}"
             >
             <div id="warehouseTableScrollTop" class="warehouse-table-scroll-top" aria-label="Горизонтальная прокрутка таблицы" tabindex="0" hidden><div class="warehouse-table-scroll-top-inner"></div></div>
-            <div id="productCollectionBulkBar" class="warehouse-table-toolbar" hidden>
+            <div id="productCollectionBulkBar" class="warehouse-collection-bulk-toolbar" hidden>
                 <strong id="productCollectionBulkCount">Выбрано: 0</strong>
                 <select id="productCollectionBulkTarget" aria-label="Подборка для массового действия"><option value="">Выберите подборку</option>{% for collection in collections %}<option value="{{ collection.id }}">{{ collection.name }}</option>{% endfor %}</select>
                 <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="add">Добавить в подборку</button>

@@ -5112,9 +5112,15 @@ def warehouse_page():
     }
     catalog_items = build_excel_warehouse_items(catalog["items"])
     items = get_excel_warehouse_items(catalog=catalog)
-    collections_service = ProductCollections(product_catalog.database)
-    product_collection_map = collections_service.product_collections(
-        [item["id"] for item in items]
+    product_database = getattr(product_catalog, "database", None)
+    collections_service = (
+        ProductCollections(product_database)
+        if isinstance(product_database, CatalogDatabase)
+        else None
+    )
+    product_collection_map = (
+        collections_service.product_collections([item["id"] for item in items])
+        if collections_service is not None else {}
     )
     for item in items:
         item["collections"] = product_collection_map.get(item["id"], [])
@@ -5214,7 +5220,10 @@ def warehouse_page():
             selected_category_id=selected_category_id,
             selected_brand_id=selected_brand_id,
             selected_collection_id=selected_collection_id,
-            collections=collections_service.list_collections(),
+            collections=(
+                collections_service.list_collections()
+                if collections_service is not None else []
+            ),
             selected_cell=selected_cell,
             created_date_from=created_date_from,
             created_date_to=created_date_to,
