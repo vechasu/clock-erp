@@ -40,6 +40,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
             "phone": "+7 900 000-00-00",
             "order_total": 12990,
             "created_at": "2026-08-21 10:30",
+            "source_name": "Интернет-магазин",
             "products": [],
         }
         detail = dict(summary)
@@ -255,8 +256,13 @@ class OrdersUiRedesignTest(unittest.TestCase):
         header = self.source.split('class="card-head order-card-head"', 1)[1].split(
             '</header>', 1
         )[0]
+        self.assertIn('class="order-card-top"', header)
         self.assertIn('class="order-card-summary"', header)
-        self.assertIn('class="actions order-card-actions"', header)
+        self.assertIn('class="order-card-total"', header)
+        self.assertIn('class="order-control-panel"', header)
+        self.assertIn('class="order-control-actions"', header)
+        self.assertIn('Статус заказа', header)
+        self.assertIn('Сумма заказа', header)
         self.assertIn('class="sale-completed-badge"', header)
         self.assertNotIn('class="button button-secondary" aria-label="Продажа проведена"', header)
         self.assertEqual(header.count('data-order-actions-trigger'), 1)
@@ -274,11 +280,22 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn('data-status-autosave', header)
         self.assertIn('data-order-sale-action', header)
 
-    def test_order_lifecycle_summary_and_lazy_timeline_are_available(self):
-        self.assertIn('class="order-lifecycle-summary"', self.source)
+        html = self.render_selected_order()
+        rendered_header = html.split('class="card-head order-card-head"', 1)[1].split(
+            '</header>', 1
+        )[0]
+        self.assertIn('class="badge badge-default source-badge">Интернет-магазин', rendered_header)
+
+    def test_order_lifecycle_is_collapsed_inline_and_lazy_loaded(self):
         self.assertIn('data-open-order-history', self.source)
-        self.assertIn('id="orderLifecycleModal"', self.source)
+        self.assertIn('aria-expanded="false"', self.source)
+        self.assertIn('id="orderLifecyclePanel"', self.source)
+        self.assertIn('class="order-lifecycle-inline"', self.source)
+        self.assertIn('data-order-id="{{ detail_id }}" hidden', self.source)
+        self.assertNotIn('class="order-lifecycle-summary"', self.source)
+        self.assertNotIn('id="orderLifecycleModal"', self.source)
         self.assertIn('/lifecycle`', self.source)
+        self.assertIn("historyPanel.hidden=!opening", self.source)
         self.assertIn('event.elapsed_display', self.source)
         self.assertIn('.order-lifecycle-timeline', self.source)
 
@@ -289,7 +306,22 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn("position: fixed", self.source)
         self.assertIn("@media (max-width: 900px)", self.source)
         self.assertIn("@media (max-width: 560px)", self.source)
-        self.assertIn("grid-template-columns: 1fr 1fr", self.source)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)", self.source)
+
+    def test_order_header_responsive_control_hierarchy(self):
+        self.assertIn("flex: 0 0 235px", self.source)
+        self.assertIn("max-width: 250px", self.source)
+        self.assertIn("flex: 1 1 100%", self.source)
+        self.assertIn("grid-column: 1 / -1", self.source)
+        header = self.source.split('class="card-head order-card-head"', 1)[1].split(
+            '</header>', 1
+        )[0]
+        positions = [
+            header.index('data-open-order-history'),
+            header.index('data-order-actions-trigger'),
+            header.index('data-order-sale-action'),
+        ]
+        self.assertEqual(positions, sorted(positions))
 
     def test_order_task_block_exposes_context_create_and_safe_delete_ui(self):
         script = (PROJECT_ROOT / "app/static/js/entity-tasks.js").read_text(encoding="utf-8")

@@ -155,12 +155,6 @@ details.more summary::-webkit-details-marker { display:none; }
 .back-list { display:none; }
 .order-sale-modal { position:fixed; inset:0; z-index:1000; display:none; place-items:center; padding:20px; background:rgba(15,23,42,.56); }
 .order-sale-modal.is-open { display:grid; }
-.order-lifecycle-modal { position:fixed; inset:0; z-index:1100; display:none; place-items:center; padding:20px; background:rgba(15,23,42,.56); }
-.order-lifecycle-modal.is-open { display:grid; }
-.order-lifecycle-dialog { width:min(650px,100%); max-height:calc(100vh - 40px); overflow:auto; border-radius:10px; background:var(--theme-surface,#fff); box-shadow:0 25px 70px rgba(0,0,0,.25); }
-.order-lifecycle-dialog>header { display:flex; justify-content:space-between; gap:16px; padding:16px 18px; border-bottom:1px solid var(--line); }
-.order-lifecycle-dialog h2,.order-lifecycle-dialog h3,.order-lifecycle-dialog p { margin:0; }
-.order-lifecycle-dialog>header p { margin-top:4px; color:var(--muted); font-size:12px; }
 .order-lifecycle-body { padding:18px; }
 .order-lifecycle-timeline { margin:0; padding:0; list-style:none; }
 .order-lifecycle-timeline li { display:grid; grid-template-columns:90px 12px minmax(0,1fr); gap:12px; position:relative; min-height:72px; }
@@ -799,9 +793,18 @@ body.orders-page.has-open-sale-dialog { overflow:hidden; }
 
 .orders-page .order-card-head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
     overflow: visible;
+}
+
+.orders-page .order-card-top {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
 }
 
 .orders-page .order-card-summary {
@@ -817,6 +820,25 @@ body.orders-page.has-open-sale-dialog { overflow:hidden; }
     display: flex;
     align-items: center;
     gap: 10px;
+}
+
+.orders-page .order-card-total {
+    display: grid;
+    flex: 0 0 auto;
+    justify-items: end;
+    gap: 3px;
+    text-align: right;
+}
+
+.orders-page .order-card-total span:first-child {
+    color: var(--erp-text-muted);
+    font-size: 11px;
+}
+
+.orders-page .order-card-total strong {
+    font-size: 20px;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .orders-page .sale-completed-badge {
@@ -845,20 +867,57 @@ body.orders-page.has-open-sale-dialog { overflow:hidden; }
     stroke-linejoin: round;
 }
 
-.orders-page .order-card-actions {
+.orders-page .order-control-panel {
+    display: flex;
+    min-width: 0;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface-muted);
+}
+
+.orders-page .order-status-control {
+    display: flex;
+    flex: 0 0 235px;
+    min-width: 220px;
+    max-width: 250px;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.orders-page .order-control-label {
+    color: var(--erp-text-muted);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.orders-page .order-status-field {
     display: flex;
     min-width: 0;
     align-items: center;
-    flex-wrap: nowrap;
+    gap: 6px;
 }
 
-.orders-page .order-card-actions .status-form {
-    flex: 0 0 170px;
-    min-width: 170px;
+.orders-page .order-status-control .field {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
 }
 
-.orders-page .order-card-actions .status-form .field {
-    width: 100%;
+.orders-page .order-control-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.orders-page .order-control-panel .action-feedback {
+    flex: 1 1 100%;
 }
 
 .orders-page .order-primary-action {
@@ -916,61 +975,79 @@ body.orders-page.has-open-sale-dialog { overflow:hidden; }
     background: var(--erp-border);
 }
 
+.orders-page .order-lifecycle-inline {
+    max-height: min(360px, 45vh);
+    overflow: auto;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-control-radius);
+    background: var(--erp-surface);
+}
+
+.orders-page .order-lifecycle-inline[hidden] {
+    display: none;
+}
+
+.orders-page .order-lifecycle-inline .order-lifecycle-body {
+    padding: 14px;
+}
+
 @container (max-width: 800px) {
-    .orders-page .order-card-head {
-        grid-template-columns: 1fr;
+    .orders-page .order-control-panel {
         align-items: stretch;
+        flex-wrap: wrap;
     }
 
-    .orders-page .order-card-actions {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto;
-        width: 100%;
-    }
-
-    .orders-page .order-card-actions .status-form {
-        width: 100%;
-        min-width: 0;
+    .orders-page .order-status-control {
+        flex: 1 1 220px;
     }
 }
 
 @media (max-width: 900px) {
-    .orders-page .order-card-head {
-        grid-template-columns: 1fr;
+    .orders-page .order-control-panel {
         align-items: stretch;
+        flex-wrap: wrap;
     }
 
-    .orders-page .order-card-actions {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto;
-        width: 100%;
-    }
-
-    .orders-page .order-card-actions .status-form {
-        width: 100%;
-        min-width: 0;
+    .orders-page .order-status-control {
+        flex: 1 1 220px;
     }
 }
 
 @media (max-width: 560px) {
-    .orders-page .order-card-actions {
-        grid-template-columns: 1fr 1fr;
+    .orders-page .order-card-head {
+        gap: 10px;
     }
 
-    .orders-page .order-card-actions .status-form {
-        grid-column: 1 / -1;
+    .orders-page .order-card-top {
+        gap: 12px;
     }
 
-    .orders-page .order-primary-action,
+    .orders-page .order-card-total strong {
+        font-size: 17px;
+    }
+
+    .orders-page .order-status-control {
+        flex: 1 1 100%;
+        width: 100%;
+        max-width: none;
+    }
+
+    .orders-page .order-control-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .orders-page .order-control-actions > .button:not(.order-primary-action),
     .orders-page .order-actions-menu,
-    .orders-page .order-actions-trigger {
+    .orders-page .order-actions-trigger,
+    .orders-page .order-primary-action {
         width: 100%;
     }
 
-    .orders-page .order-card-head .card-subtitle {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 3px;
+    .orders-page .order-primary-action {
+        grid-column: 1 / -1;
     }
 }
 
