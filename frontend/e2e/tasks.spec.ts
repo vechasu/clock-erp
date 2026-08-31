@@ -201,6 +201,7 @@ test('month calendar positions the current week inside its own scroll area', asy
   await page.locator('#calendarNext').click();
   await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
   await page.locator('#calendarToday').click();
+  await expect(currentWeek).toHaveCount(1);
   await expect.poll(() => scroll.evaluate((node) => {
     const week = node.querySelector(
       '.calendar-month-week:has(.calendar-day.is-today)',
