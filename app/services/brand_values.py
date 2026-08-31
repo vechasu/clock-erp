@@ -18,6 +18,10 @@ BRAND_PROPERTY_NAMES = {
 BRAND_FLAG_NAMES = {
     "отображать в бренде",
 }
+CANONICAL_BRAND_ALIASES = {
+    "луч": "Луч",
+    "luch": "Луч",
+}
 
 
 def _text(value):
@@ -31,7 +35,7 @@ def normalize_brand(value):
     value = _text(value)
     if not value or NUMERIC_BRAND_PATTERN.fullmatch(value):
         return ""
-    return value
+    return CANONICAL_BRAND_ALIASES.get(value.casefold(), value)
 
 
 def is_numeric_brand(value):
