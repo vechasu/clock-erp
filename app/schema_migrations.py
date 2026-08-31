@@ -19,10 +19,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.catalog_migration_steps import (
+    ORDER_STRAP_SCHEMA_SQL,
     apply_audit_identity_constraints,
     apply_audit_sms_constraints,
     apply_order_comment_constraints,
     apply_fresh_catalog_schema,
+    apply_order_strap_replacement_schema,
     migration_source_checksum,
 )
 
@@ -172,6 +174,13 @@ AUDIT_SERVICE_MIGRATION_CHECKSUM = hashlib.sha256(
     (AUDIT_SERVICE_MIGRATION_ID + "\n" + AUDIT_SERVICE_MIGRATION_NAME + "\n" +
      "append-service-entity;preserve-all-events;sqlite-3.7").encode("utf-8")
 ).hexdigest()
+ORDER_STRAP_MIGRATION_ID = "2026-08-31-order-strap-replacement-v1"
+ORDER_STRAP_MIGRATION_NAME = "Atomic order strap replacement sales"
+ORDER_STRAP_MIGRATION_CHECKSUM = hashlib.sha256(
+    (ORDER_STRAP_MIGRATION_ID + "\n" + ORDER_STRAP_MIGRATION_NAME + "\n" +
+     "\n".join(ORDER_STRAP_SCHEMA_SQL) + "\n"
+     "structured-operation;atomic-stock;idempotent-sale;sqlite-3.7.17").encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -223,6 +232,13 @@ MIGRATIONS = (
         "transactional": False,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
+    {
+        "id": ORDER_STRAP_MIGRATION_ID,
+        "name": ORDER_STRAP_MIGRATION_NAME,
+        "checksum": ORDER_STRAP_MIGRATION_CHECKSUM,
+        "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
 )
 
 REQUIRED_TABLES = {
@@ -241,6 +257,7 @@ REQUIRED_TABLES = {
     "erp_order_comment_sync_state",
     "erp_order_product_mappings",
     "erp_order_statuses",
+    "erp_order_strap_operations",
     "erp_receipt_items",
     "erp_receipts",
     "erp_sale_items",
@@ -317,6 +334,7 @@ BUSINESS_TABLES = (
     ("sale_items", "erp_sale_items", None),
     ("stock_movements", "catalog_stock_movements", None),
     ("order_statuses", "erp_order_statuses", None),
+    ("strap_operations", "erp_order_strap_operations", None),
     ("order_mappings", "erp_order_product_mappings", None),
     ("receipts", "erp_receipts", None),
     ("receipt_items", "erp_receipt_items", None),
@@ -1051,6 +1069,21 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                     connection = sqlite3.connect(str(path))
                     try:
                         apply_audit_service_migration(connection, ddl_observer)
+                    finally:
+                        connection.close()
+                elif migration["id"] == ORDER_STRAP_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    connection.row_factory = sqlite3.Row
+                    try:
+                        connection.execute("PRAGMA foreign_keys = ON")
+                        connection.execute("BEGIN IMMEDIATE")
+                        apply_order_strap_replacement_schema(
+                            connection, ddl_observer
+                        )
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
                     finally:
                         connection.close()
                 else:

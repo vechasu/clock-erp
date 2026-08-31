@@ -184,7 +184,7 @@ class CatalogRuntimeMigrationTest(unittest.TestCase):
                 "SELECT type, COUNT(*) FROM sqlite_master "
                 "WHERE name NOT LIKE 'sqlite_%' GROUP BY type"
             ).fetchall()
-        self.assertIn(("table", 53), objects)
+        self.assertIn(("table", 54), objects)
         self.assertIn(("trigger", 4), objects)
 
     def test_runtime_validator_accepts_read_only_database(self):
