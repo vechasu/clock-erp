@@ -454,6 +454,39 @@ CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_listing_cell
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_products_listing_created
     ON catalog_excel_products(active, created_at, id);
 
+CREATE TABLE IF NOT EXISTS erp_collections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    normalized_name TEXT NOT NULL UNIQUE,
+    slug TEXT NOT NULL UNIQUE,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    on_site INTEGER NOT NULL DEFAULT 1 CHECK (on_site IN (0, 1)),
+    system_key TEXT UNIQUE,
+    source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN (
+        'manual', 'bitrix_section', 'bitrix_property', 'bitrix_sections'
+    )),
+    source_config_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_collections (
+    product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE CASCADE,
+    collection_id INTEGER NOT NULL
+        REFERENCES erp_collections(id) ON DELETE CASCADE,
+    source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN (
+        'manual', 'bitrix_import'
+    )),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (product_id, collection_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_collections_collection
+    ON product_collections(collection_id, product_id);
+CREATE INDEX IF NOT EXISTS idx_product_collections_product
+    ON product_collections(product_id, collection_id);
+
 CREATE TABLE IF NOT EXISTS catalog_product_classification_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id TEXT NOT NULL,

@@ -12,7 +12,7 @@
         analytics: [],
         products: [
             "q", "brand", "brand_id", "category", "category_id", "model", "model_id",
-            "cell", "date_from", "date_to", "sort_by", "sort_dir", "page",
+            "collection_id", "cell", "date_from", "date_to", "sort_by", "sort_dir", "page",
             "per_page"
         ],
         out_of_stock: [
@@ -24,7 +24,8 @@
         categories: [
             "q", "show_empty", "category_id", "sort_by", "sort_dir", "page",
             "per_page"
-        ]
+        ],
+        collections: ["collection_id", "q", "brand_id", "category_id", "active"]
     };
 
     function currentView(url) {

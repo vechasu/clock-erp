@@ -459,7 +459,7 @@
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
-        .warehouse-table-toolbar {
+        .warehouse-collection-bulk-toolbar {
             position: sticky;
             left: 0;
             display: flex;
@@ -1997,6 +1997,11 @@
         #editDrawer .product-inline-actions [data-edit-actions] { display: none; }
         #editDrawer .product-inline-form.is-editing .product-detail-value { display: none; }
         #editDrawer .product-inline-form.is-editing .product-detail-input { display: block; }
+        #editDrawer .product-inline-form.is-editing .product-collections-editor {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
         #editDrawer .product-inline-form.is-editing [data-edit-start] { display: none; }
         #editDrawer .product-inline-form.is-editing [data-edit-actions] { display: inline-flex; }
 
@@ -4156,6 +4161,12 @@
                         <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
                     </button>
                 {% endif %}
+                {% if selected_collection_id %}
+                    {% set selected_collection = collections|selectattr('id','equalto',selected_collection_id|int)|first %}
+                    <button class="erp-filter-chip" type="button" data-warehouse-filter="collection" onclick="clearWarehouseFilter('collection')" aria-label="Снять фильтр Подборка">
+                        <span class="erp-filter-chip-label">Подборка: {{ selected_collection.name if selected_collection else selected_collection_id }}</span><span class="erp-filter-chip-remove" aria-hidden="true">×</span>
+                    </button>
+                {% endif %}
                 {% if created_date_from or created_date_to %}
                     <button
                         class="erp-filter-chip"
@@ -4224,6 +4235,9 @@
 
                     {% if selected_cell %}
                         <input type="hidden" name="cell" value="{{ selected_cell }}">
+                    {% endif %}
+                    {% if selected_collection_id %}
+                        <input type="hidden" name="collection_id" value="{{ selected_collection_id }}">
                     {% endif %}
                     {% if selected_model %}
                         <input type="hidden" name="model" value="{{ selected_model }}">
@@ -4594,6 +4608,12 @@
                         </div>
                     </section>
 
+                    <section class="warehouse-add-section">
+                        <h3 class="warehouse-add-section-title">Подборки</h3>
+                        <input type="hidden" name="collections_present" value="1">
+                        <div style="display:flex;flex-wrap:wrap;gap:8px">{% for collection in collections %}<label class="warehouse-status-badge"><input type="checkbox" name="collection_ids" value="{{ collection.id }}"> {{ collection.name }}</label>{% endfor %}</div>
+                    </section>
+
                     <section class="warehouse-add-section warehouse-add-stock-section">
                         <h3 class="warehouse-add-section-title">Склад</h3>
                         <div class="warehouse-add-grid warehouse-add-grid-stock">
@@ -4682,6 +4702,12 @@
                 data-metric-units="{{ product_metrics.units }}"
             >
             <div id="warehouseTableScrollTop" class="warehouse-table-scroll-top" aria-label="Горизонтальная прокрутка таблицы" tabindex="0" hidden><div class="warehouse-table-scroll-top-inner"></div></div>
+            <div id="productCollectionBulkBar" class="warehouse-collection-bulk-toolbar" hidden>
+                <strong id="productCollectionBulkCount">Выбрано: 0</strong>
+                <select id="productCollectionBulkTarget" aria-label="Подборка для массового действия"><option value="">Выберите подборку</option>{% for collection in collections %}<option value="{{ collection.id }}">{{ collection.name }}</option>{% endfor %}</select>
+                <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="add">Добавить в подборку</button>
+                <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="remove">Удалить из подборки</button>
+            </div>
             <div
                 id="warehouseTableScrollBody"
                 class="table-card erp-table-card erp-scroll-hint"
@@ -4698,6 +4724,7 @@
                             <col class="warehouse-col-article" data-column-key="article">
                             <col class="warehouse-col-brand" data-column-key="brand">
                             <col class="warehouse-col-category" data-column-key="category">
+                            <col data-column-key="collections">
                             <col class="warehouse-col-stock" data-column-key="stock">
                             <col class="warehouse-col-created" data-column-key="created">
                             <col class="warehouse-col-cell" data-column-key="cell">
@@ -4712,6 +4739,7 @@
                                     </div>
                                 </th>
                                 <th data-column-key="name">
+                                    <input id="selectVisibleProductsForCollections" type="checkbox" aria-label="Выбрать товары на странице">
                                     <span
                                         class="warehouse-sort-label erp-sort-label{% if sort_by == 'name' %} is-active{% endif %}"
                                         data-sort-field="name"
@@ -4778,6 +4806,8 @@
                                         </span>
                                     </span>
                                 </th>
+
+                                <th data-column-key="collections">Подборки</th>
 
                                 <th data-column-key="stock">
                                     <span
@@ -4873,6 +4903,7 @@
 
                                     <td data-column-key="name">
                                         <div class="warehouse-product-name-cell">
+                                            <input type="checkbox" data-product-collection-select value="{{ item.id }}" aria-label="Выбрать {{ item.name }}">
                                             <div class="name warehouse-ellipsis" title="{{ item.name|e }}">{{ item.name }}</div>
                                         </div>
                                     </td>
@@ -4886,6 +4917,8 @@
                                     <td data-column-key="brand"><span class="warehouse-ellipsis" title="{{ (item.brand or 'Без бренда')|e }}">{{ item.brand or "Без бренда" }}</span></td>
 
                                     <td data-column-key="category"><span class="warehouse-ellipsis" title="{{ (item.category or 'Без категории')|e }}">{{ item.category or "Без категории" }}</span></td>
+
+                                    <td data-column-key="collections">{% for collection in item.collections[:2] %}<span class="warehouse-status-badge">{{ collection.name }}</span>{% endfor %}{% if item.collections|length > 2 %}<span class="warehouse-status-badge">+{{ item.collections|length - 2 }}</span>{% endif %}{% if not item.collections %}—{% endif %}</td>
 
                                     <td data-column-key="stock" class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
                                         {{ item.stock_display }}
@@ -4942,6 +4975,7 @@
                                                     data-brand-id="{{ item.brand_id or '' }}"
                                                     data-category="{{ item.category|e }}"
                                                     data-category-id="{{ item.category_id or '' }}"
+                                                    data-collection-ids='{{ item.collections|map(attribute="id")|list|tojson }}'
                                                     data-stock="{{ item.stock_display|e }}"
                                                     data-cell="{{ item.cell|e }}"
                                                     data-cell-source="{{ item.cell_source|e }}"
@@ -5184,6 +5218,14 @@
                 search_placeholder="Поиск категории..."
             ) }}
 
+            <div class="category-cell-form-title">Подборка</div>
+            <label class="filter-select-wrap">
+                <select name="collection_id" aria-label="Подборка">
+                    <option value="">Все подборки</option>
+                    {% for collection in collections %}<option value="{{ collection.id }}"{% if selected_collection_id == collection.id|string %} selected{% endif %}>{{ collection.name }}</option>{% endfor %}
+                </select>
+            </label>
+
             <div class="category-cell-form-title">Модель</div>
 
             {{ render_catalog_combobox(
@@ -5413,6 +5455,14 @@
                 <div class="product-detail-label">Ячейка</div>
                 <div id="detailCell" class="product-detail-value">—</div>
                 <input id="editCell" class="product-detail-input" type="text" name="cell" aria-label="Складская ячейка товара">
+            </div>
+            <div class="product-detail-card">
+                <div class="product-detail-label">Подборки</div>
+                <div id="detailCollections" class="product-detail-value">—</div>
+                <input type="hidden" name="collections_present" value="1">
+                <div id="editCollections" class="product-detail-input product-collections-editor">
+                    {% for collection in collections %}<label class="warehouse-status-badge"><input type="checkbox" name="collection_ids" value="{{ collection.id }}"> {{ collection.name }}</label>{% endfor %}
+                </div>
             </div>
             </div>
 
@@ -6171,6 +6221,15 @@
                 categoryId: form.dataset.originalCategoryId || "",
                 categoryLabel: form.dataset.originalCategory || "",
             });
+            let originalCollectionIds = [];
+            try {
+                originalCollectionIds = JSON.parse(form.dataset.originalCollectionIds || "[]").map(Number);
+            } catch (error) {
+                originalCollectionIds = [];
+            }
+            form.querySelectorAll('#editCollections input[name="collection_ids"]').forEach(function(input) {
+                input.checked = originalCollectionIds.includes(Number(input.value));
+            });
             resetDetailPhotoChanges(true);
             document.getElementById("detailPhotoEditor").hidden = true;
             form.classList.remove("is-editing");
@@ -6313,6 +6372,14 @@
             renderProductStock(productStock);
             document.getElementById("detailBrand").textContent = productBrand;
             document.getElementById("detailCategory").textContent = productCategory;
+            let productCollectionIds = [];
+            try { productCollectionIds = JSON.parse(button.dataset.collectionIds || "[]"); } catch (error) { productCollectionIds = []; }
+            const selectedCollectionNames = [];
+            document.querySelectorAll('#editCollections input[name="collection_ids"]').forEach(function(input) {
+                input.checked = productCollectionIds.map(Number).includes(Number(input.value));
+                if (input.checked) selectedCollectionNames.push(input.parentElement.textContent.trim());
+            });
+            document.getElementById("detailCollections").textContent = selectedCollectionNames.join(", ") || "—";
             document.getElementById("detailCell").textContent = productCell
                 ? (productCellSourceLabel ? `${productCell} · ${productCellSourceLabel}` : productCell)
                 : "—";
@@ -6363,6 +6430,7 @@
             inlineProductForm.dataset.originalCategoryId =
                 button.dataset.categoryId || "";
             inlineProductForm.dataset.originalCategory = productCategory;
+            inlineProductForm.dataset.originalCollectionIds = JSON.stringify(productCollectionIds);
             inlineProductForm.dataset.detailUrl = button.dataset.detailUrl || "";
             inlineProductForm.dataset.photoAction = "keep";
             inlineProductForm.dataset.photoFileId = "";
@@ -6517,6 +6585,7 @@
                 detailPrice: product.price_display || "—",
                 detailBrand: product.brand || "Без бренда",
                 detailCategory: category,
+                detailCollections: (product.collections || []).map(item => item.name).join(", ") || "—",
                 detailCell: product.cell || "—",
             };
             Object.entries(displayValues).forEach(function(entry) {
@@ -6540,6 +6609,11 @@
             form.dataset.originalBrand = product.brand || "";
             form.dataset.originalCategoryId = product.category_id ?? "";
             form.dataset.originalCategory = category;
+            const collectionIds = (product.collection_ids || []).map(Number);
+            form.dataset.originalCollectionIds = JSON.stringify(collectionIds);
+            document.querySelectorAll('#editCollections input[name="collection_ids"]').forEach(function(input) {
+                input.checked = collectionIds.includes(Number(input.value));
+            });
             window.restoreSharedCatalogCascade(form, {
                 brandId: product.brand_id ?? "",
                 brandLabel: product.brand || "",
@@ -6557,6 +6631,7 @@
                     brandId: product.brand_id ?? "",
                     category: product.category || "",
                     categoryId: product.category_id ?? "",
+                    collectionIds: JSON.stringify(product.collection_ids || []),
                     stock: product.stock_display ?? product.stock ?? 0,
                     cell: product.cell || "",
                 });
@@ -7207,6 +7282,7 @@
                 "date_from",
                 "date_to",
                 "check_state",
+                "collection_id",
                 "view",
                 "page"
             ].forEach(name => url.searchParams.delete(name));
@@ -7225,6 +7301,7 @@
                 cell: ["cell"],
                 date: ["date_from", "date_to"],
                 check_state: ["check_state"],
+                collection: ["collection_id"],
             }[filterName] || [];
 
             parameterNames.forEach((name) => {
@@ -7408,6 +7485,67 @@
             });
         }
 
+        function selectedProductCollectionIds() {
+            return Array.from(document.querySelectorAll(
+                '[data-product-collection-select]:checked'
+            )).map(input => Number(input.value));
+        }
+
+        function updateProductCollectionBulkBar() {
+            const ids = selectedProductCollectionIds();
+            const bar = document.getElementById("productCollectionBulkBar");
+            const count = document.getElementById("productCollectionBulkCount");
+            if (bar) bar.hidden = ids.length === 0;
+            if (count) count.textContent = "Выбрано: " + ids.length;
+        }
+
+        document.addEventListener("change", function(event) {
+            if (event.target.matches("[data-product-collection-select]")) {
+                updateProductCollectionBulkBar();
+            }
+            if (event.target.matches("#selectVisibleProductsForCollections")) {
+                document.querySelectorAll("[data-product-collection-select]").forEach(input => {
+                    input.checked = event.target.checked;
+                });
+                updateProductCollectionBulkBar();
+            }
+        });
+
+        document.addEventListener("click", async function(event) {
+            const button = event.target.closest("[data-collection-bulk-action]");
+            if (!button) return;
+            const productIds = selectedProductCollectionIds();
+            const collectionId = Number(
+                document.getElementById("productCollectionBulkTarget")?.value || 0
+            );
+            if (!productIds.length || !collectionId) {
+                window.alert("Выберите товары и подборку.");
+                return;
+            }
+            button.disabled = true;
+            try {
+                const response = await fetch("/api/v1/product-collections/bulk", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": {{ csrf_token()|tojson }},
+                    },
+                    body: JSON.stringify({
+                        action: button.dataset.collectionBulkAction,
+                        collection_id: collectionId,
+                        product_ids: productIds,
+                    }),
+                });
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.message || "Не удалось изменить подборку.");
+                window.location.reload();
+            } catch (error) {
+                window.alert(error.message);
+                button.disabled = false;
+            }
+        });
+
     </script>
 
 <script>
@@ -7474,23 +7612,23 @@
         const warehouseTableLegacyStorageKey = "vechasu.warehouse.table-view.v1";
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
-            order: ["photo", "name", "stock", "price", "article", "brand", "category", "created", "model", "cell", "platform_checks", "actions"],
-            widths: { photo: 64, name: 256, model: 120, price: 80, article: 96, brand: 95, category: 150, stock: 104, created: 106, cell: 75, platform_checks: 210, actions: 82 },
+            order: ["photo", "name", "stock", "price", "article", "brand", "category", "collections", "created", "model", "cell", "platform_checks", "actions"],
+            widths: { photo: 64, name: 256, model: 120, price: 80, article: 96, brand: 95, category: 150, collections: 150, stock: 104, created: 106, cell: 75, platform_checks: 210, actions: 82 },
             hidden: ["model", "cell"]
         };
         const warehouseTableRequiredColumns = ["photo", "name", "actions"];
         const warehouseTableColumnLabels = {
             photo: "Фото", name: "Название", model: "Модель", price: "Цена", article: "Артикул",
-            brand: "Бренд", category: "Категория", stock: "Остаток",
+            brand: "Бренд", category: "Категория", collections: "Подборки", stock: "Остаток",
             created: "Добавлено", cell: "Ячейка", platform_checks: "Проверка отключения", actions: "Действия"
         };
         const warehouseTableMinimumWidths = {
             photo: 60, name: 196, model: 90, price: 72, article: 86, brand: 84,
-            category: 138, stock: 98, created: 96, cell: 68, platform_checks: 180, actions: 82
+            category: 138, collections: 120, stock: 98, created: 96, cell: 68, platform_checks: 180, actions: 82
         };
         const warehouseTableMaximumWidths = {
             photo: 160, name: 520, model: 300, price: 180, article: 240, brand: 260,
-            category: 360, stock: 200, created: 220, cell: 180, platform_checks: 360, actions: 160
+            category: 360, collections: 320, stock: 200, created: 220, cell: 180, platform_checks: 360, actions: 160
         };
         let warehouseTableSuppressSortUntil = 0;
 
