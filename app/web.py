@@ -73,6 +73,7 @@ from app.services.inventory_journal import InventoryJournal
 from app.services.order_status import (
     ERP_ASSEMBLED,
     ERP_CONFIRMED,
+    ERP_STATUS_NAMES,
     ERP_UNCONFIRMED,
     OrderStatusError,
     OrderStatusService,
@@ -18642,6 +18643,41 @@ def serialize_journal_event(event):
     return result
 
 
+def serialize_journal_events(events):
+    """Keep readable legacy rows from breaking the otherwise valid feed."""
+    serialized = []
+    for event in events:
+        try:
+            serialized.append(serialize_journal_event(event))
+        except (KeyError, TypeError, ValueError) as error:
+            event_id = event.get("id", "unknown") if isinstance(event, dict) else "unknown"
+            operation_id = str(
+                getattr(g, "operation_id", "") or uuid.uuid4().hex
+            )
+            app.logger.exception(
+                "journal_event_format_failed error_type=%s event_id=%s operation_id=%s",
+                type(error).__name__, event_id, operation_id,
+            )
+            occurred_at = event.get("occurred_at", "") if isinstance(event, dict) else ""
+            local = _journal_local_datetime(occurred_at)
+            fallback = dict(event) if isinstance(event, dict) else {}
+            fallback.update({
+                "entity_label": JOURNAL_ENTITY_LABELS.get(
+                    fallback.get("entity_type"), "Событие"
+                ),
+                "action_label": "Событие сохранено в устаревшем формате",
+                "field_changes": [],
+                "summary": "Событие сохранено в устаревшем формате",
+                "time_display": local.strftime("%H:%M:%S"),
+                "timestamp_display": local.strftime("%d.%m.%Y %H:%M:%S"),
+                "day_key": local.date().isoformat(),
+                "day_label": _journal_day_label(occurred_at),
+                "tone": "neutral",
+            })
+            serialized.append(fallback)
+    return serialized
+
+
 def journal_query_arguments():
     entity_type = str(request.args.get("entity_type") or "").strip()
     if entity_type not in {
@@ -18672,7 +18708,7 @@ def journal_page():
     InventoryJournal(journal.database).enrich_events(listing["events"])
     return render_template(
         "journal.html",
-        events=[serialize_journal_event(event) for event in listing["events"]],
+        events=serialize_journal_events(listing["events"]),
         next_cursor=listing["next_cursor"],
         filters=filters,
         filter_options=journal.filter_options(),
@@ -18688,7 +18724,7 @@ def api_journal_collection():
     listing = journal.list_events(**filters, limit=30)
     InventoryJournal(journal.database).enrich_events(listing["events"])
     return api_success({
-        "events": [serialize_journal_event(event) for event in listing["events"]],
+        "events": serialize_journal_events(listing["events"]),
         "next_cursor": listing["next_cursor"],
         "has_more": listing["has_more"],
     })
@@ -18744,7 +18780,7 @@ def api_journal_event(event_id):
                 )
         elif event["entity_type"] == "order":
             object_url = "/order/{}".format(event["entity_id"])
-    payload = serialize_journal_event(event)
+    payload = serialize_journal_events([event])[0]
     payload["object_url"] = object_url
     payload["order_url"] = order_url
     payload["object_deleted"] = not bool(object_url or order_url)
