@@ -1204,6 +1204,26 @@ def _order_notification_recipients():
     ]
 
 
+def _system_notification_recipients():
+    return [int(user["id"]) for user in _task_users()]
+
+
+def _publish_system_event(event_key, title, message, severity="info",
+                          target_url="/app/settings", entity_type="system",
+                          entity_id="", metadata=None):
+    if app.testing and not app.config.get("NOTIFICATIONS_TESTING"):
+        return 0
+    try:
+        return _notification_store().publish_system(
+            event_key, title, message, _system_notification_recipients(),
+            severity=severity, entity_type=entity_type, entity_id=entity_id,
+            target_url=target_url, metadata=metadata,
+        )
+    except Exception:
+        app.logger.exception("System notification could not be persisted event_key=%s", event_key)
+        return 0
+
+
 def _publish_saved_order_batch(source, previous_ids, orders):
     if app.testing and not app.config.get("NOTIFICATIONS_TESTING"):
         return
@@ -1262,6 +1282,15 @@ def refresh_orders_cache():
             ORDERS_CACHE["error"] = type(error).__name__
         app.logger.warning(
             "Bitrix order list unavailable: %s", type(error).__name__
+        )
+        hour = datetime.now(timezone.utc).strftime("%Y%m%dT%H")
+        _publish_system_event(
+            "bitrix_sync:error:{}:{}".format(type(error).__name__, hour),
+            "Ошибка синхронизации Bitrix",
+            "Заказы Tictactoy временно не обновлены.",
+            severity="error", target_url="/orders",
+            entity_type="integration", entity_id="bitrix",
+            metadata={"operation": "bitrix_orders_sync"},
         )
 
         with ORDERS_CACHE_LOCK:
@@ -1729,18 +1758,39 @@ def wildberries_orders_sync_api():
         result["unmatched"] = sum(
             1 for row in assembly_rows if row["matching_status"] != "matched"
         )
+        operation_id = getattr(g, "operation_id", "") or uuid.uuid4().hex
+        _publish_system_event(
+            "wb_sync:success:{}".format(operation_id),
+            "Синхронизация Wildberries завершена",
+            "Заказы Wildberries обновлены.", severity="success",
+            target_url="/orders?source=wildberries", entity_type="integration",
+            entity_id="wildberries", metadata={"operation": "wb_orders_sync"},
+        )
         return jsonify({"ok": True, "result": result})
     except WildberriesReadOnlyError as error:
         app.logger.warning("Wildberries order sync unavailable code=%s", error.code)
         status = 400 if error.code == "WB_NOT_CONFIGURED" else 503
         if error.code == "WB_RATE_LIMITED":
             status = 429
+        _publish_system_event(
+            "wb_sync:error:{}".format(getattr(g, "operation_id", "") or uuid.uuid4().hex),
+            "Ошибка синхронизации Wildberries", str(error), severity="error",
+            target_url="/orders?source=wildberries", entity_type="integration",
+            entity_id="wildberries", metadata={"code": error.code},
+        )
         return jsonify({
             "ok": False,
             "error": {"code": error.code, "message": str(error)},
         }), status
     except (sqlite3.Error, ValueError):
         app.logger.exception("Wildberries order sync failed")
+        _publish_system_event(
+            "wb_sync:error:{}".format(getattr(g, "operation_id", "") or uuid.uuid4().hex),
+            "Ошибка синхронизации Wildberries",
+            "Не удалось сохранить заказы Wildberries.", severity="error",
+            target_url="/orders?source=wildberries", entity_type="integration",
+            entity_id="wildberries",
+        )
         return jsonify({
             "ok": False,
             "error": {"code": "WB_SYNC_FAILED", "message": "Не удалось сохранить заказы Wildberries"},
@@ -17576,6 +17626,12 @@ def excel_receipt_post(draft_id):
     try:
         receipt = service.post(draft_id)
     except ExcelDraftBlockedError as error:
+        _publish_system_event(
+            "receipt_import:error:{}:{}".format(draft_id, getattr(g, "operation_id", "") or uuid.uuid4().hex),
+            "Ошибка импорта прихода", str(error), severity="error",
+            target_url="/products/receipts/drafts/{}".format(draft_id),
+            entity_type="import", entity_id=draft_id,
+        )
         try:
             draft = service.get_draft(draft_id)
         except ExcelDraftError:
@@ -17584,7 +17640,21 @@ def excel_receipt_post(draft_id):
             "excel_receipt_preview.html", draft=draft, error=str(error)
         ), 409
     except ExcelDraftError:
+        _publish_system_event(
+            "receipt_import:error:{}:{}".format(draft_id, getattr(g, "operation_id", "") or uuid.uuid4().hex),
+            "Ошибка импорта прихода", "Черновик импорта не найден или повреждён.",
+            severity="error", target_url="/products/receipts/new",
+            entity_type="import", entity_id=draft_id,
+        )
         abort(404)
+    _publish_system_event(
+        "receipt_import:success:{}".format(receipt["id"]),
+        "Импорт успешно завершён",
+        "Приход {} проведён.".format(receipt.get("number") or receipt["id"]),
+        severity="success",
+        target_url="/products/receipts/{}".format(receipt["id"]),
+        entity_type="import", entity_id=str(receipt["id"]),
+    )
     return redirect(url_for(
         "excel_receipt_page",
         receipt_id=receipt["id"],
@@ -23776,7 +23846,10 @@ def api_user_notification_preferences():
     if not user.get("id"):
         return api_error("AUTH_REQUIRED", "Войдите в ERP.", 401)
     payload = api_json_payload()
-    allowed = {"order_sound", "task_sound", "browser_notifications"}
+    allowed = {
+        "order_sound", "task_sound", "browser_notifications",
+        "system_errors", "operation_completions",
+    }
     if any(key not in allowed for key in payload):
         return api_error("NOTIFICATION_PREFERENCES_INVALID", "Неизвестная настройка.", 422)
     if any(not isinstance(value, bool) for value in payload.values()):
