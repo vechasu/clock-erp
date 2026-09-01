@@ -21790,7 +21790,9 @@ def requested_sale_edit_values(payload):
     """Return only explicitly requested mutable text values for verification."""
     payload = normalize_sale_edit_aliases(payload)
     requested = {}
-    for field in ("track_number", "invoice_number", "note"):
+    for field in (
+        "track_number", "invoice_number", "note", "country", "region", "city",
+    ):
         if field in payload:
             requested[field] = str(payload.get(field) or "").strip()
     return requested
