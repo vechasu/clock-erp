@@ -1021,6 +1021,52 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         load_manual_sales.assert_called_once_with()
 
+    def test_automatic_sale_editable_fields_can_be_cleared_and_read_back(self):
+        self.operations_path.write_text(
+            json.dumps([{
+                "id": "automatic-clear",
+                "created_at": "2026-07-28",
+                "source": "Заказ Битрикс",
+                "sales_source": "Amazon",
+                "type": "writeoff",
+                "product_id": str(self.product["id"]),
+                "product_name": "Casio G-Shock",
+                "quantity": 1,
+                "order_number": "BX-CLEAR",
+                "recipient_name": "Иван Иванов",
+                "country": "Германия",
+                "delivery_address": "Berlin",
+                "platform": "Amazon.de",
+                "invoice_number": "TRACK-OLD",
+                "payment_method": "Карта",
+            }]),
+            encoding="utf-8",
+        )
+        web._cached_api_sales_records.cache_clear()
+
+        response = self.client.patch(
+            "/api/v1/sales/automatic-clear",
+            json={
+                "recipient_name": "",
+                "country": "",
+                "delivery_address": "",
+                "platform": "",
+                "invoice_number": "",
+                "payment_method": "",
+                "note": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        reopened = self.client.get(
+            "/api/v1/sales/automatic-clear"
+        ).get_json()["data"]
+        for field in (
+            "recipient_name", "country", "delivery_address", "platform",
+            "invoice_number", "payment_method", "note",
+        ):
+            self.assertEqual(reopened[field], "", field)
+
 
 if __name__ == "__main__":
     unittest.main()

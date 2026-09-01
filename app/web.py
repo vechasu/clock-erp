@@ -11434,6 +11434,17 @@ def get_sales_product_metadata(lookup, product_id, product_name):
     }
 
 
+def sale_override_value(override, source, field, *source_aliases):
+    """Keep an explicit empty override instead of reviving source data."""
+    if field in override:
+        return override.get(field)
+    for source_field in (field,) + source_aliases:
+        value = source.get(source_field)
+        if value not in (None, ""):
+            return value
+    return ""
+
+
 def build_sales_report_records(
         warehouse_items=None,
         operations=None,
@@ -11715,43 +11726,40 @@ def build_sales_report_records(
                 or ""
             ),
             "recipient": str(
-                override.get("recipient")
-                or operation.get("recipient")
+                sale_override_value(override, operation, "recipient")
                 or ""
             ),
             "recipient_name": str(
-                override.get("recipient_name")
-                or operation.get("recipient_name")
-                or operation.get("customer")
+                sale_override_value(
+                    override, operation, "recipient_name", "customer"
+                )
                 or ""
             ),
             "country": str(
-                override.get("country")
-                or operation.get("country")
+                sale_override_value(override, operation, "country")
                 or ""
             ),
             "delivery_address": str(
-                override.get("delivery_address")
-                or operation.get("delivery_address")
-                or operation.get("address")
+                sale_override_value(
+                    override, operation, "delivery_address", "address"
+                )
                 or ""
             ),
             "platform": str(
-                override.get("platform")
-                or operation.get("platform")
-                or operation.get("marketplace")
-                or operation.get("sales_channel")
+                sale_override_value(
+                    override, operation, "platform", "marketplace",
+                    "sales_channel",
+                )
                 or ""
             ),
             "invoice_number": str(
-                override.get("invoice_number")
-                or operation.get("invoice_number")
-                or operation.get("waybill_number")
+                sale_override_value(
+                    override, operation, "invoice_number", "waybill_number"
+                )
                 or ""
             ),
             "payment_method": str(
-                override.get("payment_method")
-                or operation.get("payment_method")
+                sale_override_value(override, operation, "payment_method")
                 or ""
             ),
             "commission_value": normalize_sale_commission_value(
@@ -12922,19 +12930,17 @@ def build_legacy_sales_page():
                 or ""
             ),
             "recipient": str(
-                override.get("recipient")
-                or operation.get("recipient")
+                sale_override_value(override, operation, "recipient")
                 or ""
             ),
             "recipient_name": str(
-                override.get("recipient_name")
-                or operation.get("recipient_name")
-                or operation.get("customer")
+                sale_override_value(
+                    override, operation, "recipient_name", "customer"
+                )
                 or ""
             ),
             "payment_method": str(
-                override.get("payment_method")
-                or operation.get("payment_method")
+                sale_override_value(override, operation, "payment_method")
                 or ""
             ),
             "commission_value": normalize_sale_commission_value(

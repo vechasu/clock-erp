@@ -1499,9 +1499,9 @@ class SalesInventory:
             metadata.update({
                 "id": sale_id,
                 "product_id": str(product_id),
-                "product_name": current.get("product_name"),
-                "brand": current.get("brand"),
-                "category": current.get("category"),
+                "product_name": canonical.get("product_name"),
+                "brand": canonical.get("brand"),
+                "category": canonical.get("category"),
                 "quantity": float(item["quantity"]),
                 **pricing,
                 "unit_price": requested_price,
