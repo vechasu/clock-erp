@@ -1,4 +1,4 @@
-"""Persistent per-user notifications for new ERP orders and task assignments."""
+"""Persistent, deduplicated server events with per-user delivery/read state."""
 
 import json
 import sqlite3
@@ -8,11 +8,14 @@ from pathlib import Path
 from app.domain_schema_migrations import validate_auth_database
 
 
-NOTIFICATION_TYPES = {"order", "task"}
+NOTIFICATION_TYPES = {"order", "task", "system"}
+SEVERITIES = {"info", "success", "warning", "error"}
 DEFAULT_PREFERENCES = {
     "order_sound": True,
     "task_sound": True,
     "browser_notifications": False,
+    "system_errors": True,
+    "operation_completions": True,
 }
 
 
@@ -47,19 +50,25 @@ class UserNotificationStore:
 
     @staticmethod
     def _insert(connection, user_id, kind, entity_type, entity_id, title,
-                message, target_url, metadata, created_at=None):
+                message, target_url, metadata, created_at=None, event_key=None,
+                severity="info"):
         if kind not in NOTIFICATION_TYPES:
             raise ValueError("Unsupported notification type")
-        dedupe_key = "new_{}:{}:{}".format(kind, entity_id, int(user_id))
+        if severity not in SEVERITIES:
+            raise ValueError("Unsupported notification severity")
+        dedupe_key = "{}:{}".format(
+            _text(event_key, 500) or "new_{}:{}".format(kind, entity_id),
+            int(user_id),
+        )
         cursor = connection.execute(
             "INSERT OR IGNORE INTO user_notifications "
-            "(user_id,type,entity_type,entity_id,title,message,metadata_json,target_url,created_at,dedupe_key) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "(user_id,type,entity_type,entity_id,title,message,metadata_json,target_url,created_at,dedupe_key,severity) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (
                 int(user_id), kind, _text(entity_type, 40), _text(entity_id, 160),
                 _text(title, 240), _text(message, 1000),
                 json.dumps(metadata or {}, ensure_ascii=False, separators=(",", ":")),
-                _text(target_url, 1000), created_at or utc_now(), dedupe_key,
+                _text(target_url, 1000), created_at or utc_now(), dedupe_key, severity,
             ),
         )
         return cursor.rowcount == 1
@@ -108,6 +117,13 @@ class UserNotificationStore:
                 source_name = _text(order.get("source_name"), 240) or (
                     "Wildberries" if source == "wildberries" else "Сайт / Ziro (Bitrix)"
                 )
+                total = order.get("total") or order.get("price") or order.get("sum")
+                message = source_name
+                if total not in (None, ""):
+                    try:
+                        message = "{:,.0f} ₽ · {}".format(float(total), source_name).replace(",", " ")
+                    except (TypeError, ValueError):
+                        pass
                 target = (
                     "/order/wildberries/{}".format(_text(order.get("wb_order_id") or entity_id.removeprefix("wb:"), 160))
                     if source == "wildberries" else "/order/{}".format(entity_id)
@@ -115,8 +131,9 @@ class UserNotificationStore:
                 for user_id in recipients:
                     created += int(self._insert(
                         connection, user_id, "order", "order", entity_id,
-                        "Новый заказ #{}".format(number), source_name, target,
+                        "Новый заказ #{}".format(number), message, target,
                         {"source": source_name}, now,
+                        "order:new:{}:{}".format(source, entity_id), "info",
                     ))
             connection.commit()
         return created
@@ -138,7 +155,29 @@ class UserNotificationStore:
                 connection, user_id, "task", "task", str(task_id), "Новая задача",
                 _text(task.get("title"), 1000), "/app/tasks?task={}".format(task_id),
                 {"author": _text(author_name, 240), "due": due},
+                event_key="task:new:{}".format(task_id),
             )
+            connection.commit()
+        return created
+
+    def publish_system(self, event_key, title, message, recipient_ids,
+                       severity="info", entity_type="system", entity_id="",
+                       target_url="/app/settings", metadata=None):
+        """Publish one actionable system event to each recipient exactly once."""
+        event_key = _text(event_key, 500)
+        if not event_key:
+            raise ValueError("System notification event_key is required")
+        recipients = sorted({int(value) for value in recipient_ids if int(value) > 0})
+        now = utc_now()
+        created = 0
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for user_id in recipients:
+                created += int(self._insert(
+                    connection, user_id, "system", entity_type,
+                    _text(entity_id, 160) or event_key, title, message,
+                    target_url, metadata or {}, now, event_key, severity,
+                ))
             connection.commit()
         return created
 
@@ -196,7 +235,8 @@ class UserNotificationStore:
     def preferences(self, user_id):
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT order_sound,task_sound,browser_notifications FROM user_notification_preferences WHERE user_id=?",
+                "SELECT order_sound,task_sound,browser_notifications,system_errors,operation_completions "
+                "FROM user_notification_preferences WHERE user_id=?",
                 (int(user_id),),
             ).fetchone()
         if row is None:
@@ -211,9 +251,11 @@ class UserNotificationStore:
         with self.connect() as connection:
             connection.execute(
                 "INSERT OR REPLACE INTO user_notification_preferences "
-                "(user_id,order_sound,task_sound,browser_notifications,updated_at) VALUES(?,?,?,?,?)",
+                "(user_id,order_sound,task_sound,browser_notifications,system_errors,operation_completions,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
                 (int(user_id), int(current["order_sound"]), int(current["task_sound"]),
-                 int(current["browser_notifications"]), utc_now()),
+                 int(current["browser_notifications"]), int(current["system_errors"]),
+                 int(current["operation_completions"]), utc_now()),
             )
             connection.commit()
         return current
