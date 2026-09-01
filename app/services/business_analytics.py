@@ -340,14 +340,16 @@ class BusinessAnalytics(object):
                 result["rows"] = [dict(row) for row in connection.execute(
                     "SELECT erp_status label,count(*) value FROM erp_order_statuses GROUP BY erp_status ORDER BY value DESC"
                 ).fetchall()]
-                order_labels = {"unconfirmed": "Не подтверждён", "confirmed": "Подтверждён", "assembled": "Собран"}
+                order_labels = {"unconfirmed": "Не подтверждён", "confirmed": "Подтверждён", "assembled": "Собран", "refused": "Отказ"}
                 for row in result["rows"]:
                     row["display_label"] = order_labels.get(row["label"], row["label"])
-                result["source_note"] = "Показаны только фактические локальные этапы ERP: не подтверждён, подтверждён, собран. Оплата, отправка и доставка не моделируются."
+                result["source_note"] = "Показаны только фактические локальные этапы ERP: не подтверждён, подтверждён, собран, отказ. Оплата, отправка и доставка не моделируются."
             elif section == "profit":
                 coverage = connection.execute(
                     "SELECT count(*) total, sum(CASE WHEN ri.purchase_price IS NOT NULL THEN 1 ELSE 0 END) known "
-                    "FROM erp_sale_items i LEFT JOIN erp_receipt_items ri ON ri.product_id=i.product_id AND ri.active=1"
+                    "FROM erp_sale_items i LEFT JOIN erp_receipt_items ri "
+                    "ON ri.product_id=i.product_id AND ri.active=1 "
+                    "AND ri.receipt_id NOT LIKE 'sale-cancellation:%'"
                 ).fetchone()
                 result["profit_coverage"] = (float(coverage["known"] or 0) / float(coverage["total"] or 1) * 100)
                 result["unavailable_reason"] = "Нет подтверждённой связи каждой проданной единицы с закупочной партией, комиссиями площадок и логистикой. Прибыль не рассчитывается."

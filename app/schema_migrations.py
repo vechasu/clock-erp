@@ -226,6 +226,12 @@ PRODUCT_COLLECTIONS_MIGRATION_CHECKSUM = hashlib.sha256(
     (PRODUCT_COLLECTIONS_MIGRATION_ID + "\n" + PRODUCT_COLLECTIONS_SQL + "\n" +
      repr(SYSTEM_COLLECTIONS)).encode("utf-8")
 ).hexdigest()
+ORDER_REFUSAL_MIGRATION_ID = "2026-09-01-order-refusal-status-v1"
+ORDER_REFUSAL_MIGRATION_NAME = "Terminal refused order status"
+ORDER_REFUSAL_MIGRATION_CHECKSUM = hashlib.sha256(
+    (ORDER_REFUSAL_MIGRATION_ID + "\n" + ORDER_REFUSAL_MIGRATION_NAME + "\n" +
+     "erp-order-status:refused;bitrix:C;preserve-sale-link;sqlite-3.7.17").encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -289,6 +295,13 @@ MIGRATIONS = (
         "name": PRODUCT_COLLECTIONS_MIGRATION_NAME,
         "checksum": PRODUCT_COLLECTIONS_MIGRATION_CHECKSUM,
         "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
+    {
+        "id": ORDER_REFUSAL_MIGRATION_ID,
+        "name": ORDER_REFUSAL_MIGRATION_NAME,
+        "checksum": ORDER_REFUSAL_MIGRATION_CHECKSUM,
+        "transactional": False,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
 )
@@ -961,6 +974,68 @@ def apply_product_collections_migration(connection, ddl_observer=None):
     return True
 
 
+def apply_order_refusal_migration(connection, ddl_observer=None):
+    """Expand the order status CHECK while preserving every relation."""
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' "
+        "AND name='erp_order_statuses'"
+    ).fetchone()
+    if row is None:
+        raise MigrationError("order refusal migration: status table is missing")
+    if "'refused'" in str(row[0] or ""):
+        return True
+    before = int(connection.execute(
+        "SELECT COUNT(*) FROM erp_order_statuses"
+    ).fetchone()[0])
+    connection.commit()
+    connection.execute("PRAGMA foreign_keys=OFF")
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        if ddl_observer is not None:
+            ddl_observer("REBUILD erp_order_statuses WITH refused status")
+        connection.execute(
+            "CREATE TABLE erp_order_statuses_migrating ("
+            "external_order_id TEXT PRIMARY KEY, "
+            "erp_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK ("
+            "erp_status IN ('unconfirmed','confirmed','assembled','refused')), "
+            "bitrix_status TEXT, "
+            "sync_status TEXT NOT NULL DEFAULT 'synced' CHECK ("
+            "sync_status IN ('synced','pending','error','unknown')), "
+            "sale_id TEXT REFERENCES erp_sales(id) ON DELETE RESTRICT, "
+            "created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO erp_order_statuses_migrating "
+            "SELECT external_order_id,erp_status,bitrix_status,sync_status,"
+            "sale_id,created_at,updated_at FROM erp_order_statuses"
+        )
+        connection.execute("DROP TABLE erp_order_statuses")
+        connection.execute(
+            "ALTER TABLE erp_order_statuses_migrating "
+            "RENAME TO erp_order_statuses"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX idx_erp_order_status_sale "
+            "ON erp_order_statuses(sale_id)"
+        )
+        after = int(connection.execute(
+            "SELECT COUNT(*) FROM erp_order_statuses"
+        ).fetchone()[0])
+        if after != before:
+            raise MigrationError("order refusal migration: row count changed")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute("PRAGMA foreign_keys=ON")
+    if connection.execute("PRAGMA foreign_key_check").fetchall():
+        raise MigrationError(
+            "order refusal migration created foreign key violations"
+        )
+    return True
+
+
 def _migration_by_id(migration_id):
     for migration in MIGRATIONS:
         if migration["id"] == migration_id:
@@ -1187,6 +1262,14 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                     except Exception:
                         connection.rollback()
                         raise
+                    finally:
+                        connection.close()
+                elif migration["id"] == ORDER_REFUSAL_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    try:
+                        apply_order_refusal_migration(
+                            connection, ddl_observer
+                        )
                     finally:
                         connection.close()
                 else:

@@ -716,7 +716,7 @@ CREATE INDEX IF NOT EXISTS idx_erp_sales_status_created
 CREATE TABLE IF NOT EXISTS erp_order_statuses (
     external_order_id TEXT PRIMARY KEY,
     erp_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (
-        erp_status IN ('unconfirmed', 'confirmed', 'assembled')
+        erp_status IN ('unconfirmed', 'confirmed', 'assembled', 'refused')
     ),
     bitrix_status TEXT,
     sync_status TEXT NOT NULL DEFAULT 'synced' CHECK (

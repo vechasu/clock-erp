@@ -21,13 +21,14 @@ class OrdersReworkTest(unittest.TestCase):
         web.app.config.clear()
         web.app.config.update(self.original_config)
 
-    def test_status_transition_matrix_accepts_all_three_statuses(self):
+    def test_status_transition_matrix_accepts_refusal_as_terminal(self):
         for current in ("N", "A", "D"):
-            for target in ("N", "A", "D"):
+            for target in ("N", "A", "D", "C"):
                 self.assertTrue(
                     web.validate_order_status_transition(current, target)
                 )
         self.assertFalse(web.validate_order_status_transition("C", "N"))
+        self.assertTrue(web.validate_order_status_transition("C", "C"))
 
     def test_route_rejects_unknown_status_before_bitrix_write(self):
         with (
@@ -35,7 +36,7 @@ class OrdersReworkTest(unittest.TestCase):
             mock.patch.object(web, "update_order_status") as update,
         ):
             response = self.client.post(
-                "/order/7/status", data={"csrf_token": "test-token", "status": "C"}
+                "/order/7/status", data={"csrf_token": "test-token", "status": "X"}
             )
         self.assertIn("допустимый статус", parse_qs(urlsplit(response.location).query)["message"][0])
         service.assert_not_called()

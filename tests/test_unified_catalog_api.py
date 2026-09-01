@@ -295,6 +295,15 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(automatic_receipt["status"], "posted")
         self.assertFalse(automatic_receipt["editable"])
         self.assertEqual(automatic_receipt["source_sale_id"], sale["id"])
+        automatic_id = automatic_receipt["id"]
+        self.assertEqual(self.client.patch(
+            "/api/v1/receipts/{}".format(automatic_id),
+            json={"comment": "нельзя"},
+        ).status_code, 409)
+        self.assertEqual(self.client.delete(
+            "/api/v1/receipts/{}".format(automatic_id)
+        ).status_code, 409)
+        self.assertIsNotNone(receipt_listing["meta"]["totals"]["amount"])
         receipt_movements = self.client.get(
             "/api/v1/products/{}/movements".format(self.product["id"])
         ).get_json()["data"]

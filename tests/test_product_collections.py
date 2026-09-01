@@ -5,6 +5,7 @@ from pathlib import Path
 from app.catalog_db import CatalogDatabase
 from app.schema_migrations import (
     MIGRATIONS,
+    ORDER_REFUSAL_MIGRATION_ID,
     PRODUCT_COLLECTIONS_MIGRATION_ID,
     apply_migrations,
 )
@@ -206,7 +207,7 @@ class ProductCollectionsTest(unittest.TestCase):
         apply_migrations(self.path, app_commit="collections-upgrade")
         self.assertEqual(self._product_snapshot(), before)
         self.assertEqual(len(self.service.list_collections()), 5)
-        self.assertEqual(MIGRATIONS[-1]["id"], PRODUCT_COLLECTIONS_MIGRATION_ID)
+        self.assertEqual(MIGRATIONS[-1]["id"], ORDER_REFUSAL_MIGRATION_ID)
 
     def test_collection_mutation_requires_admin(self):
         source = (Path(__file__).resolve().parents[1] / "app" / "web.py").read_text(

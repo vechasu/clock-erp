@@ -16,8 +16,8 @@
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
 {% macro status_badge(code, label) -%}
     {% set normalized = code|string|upper %}
-    {% set fallback = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else 'Неизвестный статус' %}
-    <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% else %}badge-default{% endif %}">
+    {% set fallback = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else 'Отказ' if normalized == 'C' else 'Неизвестный статус' %}
+    <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% elif normalized == 'C' %}badge-refused{% else %}badge-default{% endif %}">
         {{ fallback }}
     </span>
 {%- endmacro %}
@@ -71,6 +71,7 @@
                     <button class="status-filter{% if active_status == 'N' %} active{% endif %}" type="button" data-status-filter="N" aria-pressed="{{ 'true' if active_status == 'N' else 'false' }}">Не подтверждены <strong data-status-count="unconfirmed">{{ order_kpis.unconfirmed }}</strong></button>
                     <button class="status-filter{% if active_status == 'A' %} active{% endif %}" type="button" data-status-filter="A" aria-pressed="{{ 'true' if active_status == 'A' else 'false' }}">Подтверждены <strong data-status-count="confirmed">{{ order_kpis.confirmed }}</strong></button>
                     <button class="status-filter{% if active_status == 'D' %} active{% endif %}" type="button" data-status-filter="D" aria-pressed="{{ 'true' if active_status == 'D' else 'false' }}">Собраны <strong data-status-count="assembled">{{ order_kpis.assembled }}</strong></button>
+                    <button class="status-filter{% if active_status == 'C' %} active{% endif %}" type="button" data-status-filter="C" aria-pressed="{{ 'true' if active_status == 'C' else 'false' }}">Отказ <strong data-status-count="refused">{{ order_kpis.refused }}</strong></button>
                     <input type="hidden" name="status" value="{{ request.args.get('status','all') }}" data-status-input>
                 </div>
                 <div class="orders-compact-selects">
@@ -143,6 +144,7 @@
                                         <option value="N"{% if detail_status_code == 'N' %} selected{% endif %}>Не подтверждён</option>
                                         <option value="A"{% if detail_status_code == 'A' %} selected{% endif %}>Подтверждён</option>
                                         <option value="D"{% if detail_status_code == 'D' %} selected{% endif %}>Собран</option>
+                                        <option value="C"{% if detail_status_code == 'C' %} selected{% endif %}>Отказ</option>
                                     </select>
                                     <span class="status-save-state" data-status-save-state aria-live="polite"></span>
                                 </div>

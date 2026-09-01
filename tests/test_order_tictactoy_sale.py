@@ -1228,16 +1228,41 @@ class OrderTictactoySaleTest(unittest.TestCase):
             "order_id", "order_item_id", "product_id", "created_at", "updated_at"
         ])
 
-    def test_unknown_status_cannot_be_set_manually(self):
+    def test_refusal_requires_cancelling_linked_sale_first(self):
         self.conduct()
+        status_service = OrderStatusService(self.database)
         with (
             mock.patch.object(web, "SalesInventory", return_value=self.inventory),
+            mock.patch.object(web, "order_status_service", return_value=status_service),
             mock.patch.object(web, "load_stock_operations", return_value=[]),
             mock.patch.object(web, "update_order_status") as update,
         ):
             response = self.client.post("/order/18593/status", data={"status": "C"})
         update.assert_not_called()
-        self.assertIn("допустимый статус", parse_qs(urlsplit(response.location).query)["message"][0])
+        self.assertIn(
+            "Сначала отмените связанную продажу",
+            parse_qs(urlsplit(response.location).query)["message"][0],
+        )
+
+    def test_refusal_can_be_set_manually_without_sale(self):
+        status_service = OrderStatusService(self.database)
+        status_service.ingest("18593", "A")
+        with (
+            mock.patch.object(
+                web, "update_order_status", return_value={"status": "ok"}
+            ) as update,
+            mock.patch.object(
+                web, "order_status_service", return_value=status_service
+            ),
+        ):
+            response = self.client.post(
+                "/order/18593/status", data={"status": "C"}
+            )
+        self.assertEqual(response.status_code, 302)
+        update.assert_called_once_with(18593, "C")
+        self.assertEqual(
+            status_service.get("18593")["erp_status"], "refused"
+        )
 
 
 if __name__ == "__main__":
