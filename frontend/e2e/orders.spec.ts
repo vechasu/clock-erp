@@ -58,7 +58,7 @@ test('split rows retain all products, separate comments, and neutral missing val
 test('list rows keep one product preview and expose the existing open action', async ({ page }) => {
   await page.goto('/app/orders', { waitUntil: 'networkidle' });
   await page.getByRole('radio', { name: 'Список', exact: true }).click();
-  const first = page.locator('.orders-list-table tr[data-order-id="7001"]');
+  const first = page.locator('.orders-list-table tr[data-list-order-id="7001"]');
   await expect(first).toContainText('Tissot PRX Powermatic 80 ×1');
   await expect(first).toContainText('+ ещё 1');
   await expect(first).not.toContainText('Ремешок Cordura Black');

@@ -29,7 +29,7 @@
                 {% set product_article = product.get('article') or product.get('ARTICLE') or product.get('sku') or product.get('SKU') %}
                 {% set internal_comment = order.get('internal_comment') or {} %}
                 {% set is_selected = selected_order and selected_order.get('id')|string == oid|string %}
-                <tr class="order-table-row{% if is_selected %} active is-selected{% endif %}" data-order-id="{{ oid }}" data-order-href="{{ order_url }}" tabindex="0" aria-label="Открыть заказ №{{ number }}"{% if is_selected %} aria-current="true"{% endif %}>
+                <tr class="orders-list-row{% if is_selected %} active is-selected{% endif %}" data-list-order-id="{{ oid }}" data-order-href="{{ order_url }}" tabindex="0" aria-label="Открыть заказ №{{ number }}"{% if is_selected %} aria-current="true"{% endif %}>
                     <td class="order-cell order-identity-cell">
                         <a class="order-number" href="{{ order_url }}">№{{ number }}</a>
                         <span class="cell-secondary source-label{% if is_wb %} source-label-wb{% endif %}">{{ source_label }}</span>
