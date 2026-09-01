@@ -21,6 +21,11 @@ class SidebarVisualContractTest(unittest.TestCase):
         self.assertNotIn('class="sidebar-brand-subtitle"', sidebar)
         self.assertNotIn("🔔", sidebar)
 
+        logo = self.source("app/static/img/tictactoy-logo.svg")
+        self.assertIn('M0 0h3000v333', logo)
+        self.assertIn('v667', logo)
+        self.assertNotIn('transform=', logo)
+
     def test_existing_sidebar_behaviour_and_data_hooks_are_preserved(self):
         sidebar = self.source("app/templates/_sidebar.html")
         sidebar_script = self.source("app/static/js/sidebar.js")
@@ -58,6 +63,12 @@ class SidebarVisualContractTest(unittest.TestCase):
             "position: absolute",
             ".app.sidebar-collapsed .sidebar-presence-trigger",
             ".app.sidebar-collapsed .sidebar-user form",
+            "flex: 0 0 auto",
+            "height: 80px",
+            "height: 122px",
+            "overflow: clip",
+            ".app.sidebar-collapsed .sidebar-toggle",
+            "order: -1",
         ):
             self.assertIn(marker, sidebar_css)
 

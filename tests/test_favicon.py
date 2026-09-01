@@ -14,6 +14,8 @@ class FaviconTests(unittest.TestCase):
         source = (STATIC / "favicon.svg").read_text(encoding="utf-8")
         self.assertIn('viewBox="0 0 32 32"', source)
         self.assertIn('fill="#000"', source)
+        self.assertIn('M1 11h30v3.33', source)
+        self.assertIn('V21', source)
         self.assertNotIn("<rect", source)
         self.assertNotRegex(source, r"background|circle|text|shadow")
 
