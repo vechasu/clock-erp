@@ -7004,13 +7004,39 @@
             }
             const persistedSale = result.data;
             const expectedFields = [
-                "track_number", "invoice_number", "note",
-                "country", "region", "city",
+                "source", "unit_price", "original_unit_price",
+                "discount_type", "discount_value", "discount_reason",
+                "order_status", "commission", "commission_amount",
+                "track_number", "country", "region", "city", "note",
+                "recipient", "recipient_name", "payment_method",
+                "delivery_address", "platform", "invoice_number",
+                "sticker_number",
             ]
-                .filter((field) => submittedForm.has(field));
+                .filter((field) => (
+                    submittedForm.has(field)
+                    && !(field === "order_status"
+                        && !String(submittedForm.get(field) || "").trim())
+                ));
+            const numericFields = new Set([
+                "unit_price", "original_unit_price", "discount_value",
+                "commission_amount",
+            ]);
+            const normalizePersistedValue = (field, value) => {
+                if (numericFields.has(field)) {
+                    if (value === null || String(value ?? "").trim() === "") {
+                        return null;
+                    }
+                    const numeric = Number(String(value).replace(",", "."));
+                    return Number.isFinite(numeric) ? numeric : String(value).trim();
+                }
+                if (field === "source") {
+                    return String(value || "").trim().toLocaleLowerCase("ru-RU");
+                }
+                return String(value || "").trim();
+            };
             const notApplied = expectedFields.filter((field) =>
-                String(persistedSale?.[field] || "").trim()
-                !== String(submittedForm.get(field) || "").trim()
+                normalizePersistedValue(field, persistedSale?.[field])
+                !== normalizePersistedValue(field, submittedForm.get(field))
             );
             if (!persistedSale || notApplied.length) {
                 throw new Error(
