@@ -907,13 +907,9 @@ html[data-theme] :where(
 }
 
 html[data-theme] .sidebar-logo-mark {
-    border-color: color-mix(
-        in srgb,
-        var(--theme-sidebar-text) 30%,
-        transparent
-    ) !important;
-    border-radius: var(--theme-control-radius) !important;
-    background: var(--theme-sidebar-hover) !important;
+    border-color: transparent !important;
+    border-radius: 0 !important;
+    background: transparent !important;
     color: var(--theme-sidebar-text) !important;
 }
 
@@ -953,6 +949,7 @@ html[data-theme] .sidebar-system-dot {
 }
 
 html[data-theme] :where(
+    .sidebar-presence-trigger,
     .sidebar-system-status,
     .sidebar-user
 ) {
@@ -966,6 +963,15 @@ html[data-theme] :where(
         var(--theme-sidebar-hover) 70%,
         transparent
     ) !important;
+}
+
+html[data-theme] .app.sidebar-collapsed :where(
+    .sidebar-presence-trigger,
+    .sidebar-system-status,
+    .sidebar-user
+) {
+    border-color: transparent !important;
+    background: transparent !important;
 }
 
 html[data-theme] .mobile-erp-navigation {
