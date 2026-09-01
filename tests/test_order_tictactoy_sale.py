@@ -73,7 +73,10 @@ class OrderTictactoySaleTest(unittest.TestCase):
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
             return self.client.get("/order/18593" + query)
 
-    def conduct(self, order=None, mappings=None, performed_at=None, **data):
+    def conduct(
+        self, order=None, mappings=None, performed_at=None,
+        route_order_id="18593", **data
+    ):
         patches = self.patches(order, mappings)
         time_patch = mock.patch.object(
             web,
@@ -82,7 +85,7 @@ class OrderTictactoySaleTest(unittest.TestCase):
         )
         with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], time_patch:
             return self.client.post(
-                "/order/18593/stock-writeoff",
+                "/order/{}/stock-writeoff".format(route_order_id),
                 data={"csrf_token": "test-token", **data},
             )
 
@@ -396,6 +399,21 @@ class OrderTictactoySaleTest(unittest.TestCase):
         )
         self.assertNotIn('name="quantity_', html)
         self.assertNotIn('name="price_', html)
+
+    def test_sale_dialog_reuses_sales_commission_reference(self):
+        html = self.render_order().get_data(as_text=True)
+        tracking_position = html.index('for="orderSaleTracking"')
+        commission_position = html.index('for="orderSaleCommissionTrigger"')
+        info_position = html.index('class="sale-dialog-info"')
+
+        self.assertLess(tracking_position, commission_position)
+        self.assertLess(commission_position, info_position)
+        self.assertIn('name="commission"', html)
+        self.assertIn("Выберите комиссию", html)
+        for value in web.SALE_COMMISSION_OPTIONS:
+            with self.subTest(value=value):
+                self.assertEqual(html.count('data-brand="{}"'.format(value)), 1)
+                self.assertIn(web.get_sale_commission_label(value), html)
 
     def test_sale_dialog_has_responsive_layout_and_keyboard_guards(self):
         template = Path("app/templates/orders.html").read_text()
@@ -751,6 +769,71 @@ class OrderTictactoySaleTest(unittest.TestCase):
         rows = self.inventory.list_sales()
         self.assertEqual({row["region"] for row in rows}, {"Санкт-Петербург"})
         self.assertEqual({row["track_number"] for row in rows}, {"001-AB"})
+
+    def test_each_shared_commission_option_is_saved_and_reopened(self):
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock = 100 "
+                "WHERE id IN (?, ?)",
+                (self.watch["id"], self.strap["id"]),
+            )
+        for index, commission in enumerate(web.SALE_COMMISSION_OPTIONS):
+            with self.subTest(commission=commission):
+                order_id = str(18600 + index)
+                order = {**self.order, "id": order_id, "number": order_id}
+                response = self.conduct(
+                    order=order,
+                    route_order_id=order_id,
+                    commission=commission,
+                )
+                self.assertEqual(urlsplit(response.location).path, "/sales")
+
+                sale = self.inventory.find_active_sale("tictactoy", order_id)
+                self.assertIsNotNone(sale)
+                self.assertEqual(sale["commission"], commission)
+                report = web.build_sales_report_records(
+                    warehouse_items=[], operations=[],
+                    stored_manual_sales=[sale], automatic_overrides={},
+                )
+                reopened = web.serialize_api_sale(report[0])
+                self.assertEqual(reopened["commission"], commission)
+                self.assertEqual(
+                    reopened["commission_display"],
+                    web.get_sale_commission_label(commission),
+                )
+
+    def test_order_sale_without_commission_keeps_existing_flow(self):
+        response = self.conduct(
+            tracking="TRACK-EMPTY-COMMISSION",
+            country="Россия",
+            region="Москва",
+            city="Москва",
+        )
+        self.assertEqual(urlsplit(response.location).path, "/sales")
+        rows = self.inventory.list_sales()
+        self.assertEqual({row["commission"] for row in rows}, {""})
+        self.assertEqual(
+            {row["track_number"] for row in rows},
+            {"TRACK-EMPTY-COMMISSION"},
+        )
+        self.assertEqual({row["country"] for row in rows}, {"Россия"})
+        self.assertEqual({row["region"] for row in rows}, {"Москва"})
+        self.assertEqual({row["city"] for row in rows}, {"Москва"})
+        self.assertEqual(
+            ExcelProductCatalog(self.database).get_product(self.watch["id"])["stock"],
+            3,
+        )
+        self.assertEqual(
+            ExcelProductCatalog(self.database).get_product(self.strap["id"])["stock"],
+            2,
+        )
+
+    def test_order_sale_rejects_commission_outside_shared_reference(self):
+        response = self.conduct(commission="Новая независимая комиссия")
+        query = parse_qs(urlsplit(response.location).query)
+        self.assertEqual(query["notice"], ["error"])
+        self.assertIn("Выберите комиссию из списка", query["message"][0])
+        self.assertEqual(self.inventory.list_sales(), [])
 
     def test_existing_tracking_is_used_when_submitted_from_prefilled_field(self):
         order = {**self.order, "delivery": {"waybill": "ZX-009"}}
