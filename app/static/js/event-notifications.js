@@ -14,8 +14,12 @@
     const permissionNote = center.querySelector("[data-notification-permission-note]");
     let items = [];
     let filter = "all";
-    let preferences = {order_sound: true, task_sound: true, browser_notifications: false};
+    let preferences = {
+        order_sound: true, task_sound: true, browser_notifications: false,
+        system_errors: true, operation_completions: true,
+    };
     let audioContext = null;
+    const announced = new Set();
 
     const headers = () => ({
         "Content-Type": "application/json",
@@ -33,6 +37,7 @@
     document.addEventListener("keydown", unlockAudio, {once: true});
 
     function playSound(kind) {
+        if (kind === "system") return;
         if (!preferences[kind === "order" ? "order_sound" : "task_sound"]) return;
         if (!audioContext || audioContext.state !== "running") return;
         const oscillator = audioContext.createOscillator();
@@ -74,6 +79,12 @@
         return localTime(item.created_at);
     }
 
+    function systemAlertEnabled(item) {
+        if (item.type !== "system") return true;
+        return item.severity === "error" || item.severity === "warning"
+            ? preferences.system_errors : preferences.operation_completions;
+    }
+
     function updateCount(unread) {
         count.textContent = unread > 99 ? "99+" : String(unread);
         count.hidden = unread < 1;
@@ -96,7 +107,7 @@
             button.className = `notification-item${item.read_at ? "" : " unread"}`;
             const icon = document.createElement("span");
             icon.className = "notification-item-icon";
-            icon.textContent = item.type === "order" ? "🛒" : "☑";
+            icon.textContent = item.type === "order" ? "🛒" : item.type === "task" ? "☑" : "⚙";
             const copy = document.createElement("span");
             const title = document.createElement("strong"); title.textContent = item.title;
             const message = document.createElement("p"); message.textContent = item.message;
@@ -130,11 +141,13 @@
     }
 
     function showToast(item) {
+        if (!systemAlertEnabled(item)) return;
         if (!window.VechasuNotify) {
             window.setTimeout(() => showToast(item), 100);
             return;
         }
-        window.VechasuNotify.info(item.title, {
+        const notify = window.VechasuNotify[item.severity] || window.VechasuNotify.info;
+        notify.call(window.VechasuNotify, item.title, {
             detail: item.message,
             duration: 6500,
             operationId: `event-notification-${item.id}`,
@@ -147,10 +160,18 @@
     }
 
     function showBrowserNotification(item) {
-        if (!preferences.browser_notifications || document.visibilityState === "visible") return;
+        if (!preferences.browser_notifications || !systemAlertEnabled(item) || document.visibilityState === "visible") return;
         if (!("Notification" in window) || Notification.permission !== "granted") return;
         const notice = new Notification("Vechasu ERP", {body: `${item.title}\n${item.message}`, tag: `vechasu-${item.id}`});
-        notice.onclick = () => { window.focus(); window.location.assign(item.target_url); notice.close(); };
+        notice.onclick = async () => { await markRead(item.id); window.focus(); window.location.assign(item.target_url); notice.close(); };
+    }
+
+    function announce(item) {
+        if (!item || announced.has(item.id)) return;
+        announced.add(item.id);
+        showToast(item);
+        playSound(item.type);
+        showBrowserNotification(item);
     }
 
     async function poll() {
@@ -164,11 +185,7 @@
             updateCount(Number(data.unread) || 0);
             applyPreferences();
             render();
-            items.filter((item) => item.fresh).reverse().forEach((item) => {
-                showToast(item);
-                playSound(item.type);
-                showBrowserNotification(item);
-            });
+            items.filter((item) => item.fresh).reverse().forEach(announce);
         } catch (_error) {}
     }
 
