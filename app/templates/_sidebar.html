@@ -44,22 +44,12 @@ window.ERP_NOTIFICATION_CONTEXT={
             title="{{ sidebar_brand.title }}"
         >
             <span class="sidebar-logo-mark" aria-hidden="true">
-                <img src="{{ url_for('static', filename='img/tictactoy-logo.svg') }}" alt="" width="30" height="10">
-            </span>
-            <span class="sidebar-brand-copy">
-                <span class="sidebar-brand-title">
-                    {{ sidebar_brand.title }}
-                </span>
-                <span
-                    class="sidebar-brand-subtitle"
-                    title="{{ sidebar_brand.subtitle }}"
-                >
-                    {{ sidebar_brand.subtitle }}
-                </span>
+                <img src="{{ url_for('static', filename='img/tictactoy-logo.svg') }}" alt="" width="42" height="14">
             </span>
         </a>
 
-        {% if current_user %}
+        <div class="sidebar-brand-actions">
+            {% if current_user %}
             <button
                 class="notification-bell"
                 type="button"
@@ -68,35 +58,39 @@ window.ERP_NOTIFICATION_CONTEXT={
                 aria-controls="notificationCenter"
                 aria-expanded="false"
             >
-                <span aria-hidden="true">🔔</span>
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                    <path d="M10 21h4" />
+                </svg>
                 <span class="notification-bell-count" data-notification-count hidden></span>
             </button>
-        {% endif %}
+            {% endif %}
 
-        <button
-            id="sidebarToggle"
-            class="sidebar-toggle"
-            type="button"
-            aria-label="Свернуть боковую панель"
-            aria-controls="appSidebar"
-            aria-expanded="true"
-            title="Свернуть боковую панель"
-        >
-            <svg
-                class="sidebar-toggle-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
+            <button
+                id="sidebarToggle"
+                class="sidebar-toggle"
+                type="button"
+                aria-label="Свернуть боковую панель"
+                aria-controls="appSidebar"
+                aria-expanded="true"
+                title="Свернуть боковую панель"
             >
-                <path
-                    d="M15 6 9 12l6 6"
-                    stroke="currentColor"
-                    stroke-width="2.3"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                />
-            </svg>
-        </button>
+                <svg
+                    class="sidebar-toggle-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                >
+                    <path
+                        d="M15 6 9 12l6 6"
+                        stroke="currentColor"
+                        stroke-width="2.3"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                </svg>
+            </button>
+        </div>
     </div>
 
     <nav class="sidebar-nav" aria-label="Основная навигация">
