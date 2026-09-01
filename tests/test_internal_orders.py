@@ -122,15 +122,18 @@ class InternalOrdersTest(unittest.TestCase):
             mock.patch.object(web, "is_order_stock_written_off", return_value=False),
             mock.patch.object(web, "get_order_conducted_sale", return_value=None),
         ):
-            html = self.client.get("/order/1?page=2").get_data(as_text=True)
+            html = self.client.get(
+                "/order/1?page=2&page_size=20"
+            ).get_data(as_text=True)
 
         self.assertEqual(
             html.count('class="order-table-row"')
             + html.count('class="order-table-row active is-selected"'),
             20,
         )
-        self.assertIn("Найдено: 45", html)
-        self.assertIn("Страница 2 из 3", html)
+        self.assertIn("Показано 21–40 из 45", html)
+        self.assertIn('aria-current="page">2</span>', html)
+        self.assertIn('aria-label="Страница 3">3</a>', html)
         self.assertIn('aria-label="Заказов на странице"', html)
         self.assertNotIn("Всего заказов", html)
         for key in ("unconfirmed", "confirmed", "assembled"):

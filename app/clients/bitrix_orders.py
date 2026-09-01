@@ -29,21 +29,29 @@ class BitrixOrdersReadOnlyClient:
         self,
         orders_url=None,
         order_url=None,
+        history_url=None,
         timeout=(3.05, 15),
         max_retries=3,
         token=None,
         session=None,
     ):
-        if not orders_url or not order_url:
+        if (not orders_url or not order_url) and not history_url:
             raise BitrixReadOnlyError(
                 "Bitrix order endpoints must be configured explicitly"
             )
-        self.orders_url = str(orders_url)
-        self.order_url = str(order_url)
-        for endpoint in (self.orders_url, self.order_url):
+        self.orders_url = str(orders_url or "")
+        self.order_url = str(order_url or "")
+        self.history_url = str(history_url or "")
+        for endpoint in filter(None, (self.orders_url, self.order_url, self.history_url)):
             parsed = urlsplit(endpoint)
-            if parsed.scheme != "https" or not parsed.hostname:
-                raise BitrixReadOnlyError("Bitrix order endpoints must use HTTPS")
+            loopback_http = (
+                parsed.scheme == "http"
+                and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            )
+            if (parsed.scheme != "https" and not loopback_http) or not parsed.hostname:
+                raise BitrixReadOnlyError(
+                    "Bitrix order endpoints must use HTTPS or loopback HTTP"
+                )
         self.timeout = timeout
         self.max_retries = max(0, int(max_retries))
         self.headers = {"Accept": "application/json"}
@@ -156,6 +164,53 @@ class BitrixOrdersReadOnlyClient:
         if not isinstance(rows, list):
             raise BitrixReadOnlyError("Bitrix order list is not an array")
         return [row for row in rows[:limit] if isinstance(row, dict)]
+
+    def history_pages(self, limit=200, start_cursor=0):
+        """Yield validated cursor pages from the protected batch export."""
+        if not self.history_url:
+            raise BitrixReadOnlyError("Bitrix history endpoint is not configured")
+        limit = max(1, min(int(limit), 200))
+        try:
+            cursor = max(0, int(start_cursor or 0))
+        except (TypeError, ValueError):
+            raise BitrixReadOnlyError("Bitrix history cursor is invalid") from None
+        while True:
+            payload = self._get_json(
+                self.history_url, params={"limit": limit, "cursor": cursor}
+            )
+            rows = payload.get("orders")
+            if not isinstance(rows, list) or any(
+                not isinstance(row, dict) for row in rows
+            ):
+                raise BitrixReadOnlyError(
+                    "Bitrix history page has an unexpected structure"
+                )
+            has_more = payload.get("has_more") is True
+            next_cursor = payload.get("next_cursor")
+            if len(rows) > limit:
+                raise BitrixReadOnlyError("Bitrix history page exceeds requested limit")
+            if has_more:
+                try:
+                    next_cursor = int(next_cursor)
+                except (TypeError, ValueError):
+                    raise BitrixReadOnlyError(
+                        "Bitrix history cursor is missing"
+                    ) from None
+                if next_cursor <= 0 or (cursor > 0 and next_cursor >= cursor):
+                    raise BitrixReadOnlyError(
+                        "Bitrix history cursor did not advance"
+                    )
+            else:
+                next_cursor = None
+            yield {
+                "orders": rows,
+                "count": len(rows),
+                "has_more": has_more,
+                "next_cursor": next_cursor,
+            }
+            if not has_more:
+                break
+            cursor = next_cursor
 
     def get_order(self, order_id):
         payload = self._get_json(self.order_url, params={"id": str(order_id)})
