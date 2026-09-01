@@ -2188,7 +2188,7 @@
                                     <td data-column-key="purchase-price">
                                         {% if receipt_position and receipt_position.purchase_price is not none %}
                                             <span class="receipt-money-value">{{ receipt_position.purchase_price }} ₽</span>
-                                        {% else %}—{% endif %}
+                                        {% elif receipt.is_automatic %}Не указана{% else %}—{% endif %}
                                         {% if receipt.total_amount is not none %}<div class="secondary-text receipt-line-total">Сумма: {{ receipt.total_amount }} ₽</div>{% endif %}
                                     </td>
 
@@ -2247,6 +2247,7 @@
                                             {% endif %}
                                             <!-- RECEIPT MOYSKLAD ACTION V2 END -->
 
+                                            {% if not receipt.is_automatic %}
                                             <button
                                                 class="receipt-action-button receipt-edit-button js-edit-receipt"
                                                 type="button"
@@ -2304,6 +2305,7 @@
                                                     </svg>
                                                 </button>
                                             </form>
+                                            {% endif %}
                                         </div>
 
                                     </td>

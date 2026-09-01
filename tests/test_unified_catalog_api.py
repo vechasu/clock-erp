@@ -284,8 +284,17 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertFalse(cancelled_receipt.get_json()["data"]["deleted"])
         self.assertEqual(self.stock(), 0)
         receipt_listing = self.client.get("/api/v1/receipts").get_json()
-        self.assertEqual(receipt_listing["meta"]["total"], 1)
-        self.assertEqual(receipt_listing["data"][0]["status"], "cancelled")
+        self.assertEqual(receipt_listing["meta"]["total"], 2)
+        receipts_by_id = {
+            item["id"]: item for item in receipt_listing["data"]
+        }
+        self.assertEqual(receipts_by_id[receipt["id"]]["status"], "cancelled")
+        automatic_receipt = receipts_by_id[
+            "sale-cancellation:{}".format(sale["id"])
+        ]
+        self.assertEqual(automatic_receipt["status"], "posted")
+        self.assertFalse(automatic_receipt["editable"])
+        self.assertEqual(automatic_receipt["source_sale_id"], sale["id"])
         receipt_movements = self.client.get(
             "/api/v1/products/{}/movements".format(self.product["id"])
         ).get_json()["data"]

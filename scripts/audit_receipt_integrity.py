@@ -49,6 +49,7 @@ def audit(database_path, receipts_path):
             "posted_without_post_movements": scalar(
                 connection,
                 "SELECT COUNT(*) FROM erp_receipts r WHERE r.status = 'posted' "
+                "AND r.id NOT LIKE 'sale-cancellation:%' "
                 "AND NOT EXISTS (SELECT 1 FROM catalog_stock_movements m "
                 "WHERE m.receipt_id = r.id AND m.movement_type = 'receipt')",
             ),
