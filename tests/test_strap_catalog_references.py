@@ -72,13 +72,13 @@ class StrapCatalogReferencesTest(unittest.TestCase):
                 (NOW, NOW),
             )
         source_rows = [
-            source_product("alpha-strap", "Alpha Strap", "Alpha", ["Каталог", "Ремешки", "Alpha"]),
-            source_product("alpha-bracelet", "Alpha Bracelet", "Alpha", ["Каталог", "Браслеты", "Alpha"]),
+            source_product("alpha-strap", "Alpha Strap", "Alpha", ["Каталог", "Товары", "Alpha"]),
+            source_product("alpha-bracelet", "Alpha Bracelet", "Alpha", ["Каталог", "Товары", "Alpha"]),
             source_product("alpha-watch", "Alpha Watch", "Alpha", ["Каталог", "Часы", "Alpha"]),
             source_product("watch-only", "Watch Only", "TimeOnly", ["Каталог", "Часы", "TimeOnly"]),
-            source_product("zero-strap", "Zero Strap", "Zero", ["Каталог", "Ремешки", "Zero"]),
-            source_product("single-strap", "Single Strap", "Single", ["Каталог", "Ремешки", "Single"]),
-            source_product("inactive-strap", "Inactive Strap", "Archived", ["Каталог", "Ремешки", "Archived"], active=False),
+            source_product("zero-strap", "Zero Strap", "Zero", ["Каталог", "Товары", "Zero"]),
+            source_product("single-strap", "Single Strap", "Single", ["Каталог", "Товары", "Single"]),
+            source_product("inactive-strap", "Inactive Strap", "Archived", ["Каталог", "Товары", "Archived"], active=False),
         ]
         BitrixCatalogImporter(self.database).import_products(source_rows, "full_sync")
         catalog = ExcelProductCatalog(self.database)
@@ -89,7 +89,6 @@ class StrapCatalogReferencesTest(unittest.TestCase):
             ("Watch Only", "TimeOnly", "Часы", 5),
             ("Zero Strap", "Zero", "Ремешки", 0),
             ("Single Strap", "Single", "Ремешки", 1),
-            ("Inactive Strap", "Archived", "Ремешки", 1),
         ]
         for name, brand, category, stock in products:
             catalog.create_product(name, brand=brand, category=category, stock=stock)
@@ -121,17 +120,41 @@ class StrapCatalogReferencesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return response.get_json()["data"]
 
-    def test_only_brands_with_real_active_strap_categories_are_returned(self):
+    def test_only_brands_with_erp_strap_products_are_returned(self):
         brands = {item["name"]: item for item in self.options("brand")}
         self.assertEqual(set(brands), {"Alpha", "Single", "Zero"})
         self.assertEqual(brands["Zero"]["stock_total"], 0)
+        available = self.options("brand", available_for_sale="1")
+        self.assertEqual([item["name"] for item in available], ["Single"])
 
-    def test_brand_categories_include_only_its_real_strap_types(self):
+    def test_brand_category_product_cascade_uses_erp_classification(self):
         brands = {item["name"]: item for item in self.options("brand")}
         alpha = self.options("category", brand_id=brands["Alpha"]["id"])
         single = self.options("category", brand_id=brands["Single"]["id"])
-        self.assertEqual({item["name"] for item in alpha}, {"Ремешки", "Браслеты"})
+        self.assertEqual([item["name"] for item in alpha], ["Ремешки"])
         self.assertEqual([item["name"] for item in single], ["Ремешки"])
+        products = self.options(
+            "product",
+            brand_id=brands["Single"]["id"],
+            category_id=single[0]["id"],
+            product_kind="strap_component",
+            in_stock="1",
+        )
+        self.assertEqual([item["name"] for item in products], ["Single Strap"])
+
+    def test_removed_and_installed_picker_searches_find_real_erp_straps(self):
+        removed = self.options(
+            "product", q="Alpha Strap", product_kind="strap_component"
+        )
+        installed = self.options(
+            "product", q="Single", product_kind="strap_component", in_stock="1"
+        )
+        watches = self.options(
+            "product", q="Alpha Watch", product_kind="strap_component"
+        )
+        self.assertEqual([item["name"] for item in removed], ["Alpha Strap"])
+        self.assertEqual([item["name"] for item in installed], ["Single Strap"])
+        self.assertEqual(watches, [])
 
 
 if __name__ == "__main__":
