@@ -13,6 +13,7 @@ from unittest import mock
 from app.catalog_db import CatalogDatabase
 from app.catalog_migration_steps import apply_fresh_catalog_schema
 from app.services.excel_product_catalog import ExcelProductCatalog
+from app.services.receipt_inventory import ReceiptInventory
 from app.services.sales_inventory import (
     CancellationConflictError,
     InsufficientStockError,
@@ -866,6 +867,86 @@ class SalesInventoryTest(unittest.TestCase):
         self.assertEqual(self.stock(product["id"]), 3)
         self.assertEqual(len(self.inventory.list_movements(product["id"])), 2)
 
+    def test_cancellation_creates_immutable_receipt_without_second_stock_change(self):
+        first_product = self.create_product(stock=5)
+        second_product = self.create_product(
+            stock=4, name="Часы Second", article="ARTICLE-2"
+        )
+        payload = self.payload(first_product)
+        self.inventory.create_sale_batch(
+            payload,
+            [
+                {"product_id": first_product["id"], "quantity": 2, "unit_price": 1000},
+                {"product_id": second_product["id"], "quantity": 3, "unit_price": 2000},
+            ],
+        )
+
+        cancelled = self.inventory.cancel_sale(
+            "sale-1", reason="Ошибка ввода", user_name="Тестовый сотрудник"
+        )
+        repeated = self.inventory.cancel_sale(
+            "sale-1", reason="Ошибка ввода", user_name="Другой сотрудник"
+        )
+
+        self.assertEqual(cancelled["cancelled_at"], repeated["cancelled_at"])
+        self.assertEqual(self.stock(first_product["id"]), 5)
+        self.assertEqual(self.stock(second_product["id"]), 4)
+        receipts = ReceiptInventory(
+            self.database
+        ).list_sale_cancellation_receipts()
+        self.assertEqual(len(receipts), 1)
+        receipt = receipts[0]
+        self.assertEqual(receipt["number"], "Отмена продажи №125")
+        self.assertEqual(receipt["source_sale_id"], "sale-1")
+        self.assertTrue(receipt["is_automatic"])
+        self.assertFalse(receipt["editable"])
+        self.assertEqual(
+            receipt["note"],
+            "Создано автоматически при отмене продажи. "
+            "Продажу отменил: Тестовый сотрудник",
+        )
+        self.assertEqual(
+            {item["product_id"]: item["quantity"] for item in receipt["positions"]},
+            {
+                str(first_product["id"]): 2.0,
+                str(second_product["id"]): 3.0,
+            },
+        )
+        self.assertTrue(all(
+            item["purchase_price"] is None for item in receipt["positions"]
+        ))
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_receipts WHERE id = ?",
+                ("sale-cancellation:sale-1",),
+            ).fetchone()[0], 1)
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM catalog_stock_movements WHERE sale_id = ?",
+                ("sale-1",),
+            ).fetchone()[0], 4)
+
+    def test_cancellation_receipt_rolls_back_with_sale_and_stock(self):
+        product = self.create_product(stock=3)
+        self.inventory.create_sale(self.payload(product), product["id"], 2, 1000)
+
+        with self.assertRaisesRegex(RuntimeError, "forced"):
+            self.inventory.cancel_sale(
+                "sale-1",
+                reason="Ошибка ввода",
+                user_name="Тест",
+                failure_hook=lambda _connection: (_ for _ in ()).throw(
+                    RuntimeError("forced")
+                ),
+            )
+
+        self.assertEqual(self.stock(product["id"]), 1)
+        self.assertEqual(self.inventory.get_sale("sale-1")["order_status"], "completed")
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_receipts WHERE id = ?",
+                ("sale-cancellation:sale-1",),
+            ).fetchone()[0], 0)
+
     def test_active_delete_is_blocked_and_soft_delete_never_changes_stock(self):
         product = self.create_product(stock=3)
         self.inventory.create_sale(self.payload(product), product["id"], 1, 1000)
@@ -1053,6 +1134,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.overrides_path = (
             self.temp_path / "automatic_sales_overrides.json"
         )
+        self.receipts_path = self.temp_path / "receipts.json"
         self.environment = mock.patch.dict(
             os.environ,
             {"CATALOG_DATABASE_PATH": str(self.database_path)},
@@ -1068,6 +1150,11 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 web,
                 "get_automatic_sales_overrides_path",
                 return_value=self.overrides_path,
+            ),
+            mock.patch.object(
+                web,
+                "get_receipts_path",
+                return_value=self.receipts_path,
             ),
             mock.patch.object(
                 web,
@@ -1799,6 +1886,23 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 "cancelled",
             )
             external_request.assert_not_called()
+
+    def test_cancelled_sale_receipt_appears_without_edit_actions(self):
+        sale = self.create_managed_sale(sale_id="receipt-ui")
+        response = self.cancel_sale_form(sale, reason="duplicate")
+
+        page = self.client.get("/receipts")
+        text = page.get_data(as_text=True)
+        row = text.split("Отмена продажи №ORDER-receipt-ui", 1)[1].split(
+            "</tr>", 1
+        )[0]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Создано автоматически при отмене продажи", text)
+        self.assertIn("Не указана", row)
+        self.assertNotIn("js-edit-receipt", row)
+        self.assertNotIn("/receipts/delete", row)
 
     def test_cancellation_reason_validation_and_other_comment(self):
         sale = self.create_managed_sale(sale_id="cancel-reason")

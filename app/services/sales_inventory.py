@@ -1749,6 +1749,17 @@ class SalesInventory:
                     "WHERE id=? AND status='completed'",
                     (cancelled_at, user_name or None, strap_operation["id"]),
                 )
+            self._record_sale_cancellation_receipt(
+                connection,
+                sale,
+                plan["reversals"],
+                cancelled_at,
+                user_name=(
+                    user_name
+                    or (audit_actor or {}).get("actor_name")
+                    or "Система"
+                ),
+            )
             if failure_hook:
                 failure_hook(connection)
             action = (
@@ -1800,6 +1811,125 @@ class SalesInventory:
                 )
 
         return self.get_sale(sale_id)
+
+    def _record_sale_cancellation_receipt(
+        self, connection, sale, reversals, cancelled_at, user_name
+    ):
+        """Record an already-applied sale reversal without moving stock again."""
+        positions = [
+            reversal for reversal in reversals
+            if float(reversal.get("quantity") or 0) > 0.000001
+        ]
+        if not positions:
+            return
+
+        sale_id = str(sale["id"])
+        receipt_id = "sale-cancellation:{}".format(sale_id)
+        if connection.execute(
+            "SELECT id FROM erp_receipts WHERE id = ?", (receipt_id,)
+        ).fetchone() is not None:
+            return
+
+        sale_number = self._sale_number(sale)
+        document_number = "Отмена продажи №{}".format(sale_number)
+        comment = (
+            "Создано автоматически при отмене продажи. "
+            "Продажу отменил: {}"
+        ).format(user_name)
+        product_ids = [int(position["product_id"]) for position in positions]
+        placeholders = ",".join("?" for _value in product_ids)
+        product_rows = connection.execute(
+            "SELECT p.id, p.brand_id, p.category_id, "
+            "p.excel_name_raw AS product_name, "
+            "COALESCE(b.name, p.excel_brand, '') AS brand, "
+            "COALESCE(c.name, p.excel_category, '') AS category "
+            "FROM catalog_excel_products p "
+            "LEFT JOIN erp_brands b ON b.id = p.brand_id "
+            "LEFT JOIN erp_categories c ON c.id = p.category_id "
+            "WHERE p.id IN ({})".format(placeholders),
+            product_ids,
+        ).fetchall()
+        products = {int(row["id"]): row for row in product_rows}
+        if len(products) != len(set(product_ids)):
+            raise CancellationConflictError(
+                "Не удалось создать запись прихода: товар продажи не найден."
+            )
+
+        receipt_positions = []
+        for position in positions:
+            product_id = int(position["product_id"])
+            product = products[product_id]
+            receipt_positions.append({
+                "product_id": str(product_id),
+                "brand_id": product["brand_id"],
+                "category_id": product["category_id"],
+                "product_name": product["product_name"],
+                "brand": product["brand"],
+                "category": product["category"],
+                "quantity": float(position["quantity"]),
+                "purchase_price": None,
+            })
+        metadata = {
+            "id": receipt_id,
+            "number": document_number,
+            "created_at": cancelled_at,
+            "receipt_date": cancelled_at[:10],
+            "note": comment,
+            "status": "posted",
+            "status_label": "Проведён",
+            "inventory_managed": False,
+            "is_automatic": True,
+            "automatic_type": "sale_cancellation",
+            "editable": False,
+            "source_sale_id": sale_id,
+            "positions": receipt_positions,
+            "positions_count": len(receipt_positions),
+            "total_quantity": sum(
+                float(position["quantity"]) for position in receipt_positions
+            ),
+            "total_amount": None,
+        }
+        connection.execute(
+            "INSERT INTO erp_receipts ("
+            "id, tenant_id, number, comment, status, receipt_date, user_name, "
+            "idempotency_key, metadata_json, created_at, updated_at) "
+            "VALUES (?, 'default', ?, ?, 'posted', ?, ?, ?, ?, ?, ?)",
+            (
+                receipt_id, document_number, comment, cancelled_at[:10],
+                user_name, receipt_id,
+                json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+                cancelled_at, cancelled_at,
+            ),
+        )
+        for position in receipt_positions:
+            connection.execute(
+                "INSERT INTO erp_receipt_items ("
+                "receipt_id, product_id, brand_id, category_id, quantity, "
+                "purchase_price, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                (
+                    receipt_id, int(position["product_id"]),
+                    position["brand_id"], position["category_id"],
+                    position["quantity"], cancelled_at,
+                ),
+            )
+        AuditJournal(self.database).record(
+            "receipt", receipt_id, "system_created", document_number,
+            after={
+                "status": "posted",
+                "quantity": metadata["total_quantity"],
+                "document": document_number,
+                "comment": comment,
+                "receipt_date": cancelled_at,
+            },
+            metadata={
+                "number": document_number,
+                "event_type": "sale_cancellation_receipt",
+                "source_sale_id": sale_id,
+            },
+            actor_id=user_name, actor_name=user_name, actor_type="user",
+            status="posted", source="sale_cancellation",
+            connection=connection,
+        )
 
     def delete_sale(
         self,
