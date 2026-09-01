@@ -1455,6 +1455,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 "created_at": "2026-08-04T14:14",
                 "source": source,
                 "order_number": "OLD-{}".format(index),
+                "delivery_cost": "250.00",
                 "original_unit_price": "1000",
                 "discount_type": "percent",
                 "discount_value": "10",
@@ -1473,9 +1474,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
                 sale,
                 unit_price="777.25",
                 order_status="shipped",
-                order_number="NEW-{}".format(index),
                 track_number="TRACK-{}".format(index),
-                delivery_cost="345.67",
                 country="Германия" if source == "Amazon" else "Россия",
                 region="Москва",
                 city="Москва",
@@ -1496,9 +1495,9 @@ class SalesInventoryWebTest(SalesInventoryTest):
             self.assertEqual(stored["unit_price"], 777.25, source)
             self.assertEqual(stored["total_amount"], 777.25, source)
             self.assertEqual(stored["order_status"], "shipped", source)
-            self.assertEqual(stored["order_number"], "NEW-{}".format(index), source)
+            self.assertEqual(stored["order_number"], "OLD-{}".format(index), source)
             self.assertEqual(stored["track_number"], "TRACK-{}".format(index), source)
-            self.assertEqual(stored["delivery_cost"], 345.67, source)
+            self.assertEqual(stored["delivery_cost"], 250, source)
             self.assertEqual(
                 stored["country"],
                 "Германия" if source == "Amazon" else "Россия",
@@ -1529,6 +1528,22 @@ class SalesInventoryWebTest(SalesInventoryTest):
             reopened_sale = reopened.get_json()["data"]
             self.assertEqual(reopened_sale["unit_price"], 777.25, source)
             self.assertEqual(reopened_sale["total_amount"], 777.25, source)
+
+            order_change = self.update_sale_form(
+                stored,
+                order_number="NEW-{}".format(index),
+            )
+            delivery_change = self.client.patch(
+                "/api/v1/sales/{}".format(sale["id"]),
+                json={"delivery_cost": 345.67},
+            )
+            self.assertEqual(order_change.status_code, 409, source)
+            self.assertEqual(delivery_change.status_code, 409, source)
+            protected = self.inventory.get_sale(sale["id"])
+            self.assertEqual(
+                protected["order_number"], "OLD-{}".format(index), source,
+            )
+            self.assertEqual(protected["delivery_cost"], 250, source)
 
     def test_completed_sale_date_is_rejected_by_form_and_api(self):
         sale = self.create_managed_sale()
@@ -1864,11 +1879,17 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertIn("setProtectedSaleFieldsLocked(true)", template)
         self.assertIn('document.getElementById("created_at").readOnly = locked', template)
         self.assertEqual(template.count("data-sale-legacy-price-field"), 5)
-        self.assertIn('? "Цена"', template)
+        self.assertNotIn('? "Цена"', template)
+        self.assertIn(
+            "'[name=\"order_number\"], [name=\"delivery_cost\"]'",
+            template,
+        )
+        self.assertIn('data-wb-sticker-field', template)
         self.assertIn("saleFinalPrice.readOnly = !locked", template)
         self.assertIn(
-            "Дата, бренд, категория, товар и количество защищены от изменения. "
-            "Цену и остальные данные продажи можно редактировать",
+            "Дата, бренд, категория, товар, количество, номер заказа и стоимость "
+            "доставки защищены от изменения. Цену и доступные данные продажи "
+            "можно редактировать",
             template,
         )
         self.assertIn("openCancellationModal", template)
