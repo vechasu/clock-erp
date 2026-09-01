@@ -15,7 +15,7 @@ from app.domain_schema_migrations import validate_orders_database
 from app.services.customer_identity import link_order_safely
 
 
-PAGE_SIZES = (20, 50, 100, 200, "all")
+PAGE_SIZES = (20, 50, 100, 200)
 DATE_QUERY = re.compile(r"^(\d{2})\.(\d{2})\.(\d{2}|\d{4})$")
 AMOUNT_QUERY = re.compile(r"^[\d\s.,₽]+$")
 PHONE_QUERY = re.compile(r"^[+\d\s()\-]+$")
@@ -24,6 +24,21 @@ EXACT_ORDER_NUMBER_QUERY = re.compile(
     re.IGNORECASE,
 )
 LOGGER = logging.getLogger(__name__)
+
+BITRIX_OWNED_FIELDS = (
+    "id", "ID", "external_id", "external_order_id", "number",
+    "ACCOUNT_NUMBER", "created_at", "date", "updated_at", "status",
+    "status_name", "cancelled", "order_total", "price", "currency",
+    "external_customer_id", "customer", "phone", "email", "country",
+    "region", "city", "payment", "payment_system", "paid", "delivery",
+    "delivery_type", "delivery_price", "delivery_price_source", "address",
+    "delivery_address", "comment", "bitrix_comment", "items",
+    "products", "products_count", "tracking", "track_number", "paid_name",
+    "source", "source_name", "external_source", "source_kind", "status_known",
+    "location_id", "products_total", "discount", "total",
+    "calculation_complete", "calculation_consistent", "sync_state",
+    "sync_missing",
+)
 
 
 def _text(value):
@@ -34,6 +49,26 @@ def normalize_exact_order_number_query(value):
     """Return an exact display number without ever coercing it to an integer."""
     match = EXACT_ORDER_NUMBER_QUERY.fullmatch(str(value or ""))
     return match.group(1) if match else None
+
+
+def pagination_items(page, page_count):
+    """Compact deterministic page window: 1 2 3 4 5 … last."""
+    page = max(1, int(page))
+    page_count = max(1, int(page_count))
+    candidates = {1, page_count}
+    candidates.update(range(max(1, page - 2), min(page_count, page + 2) + 1))
+    if page <= 4:
+        candidates.update(range(1, min(page_count, 5) + 1))
+    if page >= page_count - 3:
+        candidates.update(range(max(1, page_count - 4), page_count + 1))
+    result = []
+    previous = None
+    for number in sorted(candidates):
+        if previous is not None and number - previous > 1:
+            result.append(None)
+        result.append(number)
+        previous = number
+    return result
 
 
 def _phone_digits(value):
@@ -183,85 +218,177 @@ class OrdersSnapshotStore:
                 ).fetchall()
             }
 
-    def replace(self, orders, loaded_at):
+    @staticmethod
+    def _merge_bitrix_payload(
+        previous, incoming, preserve_existing_local=False
+    ):
+        """Update only fields owned by Bitrix and retain every ERP-only key."""
+        merged = dict(previous or {})
+        incoming = dict(incoming or {})
+        for field in BITRIX_OWNED_FIELDS:
+            if field not in incoming:
+                continue
+            if (
+                preserve_existing_local
+                and previous
+                and field in {"status", "status_name", "tracking", "track_number"}
+            ):
+                continue
+            value = incoming[field]
+            if field in {"items", "products"} and not value and merged.get(field):
+                continue
+            merged[field] = value
+        return merged
+
+    def _upsert_bitrix_in_connection(
+        self, connection, orders, loaded_at, preserve_existing_local=False
+    ):
+        result = {"added": 0, "updated": 0, "skipped": 0}
+        for position, incoming in enumerate(orders):
+            order_id = _text(
+                incoming.get("external_id") or incoming.get("id")
+                or incoming.get("ID")
+            )
+            if not order_id:
+                result["skipped"] += 1
+                continue
+            existing = connection.execute(
+                "SELECT order_id, item_units, detail_loaded, payload_json, customer_id "
+                "FROM orders_snapshot WHERE source = 'tictactoy' "
+                "AND external_order_id = ?",
+                (order_id,),
+            ).fetchone()
+            previous = json.loads(existing["payload_json"]) if existing else {}
+            order = self._merge_bitrix_payload(
+                previous, incoming,
+                preserve_existing_local=preserve_existing_local,
+            )
+            order["id"] = order_id
+            order["external_id"] = order_id
+            order["source"] = "tictactoy"
+            order["source_name"] = order.get("source_name") or "Tictactoy"
+            incoming_has_items = bool(incoming.get("items") or incoming.get("products"))
+            item_units = order_item_units(order)
+            if existing and not incoming_has_items:
+                item_units = existing["item_units"]
+            detail_loaded = int(bool(
+                incoming_has_items
+                or (existing is not None and existing["detail_loaded"])
+            ))
+            customer_id = existing["customer_id"] if existing else None
+            if customer_id is None:
+                customer_id = link_order_safely(
+                    connection, order, logger=LOGGER
+                )["customer_id"]
+            created = order.get("created_at") or order.get("date")
+            total = (
+                order.get("order_total")
+                if order.get("order_total") is not None
+                else order.get("price")
+            )
+            try:
+                source_position = -int(order_id)
+            except ValueError:
+                source_position = position
+            payload_json = json.dumps(
+                order, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            )
+            values = (
+                source_position,
+                _text(order.get("number") or order_id).casefold(),
+                _text(order.get("customer")).casefold(),
+                _extra_search(order),
+                _phone_digits(order.get("phone")),
+                _amount_search(total),
+                _date_search(created),
+                _created_sort(created),
+                _text(order.get("status")).upper(),
+                item_units,
+                detail_loaded,
+                payload_json,
+                loaded_at,
+                customer_id,
+            )
+            if existing:
+                if (
+                    existing["payload_json"] == payload_json
+                    and existing["item_units"] == item_units
+                    and int(existing["detail_loaded"]) == detail_loaded
+                ):
+                    result["skipped"] += 1
+                    continue
+                connection.execute(
+                    "UPDATE orders_snapshot SET source_position=?, number_fold=?, "
+                    "customer_fold=?, extra_fold=?, phone_digits=?, amount_search=?, "
+                    "date_search=?, created_sort=?, status=?, item_units=?, "
+                    "detail_loaded=?, payload_json=?, loaded_at=?, "
+                    "customer_id=COALESCE(customer_id, ?) WHERE source='tictactoy' "
+                    "AND external_order_id=?",
+                    values + (order_id,),
+                )
+                result["updated"] += 1
+            else:
+                connection.execute(
+                    "INSERT INTO orders_snapshot (order_id, source, external_order_id, "
+                    "source_position, number_fold, customer_fold, extra_fold, phone_digits, "
+                    "amount_search, date_search, created_sort, status, item_units, "
+                    "detail_loaded, payload_json, loaded_at, customer_id) "
+                    "VALUES (?, 'tictactoy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (order_id, order_id) + values,
+                )
+                result["added"] += 1
+        return result
+
+    def upsert_bitrix(
+        self, orders, loaded_at, checkpoint_cursor=None, checkpoint_complete=False,
+        preserve_existing_local=False,
+    ):
+        """Commit one idempotent history batch and its resume cursor together."""
         self.initialize()
         loaded_at = float(loaded_at or 0)
         with self.connection() as connection:
-            preserved = {
-                row["order_id"]: row
-                for row in connection.execute(
-                    "SELECT order_id, item_units, detail_loaded, payload_json, customer_id "
-                    "FROM orders_snapshot WHERE source = 'tictactoy' AND "
-                    "(item_units IS NOT NULL OR detail_loaded = 1 OR customer_id IS NOT NULL)"
-                ).fetchall()
-            }
-            connection.execute(
-                "DELETE FROM orders_snapshot WHERE source = 'tictactoy'"
+            result = self._upsert_bitrix_in_connection(
+                connection, orders, loaded_at,
+                preserve_existing_local=preserve_existing_local,
             )
-            for position, order in enumerate(orders):
-                order_id = _text(order.get("id") or order.get("ID"))
-                if not order_id:
-                    continue
-                incoming_has_items = bool(order.get("items") or order.get("products"))
-                preserved_row = preserved.get(order_id)
-                detail_loaded = int(
-                    preserved_row["detail_loaded"] if preserved_row else 0
-                )
-                if preserved_row:
-                    previous = json.loads(preserved_row["payload_json"])
-                    order = dict(order)
-                    for field in (
-                        "customer", "phone", "email", "country", "region", "city",
-                        "updated_at", "payment", "payment_system", "paid", "delivery",
-                        "address", "delivery_address", "comment", "items", "products",
-                        "products_count",
-                    ):
-                        if not order.get(field) and previous.get(field):
-                            order[field] = previous[field]
-                item_units = order_item_units(order)
-                if preserved_row and not incoming_has_items:
-                    item_units = preserved_row["item_units"]
-                customer_id = preserved_row["customer_id"] if preserved_row else None
-                if customer_id is None:
-                    customer_id = link_order_safely(
-                        connection, order, logger=LOGGER
-                    )["customer_id"]
-                created = order.get("created_at") or order.get("date")
-                total = (
-                    order.get("order_total")
-                    if order.get("order_total") is not None
-                    else order.get("price")
-                )
-                connection.execute(
-                    "INSERT INTO orders_snapshot "
-                    "(order_id, source, external_order_id, source_position, number_fold, customer_fold, extra_fold, "
-                    "phone_digits, amount_search, date_search, created_sort, "
-                    "status, item_units, detail_loaded, payload_json, loaded_at, customer_id) "
-                    "VALUES (?, 'tictactoy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        order_id,
-                        order_id,
-                        position,
-                        _text(order.get("number") or order_id).casefold(),
-                        _text(order.get("customer")).casefold(),
-                        _extra_search(order),
-                        _phone_digits(order.get("phone")),
-                        _amount_search(total),
-                        _date_search(created),
-                        _created_sort(created),
-                        _text(order.get("status")).upper(),
-                        item_units,
-                        detail_loaded,
-                        json.dumps(order, ensure_ascii=False, separators=(",", ":")),
-                        loaded_at,
-                        customer_id,
-                    ),
-                )
             connection.execute(
                 "INSERT OR REPLACE INTO orders_snapshot_meta (key, value) "
-                "VALUES ('loaded_at', ?)",
-                (str(loaded_at),),
+                "VALUES ('loaded_at', ?)", (str(loaded_at),)
             )
+            if checkpoint_cursor is not None or checkpoint_complete:
+                checkpoint = {
+                    "cursor": int(checkpoint_cursor or 0),
+                    "complete": bool(checkpoint_complete),
+                    "updated_at": loaded_at,
+                }
+                connection.execute(
+                    "INSERT OR REPLACE INTO orders_snapshot_meta (key, value) "
+                    "VALUES ('bitrix_history_checkpoint', ?)",
+                    (json.dumps(checkpoint, sort_keys=True),),
+                )
+        return result
+
+    def history_checkpoint(self):
+        self.initialize()
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM orders_snapshot_meta "
+                "WHERE key='bitrix_history_checkpoint'"
+            ).fetchone()
+        if row is None:
+            return {"cursor": 0, "complete": False}
+        try:
+            state = json.loads(row["value"])
+            return {
+                "cursor": int(state.get("cursor") or 0),
+                "complete": bool(state.get("complete")),
+            }
+        except (TypeError, ValueError):
+            return {"cursor": 0, "complete": False}
+
+    def replace(self, orders, loaded_at):
+        """Compatibility entry point: recent refreshes are additive, never destructive."""
+        return self.upsert_bitrix(orders, loaded_at)
 
     def upsert_wildberries(self, orders):
         """Idempotently store each WB assembly order as its own record."""
@@ -468,16 +595,13 @@ class OrdersSnapshotStore:
         status = _text(args.get("status") or "all").upper()
         source = _text(args.get("source") or "all").casefold()
         period = _text(args.get("period") or "all")
-        raw_page_size = _text(args.get("page_size") or 20).casefold()
-        if raw_page_size == "all":
-            page_size = "all"
-        else:
-            try:
-                page_size = int(raw_page_size)
-            except (TypeError, ValueError):
-                page_size = 20
-            if page_size not in PAGE_SIZES:
-                page_size = 20
+        raw_page_size = _text(args.get("page_size") or 50).casefold()
+        try:
+            page_size = int(raw_page_size)
+        except (TypeError, ValueError):
+            page_size = 50
+        if page_size not in PAGE_SIZES:
+            page_size = 50
         try:
             page = max(1, int(args.get("page") or 1))
         except (TypeError, ValueError):
@@ -557,7 +681,7 @@ class OrdersSnapshotStore:
             rows = connection.execute(
                 "SELECT payload_json, item_units, customer_id FROM orders_snapshot"
                 + where_sql
-                + " ORDER BY source_position ASC, order_id DESC LIMIT ? OFFSET ?",
+                + " ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
                 parameters + [effective_page_size, (page - 1) * effective_page_size],
             ).fetchall()
             status_rows = connection.execute(
@@ -581,6 +705,7 @@ class OrdersSnapshotStore:
             "page": page,
             "page_size": page_size,
             "page_count": page_count,
+            "page_items": pagination_items(page, page_count),
             "exact_number": (
                 exact_candidate if exact_number is not None or total == 0 else None
             ),
