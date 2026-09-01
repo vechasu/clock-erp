@@ -364,6 +364,17 @@
                     <div class="sale-location-grid"><div class="order-sale-location-field"><label for="orderSaleCountryTrigger">Страна</label>{{ render_catalog_combobox('orderSaleCountry','country',order_country_options,selected_value=order_geography.country or '',item_label='страну',prefix_search=true,empty_label='Страна не найдена',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleRegionTrigger">Регион</label>{{ render_catalog_combobox('orderSaleRegion','region',[],selected_value=order_geography.region or '',item_label='регион',disabled=not order_geography.country,prefix_search=true,empty_label='Регион не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleCityTrigger">Город</label>{{ render_catalog_combobox('orderSaleCity','city',[],selected_value=order_geography.city or '',item_label='город',disabled=not order_geography.region,prefix_search=true,empty_label='Город не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div></div>
                 </section>
                 <div class="sale-tracking-field"><label for="orderSaleTracking">Трекинг</label><input class="field" id="orderSaleTracking" name="tracking" maxlength="255" value="{{ order_tracking or '' }}" placeholder="Введите номер отправления" data-order-sale-tracking></div>
+                <div class="sale-commission-field">
+                    <label for="orderSaleCommissionTrigger">Комиссия</label>
+                    {{ render_catalog_combobox(
+                        'orderSaleCommission', 'commission',
+                        order_sale_commission_options,
+                        item_label='комиссию', prefix_search=false,
+                        empty_label='Варианты комиссии не найдены',
+                        component_class='filter-combobox',
+                        clear_selection_on_search_clear=true
+                    ) }}
+                </div>
                 <div class="sale-dialog-info">После проведения продажа появится в разделе «Продажи», а остатки товаров спишутся.</div>
             </div>
             <div class="sale-dialog-actions"><div class="sale-dialog-total">К списанию: <strong>{{ order_sale_dialog_summary.quantity_display }} шт.</strong> · Итого: <strong><span class="money-value" data-amount="{{ order_sale_dialog_summary.total_amount }}"></span> ₽</strong></div><div class="sale-dialog-buttons"><button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button><button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button></div></div>

@@ -2043,6 +2043,10 @@ def render_orders_page(
         order_country_options=build_sale_combobox_options(
             TICTACTOY_SALE_COUNTRIES
         ),
+        order_sale_commission_options=build_sale_combobox_options(
+            SALE_COMMISSION_OPTIONS,
+            SALE_COMMISSION_LABELS,
+        ),
         order_location_data=get_tictactoy_location_catalog(),
         order_tracking=get_order_tracking(selected_order or {}),
         order_sale_pricing=build_order_sale_pricing(
@@ -2847,6 +2851,17 @@ def _conduct_order_sale(order_id):
         else get_order_tracking(full_order)
         or ""
     ).strip()
+    commission = normalize_sale_commission_value(
+        request.form.get("commission")
+    )
+    if commission and commission not in SALE_COMMISSION_OPTIONS:
+        return redirect(url_for(
+            "order_page",
+            order_id=order_id,
+            notice="error",
+            message="Выберите комиссию из списка",
+            open_sale="1",
+        ))
     inferred_geography = get_order_geography(full_order)
     geography = {
         field: str(
@@ -3091,6 +3106,7 @@ def _conduct_order_sale(order_id):
         "track_number": tracking,
         "delivery_address": get_order_address_text(full_order),
         "delivery_cost": full_order.get("delivery_price") or 0,
+        "commission": commission,
         "order_total": full_order.get("order_total"),
         "comment": str(
             full_order.get("comment")

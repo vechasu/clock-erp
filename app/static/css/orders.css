@@ -446,9 +446,9 @@ body.orders-page.has-open-sale-dialog { overflow:hidden; }
 .orders-page .sale-order-lines td small { display:block; margin-top:2px; color:var(--muted); font-size:11px; }
 .orders-page .sale-order-lines td:not(:first-child),.orders-page .sale-order-lines th:not(:first-child) { text-align:right; }
 .orders-page .sale-location-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:end; gap:12px; }
-.orders-page .order-sale-location-field > label,.orders-page .sale-tracking-field > label { display:block; margin-bottom:5px; font-size:12px; font-weight:650; }
-.orders-page .order-sale-location-field .brand-combobox-trigger,.orders-page .sale-tracking-field .field { width:100%; min-height:42px; height:42px; }
-.orders-page .sale-tracking-field { margin-top:14px; }
+.orders-page .order-sale-location-field > label,.orders-page .sale-tracking-field > label,.orders-page .sale-commission-field > label { display:block; margin-bottom:5px; font-size:12px; font-weight:650; }
+.orders-page .order-sale-location-field .brand-combobox-trigger,.orders-page .sale-tracking-field .field,.orders-page .sale-commission-field .brand-combobox-trigger { width:100%; min-height:42px; height:42px; }
+.orders-page .sale-tracking-field,.orders-page .sale-commission-field { margin-top:14px; }
 .orders-page .sale-dialog-info { margin-top:12px; padding:8px 10px; border-radius:var(--erp-control-radius); background:var(--theme-info-soft,var(--theme-surface-muted,#eff6ff)); color:var(--theme-text,#34445b); font-size:12px; }
 .orders-page .strap-replacement-open { margin-top:10px; }
 .orders-page .strap-replacement { padding:12px; border:1px solid var(--theme-border,var(--line)); border-radius:var(--erp-radius); background:var(--theme-surface-muted,#f8fafc); }
