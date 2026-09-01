@@ -36,7 +36,7 @@ window.ERP_NOTIFICATION_CONTEXT={
     id="appSidebar"
     aria-label="Навигация внутренней системы TTT"
 >
-    <div class="sidebar-brand">
+    <div class="sidebar-brand{% if current_user %} has-notifications{% endif %}">
         <a
             class="sidebar-brand-link"
             href="/"
