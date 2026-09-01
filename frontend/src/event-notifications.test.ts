@@ -19,10 +19,10 @@ beforeEach(() => {
     <div data-notification-backdrop hidden></div>
     <aside id="notificationCenter" hidden>
       <button data-notification-close></button>
-      <button data-notification-filter="all"></button><button data-notification-filter="order"></button><button data-notification-filter="task"></button>
+      <button data-notification-filter="all"></button><button data-notification-filter="order"></button><button data-notification-filter="task"></button><button data-notification-filter="system"></button>
       <button data-notification-read-all></button><div data-notification-feed></div>
       <button data-notification-settings-toggle></button><div data-notification-settings hidden>
-        <input type="checkbox" data-notification-preference="order_sound"><input type="checkbox" data-notification-preference="task_sound"><input type="checkbox" data-notification-preference="browser_notifications">
+        <input type="checkbox" data-notification-preference="order_sound"><input type="checkbox" data-notification-preference="task_sound"><input type="checkbox" data-notification-preference="browser_notifications"><input type="checkbox" data-notification-preference="system_errors"><input type="checkbox" data-notification-preference="operation_completions">
         <p data-notification-permission-note hidden></p>
       </div>
     </aside>`;
@@ -60,6 +60,24 @@ test('browser permission is requested only by explicit settings toggle', async (
   await vi.waitFor(() => expect(requestPermission).toHaveBeenCalledOnce());
   expect(toggle.checked).toBe(false);
   expect(document.querySelector('[data-notification-permission-note]')?.textContent).toContain('не выдано');
+});
+
+test('disabled system settings keep events in the feed without attention toast', async () => {
+  const info = vi.fn();
+  Object.defineProperty(window, 'VechasuNotify', {value: {info}, configurable: true});
+  const data = {
+    unread: 1,
+    preferences: {...freshFeed.data.preferences, system_errors: false, operation_completions: false},
+    items: [{
+      id: 9, type: 'system', severity: 'error', title: 'Ошибка backup',
+      message: 'Резервная копия не создана', metadata: {}, target_url: '/app/settings',
+      created_at: '2026-09-01T10:32:00+00:00', read_at: null, fresh: true,
+    }],
+  };
+  Object.defineProperty(window, 'fetch', {value: vi.fn(async () => ({ok: true, json: async () => ({data})})), configurable: true});
+  window.eval(source);
+  await vi.waitFor(() => expect(document.querySelector('[data-notification-feed]')?.textContent).toContain('Ошибка backup'));
+  expect(info).not.toHaveBeenCalled();
 });
 
 declare global {
