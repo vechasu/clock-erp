@@ -1,21 +1,38 @@
 .notification-bell {
     position: relative;
-    display: inline-flex;
-    min-width: 36px;
+    flex: 0 0 36px;
+    width: 36px;
     height: 36px;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    margin-left: auto;
-    padding: 0 8px;
-    border: 1px solid var(--theme-border, #e2e8f0);
+    padding: 0;
+    border: 1px solid rgba(197, 219, 240, 0.14);
     border-radius: 10px;
-    background: var(--theme-surface, #fff);
-    color: var(--theme-text, #172033);
+    background: rgba(255, 255, 255, 0.045);
+    color: var(--sidebar-text, #d7e2ee);
     cursor: pointer;
 }
 
+.notification-bell:hover {
+    background: var(--sidebar-bg-hover, rgba(255, 255, 255, 0.07));
+    color: #ffffff;
+}
+
+.notification-bell > svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .notification-bell-count {
+    position: absolute;
+    z-index: 1;
+    top: -5px;
+    right: -5px;
     min-width: 17px;
     height: 17px;
     padding: 0 4px;
