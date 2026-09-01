@@ -11,6 +11,7 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/notifications.css') }}"
 >
+<link rel="stylesheet" href="{{ url_for('static', filename='css/event-notifications.css') }}">
 <link
     rel="stylesheet"
     href="{{ url_for('static', filename='css/erp-states.css') }}"
@@ -57,6 +58,20 @@ window.ERP_NOTIFICATION_CONTEXT={
                 </span>
             </span>
         </a>
+
+        {% if current_user %}
+            <button
+                class="notification-bell"
+                type="button"
+                data-notification-bell
+                aria-label="Уведомления"
+                aria-controls="notificationCenter"
+                aria-expanded="false"
+            >
+                <span aria-hidden="true">🔔</span>
+                <span class="notification-bell-count" data-notification-count hidden></span>
+            </button>
+        {% endif %}
 
         <button
             id="sidebarToggle"
@@ -188,6 +203,35 @@ window.ERP_NOTIFICATION_CONTEXT={
     </div>
 </aside>
 
+{% if current_user %}
+<div class="notification-center-backdrop" data-notification-backdrop hidden></div>
+<aside class="notification-center" id="notificationCenter" aria-label="Центр уведомлений" hidden>
+    <header>
+        <h2>Уведомления</h2>
+        <button type="button" data-notification-close aria-label="Закрыть">×</button>
+    </header>
+    <div class="notification-filters" role="tablist" aria-label="Фильтры уведомлений">
+        <button type="button" data-notification-filter="all" class="active">Все</button>
+        <button type="button" data-notification-filter="order">Заказы</button>
+        <button type="button" data-notification-filter="task">Задачи</button>
+    </div>
+    <button class="notification-read-all" type="button" data-notification-read-all>Отметить все как прочитанные</button>
+    <div class="notification-feed" data-notification-feed></div>
+    <footer>
+        <button class="notification-settings-toggle" type="button" data-notification-settings-toggle aria-expanded="false">Настроить уведомления</button>
+        <div class="notification-settings" data-notification-settings hidden>
+            <label><span>Звук новых заказов</span><input type="checkbox" data-notification-preference="order_sound"></label>
+            <label><span>Звук новых задач</span><input type="checkbox" data-notification-preference="task_sound"></label>
+            <label><span>Системные уведомления браузера</span><input type="checkbox" data-notification-preference="browser_notifications"></label>
+            <p data-notification-permission-note hidden></p>
+        </div>
+    </footer>
+</aside>
+<script>
+window.ERP_EVENT_NOTIFICATIONS={csrf:{{ csrf_token()|tojson }}};
+</script>
+{% endif %}
+
 <div
     id="sidebarTooltip"
     class="sidebar-tooltip erp-tooltip"
@@ -270,6 +314,7 @@ window.ERP_NOTIFICATION_CONTEXT={
 <script async src="{{ url_for('static', filename='js/theme.js') }}"></script>
 <script async src="{{ url_for('static', filename='js/erp-states.js') }}"></script>
 <script async src="{{ url_for('static', filename='js/notifications.js') }}"></script>
+{% if current_user %}<script defer src="{{ url_for('static', filename='js/event-notifications.js') }}"></script>{% endif %}
 <script async src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 {% if current_user %}
 <script>

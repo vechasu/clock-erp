@@ -82,6 +82,8 @@
 
     function duplicateOf(item) {
         return Array.from(items.values()).find(function (candidate) {
+            if ((candidate.operationId || item.operationId)
+                    && candidate.operationId !== item.operationId) return false;
             return candidate.kind === item.kind
                 && candidate.title === item.title
                 && candidate.detail === item.detail;
