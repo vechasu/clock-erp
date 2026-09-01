@@ -464,6 +464,8 @@ body.orders-page.has-open-sale-dialog { overflow:hidden; }
 .orders-page .strap-picker-reference .brand-combobox { width:100%; }
 .orders-page .strap-picker-results { display:grid; max-height:170px; margin-top:4px; overflow:auto; border:1px solid var(--theme-border,var(--line)); border-radius:var(--erp-control-radius); background:var(--theme-surface,#fff); }
 .orders-page .strap-picker-results:empty { display:none; }
+.orders-page .strap-picker-status { padding:10px; color:var(--theme-text-muted,#64748b); font-size:12px; }
+.orders-page .strap-picker-status.is-error { color:var(--theme-danger,#b91c1c); }
 .orders-page .strap-picker-option { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; padding:8px 10px; border:0; border-bottom:1px solid var(--theme-border,var(--line)); background:transparent; color:inherit; text-align:left; cursor:pointer; }
 .orders-page .strap-picker-option:last-child { border-bottom:0; }
 .orders-page .strap-picker-option:disabled { opacity:.55; cursor:not-allowed; }
