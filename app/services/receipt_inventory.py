@@ -735,6 +735,28 @@ class ReceiptInventory:
                 else None
             )
 
+    def list_sale_cancellation_receipts(self):
+        """Return immutable receipt projections created by sale cancellation."""
+        self.database.initialize()
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT metadata_json FROM erp_receipts "
+                "WHERE id LIKE 'sale-cancellation:%' AND status = 'posted' "
+                "ORDER BY created_at DESC"
+            ).fetchall()
+        receipts = []
+        for row in rows:
+            try:
+                receipt = json.loads(row["metadata_json"] or "{}")
+            except (TypeError, ValueError):
+                continue
+            if (
+                isinstance(receipt, dict)
+                and receipt.get("automatic_type") == "sale_cancellation"
+            ):
+                receipts.append(receipt)
+        return receipts
+
     @staticmethod
     def _tenant_id(value):
         tenant_id = str(value or "").strip()

@@ -11024,6 +11024,7 @@ def sale_cancel():
                     if external_order_id else None
                 ),
             )
+            _cached_api_receipt_records.cache_clear()
             if external_order_id:
                 OrderStatusService(inventory.database).sync_one(
                     external_order_id, update_order_status
@@ -20413,6 +20414,10 @@ def serialize_api_receipt(
         "status": str(receipt.get("status") or "posted"),
         "status_label": str(receipt.get("status_label") or "Проведён"),
         "inventory_managed": bool(receipt.get("inventory_managed")),
+        "is_automatic": bool(receipt.get("is_automatic")),
+        "automatic_type": str(receipt.get("automatic_type") or ""),
+        "editable": bool(receipt.get("editable", True)),
+        "source_sale_id": str(receipt.get("source_sale_id") or ""),
         "positions": positions,
         "positions_count": len(positions),
         "total_quantity": receipt_quantity_value(
@@ -20889,6 +20894,15 @@ def rollback_remote_receipt(client, document):
 def _cached_api_receipt_records(receipts_signature, database_signature):
     del receipts_signature, database_signature
     stored_receipts = load_receipts()
+    stored_ids = {
+        str(receipt.get("id") or "") for receipt in stored_receipts
+        if isinstance(receipt, dict)
+    }
+    stored_receipts.extend(
+        receipt
+        for receipt in ReceiptInventory().list_sale_cancellation_receipts()
+        if str(receipt.get("id") or "") not in stored_ids
+    )
     receipt_product_ids = {
         str(position.get("product_id"))
         for receipt in stored_receipts
@@ -22435,6 +22449,7 @@ def api_sale_cancel(sale_id):
                     if external_order_id else None
                 ),
             )
+            _cached_api_receipt_records.cache_clear()
             if external_order_id:
                 OrderStatusService(inventory.database).sync_one(
                     external_order_id, update_order_status
