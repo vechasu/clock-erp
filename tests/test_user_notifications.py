@@ -5,7 +5,11 @@ import sqlite3
 from pathlib import Path
 
 from app import auth, web
-from app.domain_schema_migrations import apply_domain_migrations
+from app.domain_schema_migrations import (
+    AUTH_NOTIFICATIONS_INDEX_STATEMENTS,
+    AUTH_NOTIFICATIONS_TABLE_STATEMENTS,
+    apply_domain_migrations,
+)
 from app.services.user_notifications import UserNotificationStore
 
 
@@ -66,7 +70,8 @@ class UserNotificationStoreTest(unittest.TestCase):
             connection.execute("DROP TABLE user_notifications")
             connection.execute("DROP TABLE notification_entities")
             connection.execute(
-                "DELETE FROM erp_migration_ledger WHERE migration_id='2026-09-01-user-notifications-v1'"
+                "DELETE FROM erp_migration_ledger WHERE migration_id IN "
+                "('2026-09-01-user-notifications-v1','2026-09-01-server-notification-events-v2')"
             )
             connection.commit()
         finally:
@@ -75,6 +80,38 @@ class UserNotificationStoreTest(unittest.TestCase):
         upgraded = UserNotificationStore(path)
         self.assertEqual(upgraded.feed(1)["items"], [])
         self.assertIsNotNone(auth.AuthStore(path).get_user(1))
+
+    def test_v2_migration_preserves_existing_notification(self):
+        self.store.publish_task({"id": 501, "title": "Сохранить меня"}, 1, "Иван")
+        path = self.store.path
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("DROP INDEX idx_user_notifications_feed")
+            connection.execute("DROP INDEX idx_user_notifications_unread")
+            connection.execute("ALTER TABLE user_notifications RENAME TO user_notifications_v2")
+            connection.execute(AUTH_NOTIFICATIONS_TABLE_STATEMENTS[1])
+            connection.execute(
+                "INSERT INTO user_notifications "
+                "(id,user_id,type,entity_type,entity_id,title,message,metadata_json,target_url,created_at,read_at,delivered_at,dedupe_key) "
+                "SELECT id,user_id,type,entity_type,entity_id,title,message,metadata_json,target_url,created_at,read_at,delivered_at,dedupe_key "
+                "FROM user_notifications_v2"
+            )
+            connection.execute("DROP TABLE user_notifications_v2")
+            for statement in AUTH_NOTIFICATIONS_INDEX_STATEMENTS:
+                connection.execute(statement)
+            connection.execute("ALTER TABLE user_notification_preferences RENAME TO user_notification_preferences_v2")
+            connection.execute(AUTH_NOTIFICATIONS_TABLE_STATEMENTS[2])
+            connection.execute("DROP TABLE user_notification_preferences_v2")
+            connection.execute(
+                "DELETE FROM erp_migration_ledger WHERE migration_id='2026-09-01-server-notification-events-v2'"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        apply_domain_migrations(path, "auth", "upgrade-preservation-test")
+        item = UserNotificationStore(path).feed(1)["items"][0]
+        self.assertEqual((item["entity_id"], item["title"], item["severity"]),
+                         ("501", "Новая задача", "info"))
 
     def test_wb_notification_exists_only_after_saved_batch(self):
         self.store.publish_saved_orders("wildberries", set(), [order(200, "wildberries")], [1])
@@ -101,6 +138,36 @@ class UserNotificationStoreTest(unittest.TestCase):
         })
         self.assertEqual(saved, self.store.preferences(2))
         self.assertTrue(saved["browser_notifications"])
+
+    def test_system_event_is_deduplicated_and_read_state_is_per_user(self):
+        created = self.store.publish_system(
+            "wb_sync:error:operation-42", "Ошибка синхронизации Wildberries",
+            "Проверьте подключение.", [1, 2], severity="error",
+            entity_type="integration", entity_id="wildberries",
+            target_url="/orders?source=wildberries",
+        )
+        self.assertEqual(created, 2)
+        self.assertEqual(self.store.publish_system(
+            "wb_sync:error:operation-42", "Дубль", "Дубль", [1, 2], severity="error",
+        ), 0)
+        first = self.store.feed(1)
+        second = self.store.feed(2)
+        self.assertEqual(first["items"][0]["type"], "system")
+        self.assertEqual(first["items"][0]["severity"], "error")
+        self.assertTrue(self.store.mark_read(1, first["items"][0]["id"]))
+        self.assertEqual(self.store.feed(1)["unread"], 0)
+        self.assertEqual(self.store.feed(2)["unread"], 1)
+        self.assertEqual(self.store.mark_all_read(2), 1)
+
+    def test_system_preferences_persist_and_ordinary_sync_is_silent(self):
+        self.store.publish_saved_orders("tictactoy", set(), [order(100)], [1])
+        self.store.publish_saved_orders("tictactoy", {"100"}, [order(100)], [1])
+        self.assertEqual(self.store.feed(1)["items"], [])
+        saved = self.store.save_preferences(1, {
+            "system_errors": False, "operation_completions": False,
+        })
+        self.assertFalse(saved["system_errors"])
+        self.assertFalse(saved["operation_completions"])
 
 
 class UserNotificationApiTest(unittest.TestCase):
@@ -170,10 +237,31 @@ class UserNotificationApiTest(unittest.TestCase):
         page = self.client.get("/app/tasks").get_data(as_text=True)
         for marker in (
             "data-notification-bell", "notificationCenter", "Все", "Заказы", "Задачи",
+            "Система", "Уведомлять об ошибках системы",
+            "Уведомлять о завершении операций",
             "Отметить все как прочитанные", "Звук новых заказов",
             "Системные уведомления браузера", "event-notifications.js",
         ):
             self.assertIn(marker, page)
+
+    def test_system_event_feed_and_preferences_api(self):
+        web._notification_store().publish_system(
+            "backup:error:test-operation", "Ошибка backup",
+            "Резервная копия не создана.", [self.author_id], severity="error",
+            entity_type="backup", entity_id="test-operation",
+        )
+        response = self.client.get("/api/v1/notifications")
+        self.assertEqual(response.status_code, 200)
+        event = response.get_json()["data"]["items"][0]
+        self.assertEqual((event["type"], event["severity"], event["title"]),
+                         ("system", "error", "Ошибка backup"))
+        saved = self.client.put(
+            "/api/v1/notification-preferences",
+            json={"system_errors": False, "operation_completions": False},
+            headers={"X-CSRF-Token": "notification-csrf"},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertFalse(saved.get_json()["data"]["system_errors"])
 
 
 if __name__ == "__main__":

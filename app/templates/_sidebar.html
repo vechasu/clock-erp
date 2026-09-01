@@ -214,6 +214,7 @@ window.ERP_NOTIFICATION_CONTEXT={
         <button type="button" data-notification-filter="all" class="active">Все</button>
         <button type="button" data-notification-filter="order">Заказы</button>
         <button type="button" data-notification-filter="task">Задачи</button>
+        <button type="button" data-notification-filter="system">Система</button>
     </div>
     <button class="notification-read-all" type="button" data-notification-read-all>Отметить все как прочитанные</button>
     <div class="notification-feed" data-notification-feed></div>
@@ -223,6 +224,8 @@ window.ERP_NOTIFICATION_CONTEXT={
             <label><span>Звук новых заказов</span><input type="checkbox" data-notification-preference="order_sound"></label>
             <label><span>Звук новых задач</span><input type="checkbox" data-notification-preference="task_sound"></label>
             <label><span>Системные уведомления браузера</span><input type="checkbox" data-notification-preference="browser_notifications"></label>
+            <label><span>Уведомлять об ошибках системы</span><input type="checkbox" data-notification-preference="system_errors"></label>
+            <label><span>Уведомлять о завершении операций</span><input type="checkbox" data-notification-preference="operation_completions"></label>
             <p data-notification-permission-note hidden></p>
         </div>
     </footer>
