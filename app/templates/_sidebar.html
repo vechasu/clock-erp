@@ -314,7 +314,7 @@ window.ERP_EVENT_NOTIFICATIONS={csrf:{{ csrf_token()|tojson }}};
 <script async src="{{ url_for('static', filename='js/theme.js') }}"></script>
 <script async src="{{ url_for('static', filename='js/erp-states.js') }}"></script>
 <script async src="{{ url_for('static', filename='js/notifications.js') }}"></script>
-{% if current_user %}<script defer src="{{ url_for('static', filename='js/event-notifications.js') }}"></script>{% endif %}
+{% if current_user %}<script async src="{{ url_for('static', filename='js/event-notifications.js') }}"></script>{% endif %}
 <script async src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
 {% if current_user %}
 <script>
