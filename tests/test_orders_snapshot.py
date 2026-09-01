@@ -9,6 +9,7 @@ from unittest import mock
 from app import web
 from app.catalog_db import CatalogDatabase
 from app.domain_schema_migrations import apply_domain_migrations
+from app.schema_migrations import apply_migrations
 from app.services.orders_snapshot import (
     OrdersSnapshotStore,
     normalize_exact_order_number_query,
@@ -505,6 +506,65 @@ class OrdersListIntegrationTest(unittest.TestCase):
         ):
             self.assertIn(expected, html)
 
+    def test_list_mode_table_is_compact_and_uses_latest_employee_comment(self):
+        row = dict(
+            order_row(1),
+            source="wildberries",
+            source_name="Wildberries",
+            wb_order_id="991122",
+            email="buyer@example.test",
+            delivery_type="FBS",
+            payment_system="Онлайн",
+            paid="N",
+            sale_completed=False,
+            products=[
+                {"name": "BLM Blue AUTOMATIC", "article": "BLM-01", "quantity": 1},
+                {"name": "Bradley Black", "article": "BR-02", "quantity": 2},
+                {"name": "Bradley White", "article": "BR-03", "quantity": 1},
+            ],
+            internal_comment={
+                "text": "Уточнил цвет ремешка",
+                "author_name": "Максим У.",
+                "created_at": "2026-09-01T18:35:00",
+            },
+        )
+        with web.app.test_request_context("/app/orders?page_size=20"):
+            html = web.render_template(
+                "_orders_list_results.html",
+                orders=[row], selected_order=row, orders_total=1,
+                orders_page=1, orders_page_size=20,
+                orders_page_sizes=(20, 50, 100, 200), orders_page_count=1,
+                sync_error="",
+            )
+
+        list_table = html.split('class="orders-table orders-list-table"', 1)[1].split(
+            'class="orders-table orders-split-table"', 1
+        )[0]
+        expected_headers = (
+            "Заказ", "Создан", "Статус", "Сумма", "Покупатель", "Товары",
+            "Доставка", "Оплата", "Комментарий сотрудника", "Действия",
+        )
+        header_positions = [list_table.index(">{}<".format(label)) for label in expected_headers]
+        self.assertEqual(header_positions, sorted(header_positions))
+        for expected in (
+            "WB FBS", "BLM Blue AUTOMATIC ×1", "арт. BLM-01", "+ ещё 2",
+            "Уточнил цвет ремешка", "Максим У.",
+            'data-date="2026-09-01T18:35:00"', "Не оплачен", "Открыть",
+            'aria-current="true"',
+        ):
+            self.assertIn(expected, list_table)
+        self.assertNotIn("Bradley Black", list_table)
+
+        css = Path(web.PROJECT_ROOT / "app/static/css/orders.css").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('.workspace[data-layout-mode="list"] .orders-list-table', css)
+        self.assertIn("-webkit-line-clamp:2", css)
+        self.assertIn(
+            '.workspace[data-layout-mode="list"] .orders-split-table-scroll { display:none; }',
+            css,
+        )
+
     def test_bulk_sale_evidence_uses_only_canonical_active_order_relation(self):
         catalog = CatalogDatabase(Path(self.temporary.name) / "catalog.db")
         catalog.initialize()
@@ -553,6 +613,7 @@ class OrdersListIntegrationTest(unittest.TestCase):
                 return connection
 
         catalog = TracedCatalog(Path(self.temporary.name) / "metadata-catalog.db")
+        apply_migrations(catalog.path, app_commit="orders-list-test")
         catalog.initialize()
         order_ids = [row["id"] for row in self.orders[:50]]
         with catalog.transaction() as connection:

@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-card-header-strap-picker-v2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-list-compact-strap-picker-v3') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
@@ -404,9 +404,13 @@
     document.querySelector('[data-show-list]')?.addEventListener('click',()=>applyMode('list'));
 
     function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?new Intl.NumberFormat('ru-RU',{minimumFractionDigits:Number.isInteger(number)?0:2,maximumFractionDigits:2}).format(number):'—';}
-    function formatDate(value){if(!value||value==='None')return '—';const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(date);}
+    function parseDate(value){if(!value||value==='None')return null;const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?null:date;}
+    function formatDate(value){const date=parseDate(value);return date?new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(date):(value&&value!=='None'?String(value):'—');}
+    function formatStackedDate(node){const raw=node.dataset.date;const date=parseDate(raw);if(!date){node.textContent=raw&&raw!=='None'?raw:'—';return;}const parts=new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(date);const value=type=>parts.find(part=>part.type===type)?.value||'';node.innerHTML=`<span>${value('day')}.${value('month')}.${value('year')}</span><span class="cell-secondary">${value('hour')}:${value('minute')}</span>`;}
+    function formatCommentDate(node){const date=parseDate(node.dataset.date);node.textContent=date?new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(date):node.dataset.date||'';}
     document.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));
-    document.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));
+    document.querySelectorAll('.date-value').forEach(node=>node.classList.contains('date-stacked')?formatStackedDate(node):node.textContent=formatDate(node.dataset.date));
+    document.querySelectorAll('.comment-date-value').forEach(formatCommentDate);
     document.querySelectorAll('[data-sync-time]').forEach(node=>{const raw=Number(node.dataset.syncTime);const date=new Date(raw?raw*1000:node.dataset.syncTime);node.textContent=Number.isNaN(date.getTime())?'—':new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(date);node.dateTime=date.toISOString?.()||'';});
 
     const historyPanel=document.getElementById('orderLifecyclePanel');
@@ -428,7 +432,7 @@
     const exactOrderNumber=value=>{const match=String(value||'').match(/^\s*(?:(?:№|#|Nº)\s*)?(\d+)(?:\s*№)?\s*$/iu);return match?match[1]:null;};
     let listReturnUrl=(()=>{const url=new URL(window.location.href);url.searchParams.delete('q');url.searchParams.delete('retry');return url;})();
     let searchReturnMode=initial;
-        function formatOrdersResults(scope){scope.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));scope.querySelectorAll('.date-value').forEach(node=>node.textContent=formatDate(node.dataset.date));}
+        function formatOrdersResults(scope){scope.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));scope.querySelectorAll('.date-value').forEach(node=>node.classList.contains('date-stacked')?formatStackedDate(node):node.textContent=formatDate(node.dataset.date));scope.querySelectorAll('.comment-date-value').forEach(formatCommentDate);}
         async function loadOrdersResults(url,{push=false}={}){
         const requestId=++ordersSearchRequest;
         ordersSearchController?.abort();
