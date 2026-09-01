@@ -82,6 +82,16 @@ def validate_performed_sale_update(current, requested):
         ("brand", "Бренд", lambda value: str(value or "").strip()),
         ("category", "Категорию", lambda value: str(value or "").strip()),
         ("quantity", "Количество", lambda value: float(value)),
+        (
+            "order_number",
+            "Номер заказа",
+            lambda value: str(value or "").strip(),
+        ),
+        (
+            "delivery_cost",
+            "Стоимость доставки",
+            lambda value: float(value or 0),
+        ),
     )
     for field, label, normalize in checks:
         if field not in requested:
@@ -2266,6 +2276,7 @@ class SalesInventory:
     @staticmethod
     def _sale_payload(row, movement_plan=None):
         payload = SalesInventory._metadata(row)
+        sale_level_payload = dict(payload)
         item_snapshot = next((
             item for item in payload.get("items", [])
             if isinstance(item, dict)
@@ -2273,6 +2284,12 @@ class SalesInventory:
         ), None)
         if item_snapshot:
             payload.update(item_snapshot)
+            for field in (
+                "track_number", "invoice_number", "note", "country",
+                "region", "city", "delivery_cost", "order_number",
+            ):
+                if field in sale_level_payload:
+                    payload[field] = sale_level_payload[field]
         quantity = float(row["quantity"])
         returned_quantity = float(row["returned_quantity"] or 0)
         stored_order_status = str(payload.get("order_status") or "completed")
