@@ -1,6 +1,7 @@
 import tempfile
 import time
 import unittest
+import sqlite3
 from pathlib import Path
 
 from app import auth, web
@@ -20,7 +21,19 @@ def order(identifier, source="tictactoy"):
 class UserNotificationStoreTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        self.store = UserNotificationStore(Path(self.temporary.name) / "notifications.db")
+        path = Path(self.temporary.name) / "auth.db"
+        apply_domain_migrations(path, "auth", "test")
+        store = auth.AuthStore(path)
+        now = int(time.time())
+        with store.connect() as connection:
+            for user_id in (1, 2):
+                connection.execute(
+                    "INSERT INTO users(id,first_name,last_name,email,email_normalized,password_hash,role,active,created_at,email_verified_at,updated_at,session_version) "
+                    "VALUES(?,?,'',?,?, 'hash','employee',1,?,?,?,1)",
+                    (user_id, "Пользователь", "user{}@test".format(user_id),
+                     "user{}@test".format(user_id), now, now, now),
+                )
+        self.store = UserNotificationStore(path)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -44,6 +57,24 @@ class UserNotificationStoreTest(unittest.TestCase):
         self.assertEqual(first["items"][0]["target_url"], "/order/102")
         self.assertFalse(self.store.feed(1)["items"][0]["fresh"])
         self.assertTrue(self.store.feed(2)["items"][0]["fresh"])
+
+    def test_auth_v2_upgrade_adds_notification_schema_without_user_loss(self):
+        path = self.store.path
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("DROP TABLE user_notification_preferences")
+            connection.execute("DROP TABLE user_notifications")
+            connection.execute("DROP TABLE notification_entities")
+            connection.execute(
+                "DELETE FROM erp_migration_ledger WHERE migration_id='2026-09-01-user-notifications-v1'"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        apply_domain_migrations(path, "auth", "upgrade-test")
+        upgraded = UserNotificationStore(path)
+        self.assertEqual(upgraded.feed(1)["items"], [])
+        self.assertIsNotNone(auth.AuthStore(path).get_user(1))
 
     def test_wb_notification_exists_only_after_saved_batch(self):
         self.store.publish_saved_orders("wildberries", set(), [order(200, "wildberries")], [1])
@@ -79,7 +110,6 @@ class UserNotificationApiTest(unittest.TestCase):
         root = Path(self.temporary.name)
         self.auth_path = root / "auth.db"
         self.tasks_path = root / "tasks.db"
-        self.notifications_path = root / "notifications.db"
         apply_domain_migrations(self.auth_path, "auth", "test")
         apply_domain_migrations(self.tasks_path, "tasks", "test")
         self.auth_store = auth.AuthStore(self.auth_path)
@@ -95,7 +125,7 @@ class UserNotificationApiTest(unittest.TestCase):
             ).lastrowid
         web.app.config.update(
             TESTING=True, AUTH_TESTING=True, AUTH_DATABASE=str(self.auth_path),
-            TASKS_DATABASE=str(self.tasks_path), NOTIFICATIONS_DATABASE=str(self.notifications_path),
+            TASKS_DATABASE=str(self.tasks_path), NOTIFICATIONS_DATABASE=str(self.auth_path),
             NOTIFICATIONS_TESTING=True, SESSION_COOKIE_SECURE=False,
         )
         self.client = web.app.test_client()

@@ -315,8 +315,7 @@ app.config.setdefault(
 )
 app.config.setdefault(
     "NOTIFICATIONS_DATABASE",
-    os.getenv("ERP_NOTIFICATIONS_DATABASE", "").strip()
-    or str(PROJECT_ROOT / "instance" / "notifications.db"),
+    app.config["AUTH_DATABASE"],
 )
 app.config.setdefault(
     "MAIL_DATABASE",

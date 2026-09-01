@@ -30,6 +30,7 @@ CREATE TABLE erp_migration_ledger (
 
 AUTH_MIGRATION_ID = "2026-08-26-auth-baseline-v1"
 AUTH_PREFERENCES_MIGRATION_ID = "2026-08-28-user-navigation-preferences-v1"
+AUTH_NOTIFICATIONS_MIGRATION_ID = "2026-09-01-user-notifications-v1"
 ORDERS_MIGRATION_ID = "2026-08-26-orders-customers-baseline-v1"
 TASKS_MIGRATION_ID = "2026-08-27-internal-tasks-v1"
 TASKS_V2_MIGRATION_ID = "2026-08-27-tasks-center-v2"
@@ -124,6 +125,44 @@ AUTH_PREFERENCES_TABLE_STATEMENTS = (
         updated_at INTEGER NOT NULL,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )""",
+)
+
+AUTH_NOTIFICATIONS_TABLE_STATEMENTS = (
+    """CREATE TABLE notification_entities (
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        PRIMARY KEY(entity_type, entity_id)
+    )""",
+    """CREATE TABLE user_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('order','task')),
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        target_url TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        delivered_at TEXT,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE user_notification_preferences (
+        user_id INTEGER PRIMARY KEY,
+        order_sound INTEGER NOT NULL DEFAULT 1 CHECK(order_sound IN (0,1)),
+        task_sound INTEGER NOT NULL DEFAULT 1 CHECK(task_sound IN (0,1)),
+        browser_notifications INTEGER NOT NULL DEFAULT 0 CHECK(browser_notifications IN (0,1)),
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+)
+
+AUTH_NOTIFICATIONS_INDEX_STATEMENTS = (
+    "CREATE INDEX idx_user_notifications_feed ON user_notifications(user_id, id)",
+    "CREATE INDEX idx_user_notifications_unread ON user_notifications(user_id, read_at, id)",
 )
 
 AUTH_LEGACY_USER_COLUMNS = (
@@ -422,6 +461,15 @@ AUTH_PREFERENCES_MIGRATION = {
         + AUTH_PREFERENCES_TABLE_STATEMENTS
     ),
 }
+AUTH_NOTIFICATIONS_MIGRATION = {
+    "id": AUTH_NOTIFICATIONS_MIGRATION_ID,
+    "name": "Per-user order and task notifications",
+    "checksum": _digest(
+        (AUTH_NOTIFICATIONS_MIGRATION_ID, "user-notifications-v1")
+        + AUTH_NOTIFICATIONS_TABLE_STATEMENTS
+        + AUTH_NOTIFICATIONS_INDEX_STATEMENTS
+    ),
+}
 ORDERS_MIGRATION = {
     "id": ORDERS_MIGRATION_ID,
     "name": "Verified orders and customers schema baseline",
@@ -464,7 +512,7 @@ TASKS_V4_MIGRATION = {
     ),
 }
 DOMAIN_MIGRATIONS = {
-    "auth": AUTH_PREFERENCES_MIGRATION,
+    "auth": AUTH_NOTIFICATIONS_MIGRATION,
     "orders": ORDERS_MIGRATION,
     "tasks": TASKS_V4_MIGRATION,
 }
@@ -508,6 +556,28 @@ AUTH_EXPECTED_COLUMNS["user_navigation_preferences"] = (
     ("ordered_keys", "TEXT", 1, None, 0),
     ("hidden_keys", "TEXT", 1, None, 0),
     ("updated_at", "INTEGER", 1, None, 0),
+)
+AUTH_V2_EXPECTED_COLUMNS = dict(AUTH_EXPECTED_COLUMNS)
+AUTH_EXPECTED_COLUMNS["notification_entities"] = (
+    ("entity_type", "TEXT", 1, None, 1),
+    ("entity_id", "TEXT", 1, None, 2),
+    ("first_seen_at", "TEXT", 1, None, 0),
+)
+AUTH_EXPECTED_COLUMNS["user_notifications"] = (
+    ("id", "INTEGER", 0, None, 1), ("user_id", "INTEGER", 1, None, 0),
+    ("type", "TEXT", 1, None, 0), ("entity_type", "TEXT", 1, None, 0),
+    ("entity_id", "TEXT", 1, None, 0), ("title", "TEXT", 1, None, 0),
+    ("message", "TEXT", 1, "''", 0), ("metadata_json", "TEXT", 1, "'{}'", 0),
+    ("target_url", "TEXT", 1, None, 0), ("created_at", "TEXT", 1, None, 0),
+    ("read_at", "TEXT", 0, None, 0), ("delivered_at", "TEXT", 0, None, 0),
+    ("dedupe_key", "TEXT", 1, None, 0),
+)
+AUTH_EXPECTED_COLUMNS["user_notification_preferences"] = (
+    ("user_id", "INTEGER", 0, None, 1),
+    ("order_sound", "INTEGER", 1, "1", 0),
+    ("task_sound", "INTEGER", 1, "1", 0),
+    ("browser_notifications", "INTEGER", 1, "0", 0),
+    ("updated_at", "TEXT", 1, None, 0),
 )
 
 ORDERS_EXPECTED_COLUMNS = {
@@ -606,13 +676,18 @@ TASKS_EXPECTED_COLUMNS = {
     ),
 }
 
-AUTH_INDEXES = {
+AUTH_V1_INDEXES = {
     "invitations_state_expires": (0, ("state", "expires_at")),
     "auth_attempts_bucket_time": (0, ("bucket", "attempted_at")),
     "auth_tokens_user_type": (0, ("user_id", "token_type", "created_at")),
     "auth_sessions_expiry": (0, ("expires_at",)),
     "auth_sessions_user": (0, ("user_id",)),
 }
+AUTH_INDEXES = dict(AUTH_V1_INDEXES)
+AUTH_INDEXES.update({
+    "idx_user_notifications_feed": (0, ("user_id", "id")),
+    "idx_user_notifications_unread": (0, ("user_id", "read_at", "id")),
+})
 ORDERS_INDEXES = {
     "idx_customers_normalized_phone": (0, ("normalized_phone",)),
     "idx_customers_normalized_email": (0, ("normalized_email",)),
@@ -744,7 +819,10 @@ def _verify_auth_ledger(connection, require_latest=True):
     ).fetchall()
     expected = {
         migration["id"]: migration
-        for migration in (AUTH_MIGRATION, AUTH_PREFERENCES_MIGRATION)
+        for migration in (
+            AUTH_MIGRATION, AUTH_PREFERENCES_MIGRATION,
+            AUTH_NOTIFICATIONS_MIGRATION,
+        )
     }
     for row in rows:
         migration = expected.get(str(row[0]))
@@ -767,12 +845,12 @@ def _verify_auth_ledger(connection, require_latest=True):
     ids = {str(row[0]) for row in rows}
     if AUTH_MIGRATION_ID not in ids:
         raise MigrationRequiredError("migration required: auth baseline is missing")
-    if require_latest and AUTH_PREFERENCES_MIGRATION_ID not in ids:
+    if require_latest and AUTH_NOTIFICATIONS_MIGRATION_ID not in ids:
         raise MigrationRequiredError(
-            "migration required: user navigation preferences"
+            "migration required: user notifications"
         )
-    expected_length = 2 if require_latest else 1
-    if len(rows) != expected_length:
+    expected_lengths = {3} if require_latest else {1, 2}
+    if len(rows) not in expected_lengths:
         raise DomainMigrationError("unexpected auth migration ledger length")
 
 
@@ -804,10 +882,14 @@ def _verify_indexes(connection, expected, table_by_prefix):
         raise DomainMigrationError("schema contract mismatch: named indexes differ")
 
 
-def verify_auth_schema(connection, require_ledger=True, include_preferences=True):
-    expected_columns = (
-        AUTH_EXPECTED_COLUMNS if include_preferences else AUTH_V1_EXPECTED_COLUMNS
-    )
+def verify_auth_schema(connection, require_ledger=True, include_preferences=True,
+                       include_notifications=True):
+    if include_notifications:
+        expected_columns = AUTH_EXPECTED_COLUMNS
+    elif include_preferences:
+        expected_columns = AUTH_V2_EXPECTED_COLUMNS
+    else:
+        expected_columns = AUTH_V1_EXPECTED_COLUMNS
     expected_tables = set(expected_columns)
     if require_ledger:
         expected_tables.add(LEDGER_TABLE)
@@ -816,7 +898,11 @@ def verify_auth_schema(connection, require_ledger=True, include_preferences=True
     if require_ledger:
         _verify_ledger_columns(connection)
     _verify_columns(connection, expected_columns)
-    _verify_indexes(connection, AUTH_INDEXES, expected_columns)
+    _verify_indexes(
+        connection,
+        AUTH_INDEXES if include_notifications else AUTH_V1_INDEXES,
+        expected_columns,
+    )
     foreign_keys = {
         table: sorted(tuple(str(value) for value in row[2:8]) for row in connection.execute(
             "PRAGMA foreign_key_list({})".format(table)
@@ -841,6 +927,14 @@ def verify_auth_schema(connection, require_ledger=True, include_preferences=True
         expected_foreign_keys["user_navigation_preferences"] = [
             ("users", "user_id", "id", "NO ACTION", "CASCADE", "NONE")
         ]
+    if include_notifications:
+        expected_foreign_keys["notification_entities"] = []
+        expected_foreign_keys["user_notifications"] = [
+            ("users", "user_id", "id", "NO ACTION", "CASCADE", "NONE")
+        ]
+        expected_foreign_keys["user_notification_preferences"] = [
+            ("users", "user_id", "id", "NO ACTION", "CASCADE", "NONE")
+        ]
     if foreign_keys != expected_foreign_keys:
         raise DomainMigrationError("auth schema contract: foreign keys differ")
     expected_unique = {
@@ -854,6 +948,12 @@ def verify_auth_schema(connection, require_ledger=True, include_preferences=True
             raise DomainMigrationError(
                 "auth schema contract: unique constraint differs for {}".format(table)
             )
+    if include_notifications and ("dedupe_key",) not in _unique_columns(
+        connection, "user_notifications"
+    ):
+        raise DomainMigrationError(
+            "auth schema contract: notification dedupe key is not unique"
+        )
     if connection.execute(
         "SELECT 1 FROM users WHERE role NOT IN ('employee','admin') OR active NOT IN (0,1) LIMIT 1"
     ).fetchone():
@@ -1151,14 +1251,44 @@ def _apply_auth_preferences_migration(path, app_commit, observer):
                         "SELECT migration_id FROM " + LEDGER_TABLE
                     ).fetchall()
                 }
-                if AUTH_PREFERENCES_MIGRATION_ID in ledger_ids:
+                if AUTH_NOTIFICATIONS_MIGRATION_ID in ledger_ids:
                     _verify_auth_ledger(connection)
                     verify_auth_schema(connection)
                     _require_integrity(connection, "auth")
                     return migration_report(connection, "auth")
 
+                if AUTH_PREFERENCES_MIGRATION_ID in ledger_ids:
+                    _verify_auth_ledger(connection, require_latest=False)
+                    verify_auth_schema(
+                        connection, include_notifications=False
+                    )
+                    connection.execute("BEGIN IMMEDIATE")
+                    try:
+                        for statement in (
+                            AUTH_NOTIFICATIONS_TABLE_STATEMENTS
+                            + AUTH_NOTIFICATIONS_INDEX_STATEMENTS
+                        ):
+                            _execute(connection, statement, observer)
+                        _insert_applied_migration(
+                            connection,
+                            AUTH_NOTIFICATIONS_MIGRATION,
+                            app_commit,
+                            "auth-v2",
+                        )
+                        verify_auth_schema(connection)
+                        _verify_auth_ledger(connection)
+                        _require_integrity(connection, "auth-notifications-migration")
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
+                    return migration_report(connection, "auth")
+
                 _verify_auth_ledger(connection, require_latest=False)
-                verify_auth_schema(connection, include_preferences=False)
+                verify_auth_schema(
+                    connection, include_preferences=False,
+                    include_notifications=False,
+                )
                 connection.execute("BEGIN IMMEDIATE")
                 try:
                     for statement in AUTH_PREFERENCES_TABLE_STATEMENTS:
@@ -1166,6 +1296,17 @@ def _apply_auth_preferences_migration(path, app_commit, observer):
                     _insert_applied_migration(
                         connection,
                         AUTH_PREFERENCES_MIGRATION,
+                        app_commit,
+                        "auth-v1",
+                    )
+                    for statement in (
+                        AUTH_NOTIFICATIONS_TABLE_STATEMENTS
+                        + AUTH_NOTIFICATIONS_INDEX_STATEMENTS
+                    ):
+                        _execute(connection, statement, observer)
+                    _insert_applied_migration(
+                        connection,
+                        AUTH_NOTIFICATIONS_MIGRATION,
                         app_commit,
                         "auth-v1",
                     )
@@ -1184,6 +1325,7 @@ def _apply_auth_preferences_migration(path, app_commit, observer):
                     connection,
                     require_ledger=False,
                     include_preferences=False,
+                    include_notifications=False,
                 )
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -1197,6 +1339,17 @@ def _apply_auth_preferences_migration(path, app_commit, observer):
                 _insert_applied_migration(
                     connection,
                     AUTH_PREFERENCES_MIGRATION,
+                    app_commit,
+                    state,
+                )
+                for statement in (
+                    AUTH_NOTIFICATIONS_TABLE_STATEMENTS
+                    + AUTH_NOTIFICATIONS_INDEX_STATEMENTS
+                ):
+                    _execute(connection, statement, observer)
+                _insert_applied_migration(
+                    connection,
+                    AUTH_NOTIFICATIONS_MIGRATION,
                     app_commit,
                     state,
                 )
@@ -1259,7 +1412,9 @@ def _apply_auth(connection, state, observer):
         for statement in AUTH_TABLE_STATEMENTS[1:] + AUTH_INDEX_STATEMENTS:
             _execute(connection, statement, observer)
         return
-    verify_auth_schema(connection, include_preferences=False)
+    verify_auth_schema(
+        connection, include_preferences=False, include_notifications=False
+    )
 
 
 def _apply_orders(connection, state, observer):
@@ -1453,7 +1608,8 @@ def domain_snapshot(database_path, kind):
             if "user_navigation_preferences" not in table_names:
                 _verify_auth_ledger(connection, require_latest=False)
                 verify_auth_schema(
-                    connection, include_preferences=False
+                    connection, include_preferences=False,
+                    include_notifications=False,
                 )
                 payload = json.dumps(
                     _semantic_schema(connection, AUTH_V1_EXPECTED_COLUMNS),
@@ -1464,6 +1620,30 @@ def domain_snapshot(database_path, kind):
                     "kind": "auth",
                     "latest_migration": AUTH_MIGRATION["id"],
                     "checksum": AUTH_MIGRATION["checksum"],
+                    "schema_fingerprint": hashlib.sha256(
+                        payload.encode("utf-8")
+                    ).hexdigest(),
+                    "business_counts": {
+                        table: int(connection.execute(
+                            "SELECT COUNT(*) FROM {}".format(table)
+                        ).fetchone()[0])
+                        for table in sorted(AUTH_V1_EXPECTED_COLUMNS)
+                    },
+                }
+            if "notification_entities" not in table_names:
+                _verify_auth_ledger(connection, require_latest=False)
+                verify_auth_schema(
+                    connection, include_notifications=False
+                )
+                payload = json.dumps(
+                    _semantic_schema(connection, AUTH_V2_EXPECTED_COLUMNS),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                return {
+                    "kind": "auth",
+                    "latest_migration": AUTH_PREFERENCES_MIGRATION["id"],
+                    "checksum": AUTH_PREFERENCES_MIGRATION["checksum"],
                     "schema_fingerprint": hashlib.sha256(
                         payload.encode("utf-8")
                     ).hexdigest(),

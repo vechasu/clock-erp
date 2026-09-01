@@ -1,10 +1,11 @@
 """Persistent per-user notifications for new ERP orders and task assignments."""
 
 import json
-import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+
+from app.domain_schema_migrations import validate_auth_database
 
 
 NOTIFICATION_TYPES = {"order", "task"}
@@ -25,63 +26,22 @@ def _text(value, maximum=1000):
 
 class UserNotificationStore:
     def __init__(self, path=None):
-        configured = path or os.getenv("ERP_NOTIFICATIONS_DATABASE", "").strip()
-        self.path = Path(configured) if configured else Path("instance/notifications.db")
+        configured = path
+        self.path = Path(configured) if configured else Path("instance/auth.db")
         self._initialized = False
 
     def connect(self):
         self.initialize()
         connection = sqlite3.connect(str(self.path), timeout=15)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 15000")
         return connection
 
     def initialize(self):
         if self._initialized:
             return self
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(str(self.path), timeout=15)
-        try:
-            connection.executescript(
-                """
-                PRAGMA journal_mode = WAL;
-                CREATE TABLE IF NOT EXISTS notification_entities (
-                    entity_type TEXT NOT NULL,
-                    entity_id TEXT NOT NULL,
-                    first_seen_at TEXT NOT NULL,
-                    PRIMARY KEY(entity_type, entity_id)
-                );
-                CREATE TABLE IF NOT EXISTS user_notifications (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    type TEXT NOT NULL CHECK(type IN ('order','task')),
-                    entity_type TEXT NOT NULL,
-                    entity_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    message TEXT NOT NULL DEFAULT '',
-                    metadata_json TEXT NOT NULL DEFAULT '{}',
-                    target_url TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    read_at TEXT,
-                    delivered_at TEXT,
-                    dedupe_key TEXT NOT NULL UNIQUE
-                );
-                CREATE INDEX IF NOT EXISTS idx_user_notifications_feed
-                    ON user_notifications(user_id, id DESC);
-                CREATE INDEX IF NOT EXISTS idx_user_notifications_unread
-                    ON user_notifications(user_id, read_at, id DESC);
-                CREATE TABLE IF NOT EXISTS user_notification_preferences (
-                    user_id INTEGER PRIMARY KEY,
-                    order_sound INTEGER NOT NULL DEFAULT 1 CHECK(order_sound IN (0,1)),
-                    task_sound INTEGER NOT NULL DEFAULT 1 CHECK(task_sound IN (0,1)),
-                    browser_notifications INTEGER NOT NULL DEFAULT 0 CHECK(browser_notifications IN (0,1)),
-                    updated_at TEXT NOT NULL
-                );
-                """
-            )
-            connection.commit()
-        finally:
-            connection.close()
+        validate_auth_database(self.path)
         self._initialized = True
         return self
 
