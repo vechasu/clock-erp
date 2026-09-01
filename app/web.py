@@ -10330,7 +10330,7 @@ def manual_sale_update():
     require_csrf_when_authenticated()
 
     form_payload = normalize_sale_edit_aliases(request.form.to_dict())
-    requested_edits = requested_sale_edit_values(form_payload)
+    requested_edits = {}
     managed_sale_id = (request.form.get("sale_id") or "").strip()
     managed_sale = SalesInventory().get_sale(managed_sale_id)
     if managed_sale is not None:
@@ -10342,6 +10342,9 @@ def manual_sale_update():
             normalized = normalize_api_sale_payload(
                 form_payload,
                 existing=managed_sale,
+            )
+            requested_edits = requested_sale_edit_values(
+                form_payload, normalized
             )
             updated = SalesInventory().update_sale(
                 managed_sale_id,
@@ -10564,6 +10567,7 @@ def manual_sale_update():
             or ""
         ).strip()
         sale.update(optional_fields)
+        requested_edits = requested_sale_edit_values(form_payload, sale)
 
         if sale.get("inventory_managed"):
             sale["order_status"] = normalize_sale_status(
@@ -10791,7 +10795,7 @@ def automatic_sale_update():
     require_csrf_when_authenticated()
 
     form_payload = normalize_sale_edit_aliases(request.form.to_dict())
-    requested_edits = requested_sale_edit_values(form_payload)
+    requested_edits = {}
     managed_operation_id = (request.form.get("operation_id") or "").strip()
     managed_record = find_api_sale(managed_operation_id)
     if (
@@ -10809,6 +10813,7 @@ def automatic_sale_update():
                 payload,
                 existing=managed_record,
             )
+            requested_edits = requested_sale_edit_values(payload, normalized)
             overrides = load_automatic_sales_overrides()
             current = overrides.get(managed_operation_id) or {}
             if current.get("deleted_at"):
@@ -11014,6 +11019,9 @@ def automatic_sale_update():
         ).strip(),
         **optional_fields,
     }
+    requested_edits = requested_sale_edit_values(
+        form_payload, overrides[operation_id]
+    )
 
     save_automatic_sales_overrides(overrides)
 
@@ -11528,6 +11536,16 @@ def build_sales_report_records(
             if "unit_price" in override
             else operation.get("unit_price")
         )
+        automatic_pricing = sale_pricing_from_mapping(
+            override,
+            existing={
+                "unit_price": operation.get("unit_price"),
+                "original_unit_price": operation.get("original_unit_price"),
+                "discount_type": operation.get("discount_type", "none"),
+                "discount_value": operation.get("discount_value", 0),
+                "discount_reason": operation.get("discount_reason", ""),
+            },
+        )
 
         automatic_sales.append({
             "id": operation_id,
@@ -11617,6 +11635,11 @@ def build_sales_report_records(
                 "unit_price": parse_sale_price(
                     stored_unit_price
                 ),
+                "original_unit_price": automatic_pricing["original_unit_price"],
+                "discount_type": automatic_pricing["discount_type"],
+                "discount_value": automatic_pricing["discount_value"],
+                "discount_amount": automatic_pricing["discount_amount"],
+                "discount_reason": automatic_pricing["discount_reason"],
                 "unit_price_display": format_sale_money(
                     stored_unit_price
                 ),
@@ -11802,8 +11825,8 @@ def build_sales_report_records(
             min(returned_quantity, float(quantity_number)),
         )
         return_status = normalize_sale_status(
-            stored_sale.get("status")
-            or stored_sale.get("order_status")
+            stored_sale.get("order_status")
+            or stored_sale.get("status")
         )
         is_cancelled = sale_is_cancelled(stored_sale)
         unit_price = parse_sale_price(
@@ -11928,6 +11951,17 @@ def build_sales_report_records(
             ),
             **{
                 "unit_price": unit_price,
+                "original_unit_price": stored_sale.get(
+                    "original_unit_price", unit_price
+                ),
+                "discount_type": str(
+                    stored_sale.get("discount_type") or "none"
+                ),
+                "discount_value": stored_sale.get("discount_value") or 0,
+                "discount_amount": stored_sale.get("discount_amount") or 0,
+                "discount_reason": str(
+                    stored_sale.get("discount_reason") or ""
+                ),
                 "unit_price_display": format_sale_money(
                     unit_price
                 ),
@@ -21846,6 +21880,19 @@ API_SALE_TEXT_FIELDS = (
     "delivery_address", "platform", "invoice_number", "sticker_number",
 )
 
+PERFORMED_SALE_EDITABLE_FIELDS = (
+    "source", "unit_price", "original_unit_price", "discount_type",
+    "discount_value", "discount_reason", "order_status", "commission",
+    "commission_amount", "track_number", "country", "region", "city",
+    "note", "recipient", "recipient_name", "payment_method",
+    "delivery_address", "platform", "invoice_number", "sticker_number",
+)
+
+PERFORMED_SALE_NUMERIC_EDITABLE_FIELDS = {
+    "unit_price", "original_unit_price", "discount_value",
+    "commission_amount",
+}
+
 
 def normalize_sale_edit_aliases(payload):
     """Map public edit aliases to the sale's own persisted metadata fields."""
@@ -21860,16 +21907,34 @@ def normalize_sale_edit_aliases(payload):
     return normalized
 
 
-def requested_sale_edit_values(payload):
-    """Return only explicitly requested mutable text values for verification."""
+def requested_sale_edit_values(payload, normalized=None):
+    """Return every explicitly requested mutable value for DB readback."""
     payload = normalize_sale_edit_aliases(payload)
+    normalized = normalized if isinstance(normalized, dict) else payload
     requested = {}
-    for field in (
-        "track_number", "invoice_number", "note", "country", "region", "city",
-    ):
+    for field in PERFORMED_SALE_EDITABLE_FIELDS:
         if field in payload:
-            requested[field] = str(payload.get(field) or "").strip()
+            requested[field] = normalized.get(field)
     return requested
+
+
+def normalize_sale_edit_verification_value(field, value):
+    if field in PERFORMED_SALE_NUMERIC_EDITABLE_FIELDS:
+        if value is None or str(value).strip() == "":
+            return None
+        parsed = parse_sale_price(value)
+        return parsed if parsed is not None else str(value).strip()
+    if field == "order_status":
+        return normalize_sale_status(value)
+    if field == "source":
+        return normalize_sales_source_key(value)
+    return str(value or "").strip()
+
+
+def sale_edit_readback_value(sale, field):
+    if field == "commission" and "commission_value" in sale:
+        return sale.get("commission_value")
+    return sale.get(field)
 
 
 def verify_sale_edit_persisted(sale, requested):
@@ -21880,7 +21945,9 @@ def verify_sale_edit_persisted(sale, requested):
         )
     mismatched = [
         field for field, expected in requested.items()
-        if str(sale.get(field) or "").strip() != expected
+        if normalize_sale_edit_verification_value(
+            field, sale_edit_readback_value(sale, field)
+        ) != normalize_sale_edit_verification_value(field, expected)
     ]
     if mismatched:
         raise SalesInventoryError(
@@ -21939,6 +22006,15 @@ def serialize_api_sale(sale):
             if sale.get("unit_price") is not None
             else None
         ),
+        "original_unit_price": (
+            float(sale["original_unit_price"])
+            if sale.get("original_unit_price") is not None
+            else None
+        ),
+        "discount_type": str(sale.get("discount_type") or "none"),
+        "discount_value": float(sale.get("discount_value") or 0),
+        "discount_amount": float(sale.get("discount_amount") or 0),
+        "discount_reason": str(sale.get("discount_reason") or ""),
         "total_amount": (
             float(sale["total_amount"])
             if sale.get("total_amount") is not None
@@ -22542,13 +22618,13 @@ def api_sale_resource(sale_id):
 
     try:
         payload = normalize_sale_edit_aliases(api_json_payload())
-        requested_edits = requested_sale_edit_values(payload)
         current_protected = dict(record)
         current_protected["quantity"] = record.get(
             "quantity_value", record.get("quantity")
         )
         validate_performed_sale_update(current_protected, payload)
         normalized = normalize_api_sale_payload(payload, existing=record)
+        requested_edits = requested_sale_edit_values(payload, normalized)
     except InsufficientStockError as error:
         return api_error("INSUFFICIENT_STOCK", str(error), 409)
     except SalesInventoryError as error:
