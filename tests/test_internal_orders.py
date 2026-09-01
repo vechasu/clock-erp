@@ -97,9 +97,9 @@ class InternalOrdersTest(unittest.TestCase):
         self.assertIn("№18593", html)
         self.assertIn("Иван Иванов", html)
         self.assertIn('id="orderSearch"', html)
-        for status in ("all", "N", "A", "D"):
+        for status in ("all", "N", "A", "D", "C"):
             self.assertIn('data-status-filter="{}"'.format(status), html)
-        for removed_status in ("T", "C"):
+        for removed_status in ("T",):
             self.assertNotIn(
                 'data-status-filter="{}"'.format(removed_status), html
             )

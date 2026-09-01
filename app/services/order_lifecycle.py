@@ -94,7 +94,7 @@ class OrderLifecycle:
             detail = ERP_STATUS_NAMES.get(status_change.get("after"), "")
         elif entity_type == "order" and action == "status_changed":
             title = "Статус изменён"
-            detail = "{} → {}".format(
+            detail = metadata.get("text_snapshot") or "{} → {}".format(
                 ERP_STATUS_NAMES.get(status_change.get("before"), status_change.get("before") or "—"),
                 ERP_STATUS_NAMES.get(status_change.get("after"), status_change.get("after") or "—"),
             )

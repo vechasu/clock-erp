@@ -73,6 +73,7 @@ from app.services.inventory_journal import InventoryJournal
 from app.services.order_status import (
     ERP_ASSEMBLED,
     ERP_CONFIRMED,
+    ERP_REFUSED,
     ERP_STATUS_NAMES,
     ERP_UNCONFIRMED,
     OrderStatusError,
@@ -609,12 +610,14 @@ STATUS_NAMES = {
     "N": "Не подтверждён",
     "A": "Подтверждён",
     "D": "Собран",
+    "C": "Отказ",
 }
 
 ORDER_STATUS_TRANSITIONS = {
-    "N": {"A", "D"},
-    "A": {"N", "D"},
-    "D": {"N", "A"},
+    "N": {"A", "D", "C"},
+    "A": {"N", "D", "C"},
+    "D": {"N", "A", "C"},
+    "C": set(),
 }
 
 
@@ -1352,7 +1355,7 @@ def get_orders(force=False):
 
 
 def update_order_status(order_id, new_status):
-    allowed_statuses = ["N", "A", "D"]
+    allowed_statuses = ["N", "A", "D", "C"]
 
     if new_status not in allowed_statuses:
         return {
@@ -1798,7 +1801,8 @@ def enrich_orders_list_rows(rows, database=None):
                         order_ids,
                     ).fetchall()
                     status_rows = connection.execute(
-                        "SELECT external_order_id,actor,created_at FROM ("
+                        "SELECT events.external_order_id,events.actor,"
+                        "events.created_at,current.erp_status FROM ("
                         "SELECT entity_id AS external_order_id,"
                         "actor_display_name_snapshot AS actor,occurred_at AS created_at,"
                         "0 AS source_priority,id FROM erp_audit_events "
@@ -1806,7 +1810,10 @@ def enrich_orders_list_rows(rows, database=None):
                         "AND entity_id IN ({0}) UNION ALL "
                         "SELECT external_order_id,actor,created_at,1 AS source_priority,id "
                         "FROM erp_order_status_events WHERE external_order_id IN ({0})) "
-                        "ORDER BY external_order_id,source_priority,created_at DESC,id DESC".format(placeholders),
+                        "AS events LEFT JOIN erp_order_statuses AS current "
+                        "ON current.external_order_id=events.external_order_id "
+                        "ORDER BY events.external_order_id,events.source_priority,"
+                        "events.created_at DESC,events.id DESC".format(placeholders),
                         order_ids + order_ids,
                     ).fetchall()
                 for row in comment_rows:
@@ -1817,6 +1824,17 @@ def enrich_orders_list_rows(rows, database=None):
                     metadata.setdefault(str(row["external_order_id"]), {}).setdefault(
                         "status_event", dict(row)
                     )
+                    status = str(row["erp_status"] or "")
+                    metadata.setdefault(str(row["external_order_id"]), {}).update({
+                        "erp_status": status,
+                        "status": {
+                            "unconfirmed": "N", "confirmed": "A",
+                            "assembled": "D", "refused": "C",
+                        }.get(status, "UNKNOWN"),
+                        "status_name": ERP_STATUS_NAMES.get(
+                            status, "Неизвестный статус"
+                        ),
+                    })
         except (OSError, sqlite3.Error, RuntimeError):
             app.logger.exception("Failed to enrich order list metadata in bulk")
     for order in prepared:
@@ -1939,7 +1957,7 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
     page_count = max(1, math.ceil(total / effective_page_size))
     page = min(page, page_count)
     orders_page_rows = filtered_orders[(page - 1) * effective_page_size:page * effective_page_size]
-    counts = {code: 0 for code in ("N", "A", "D")}
+    counts = {code: 0 for code in ("N", "A", "D", "C")}
     for order in orders:
         code = str(order.get("status") or "").strip().upper()
         if code in counts:
@@ -1958,6 +1976,8 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
             "unconfirmed": counts["N"],
             "confirmed": counts["A"],
             "assembled": counts["D"],
+            "refused": counts["C"],
+            "active": counts["N"] + counts["A"] + counts["D"],
         },
     }
 
@@ -3499,6 +3519,29 @@ def order_status_reply(order_id, ok, message, status=200):
     ))
 
 
+def cache_order_status(order_id, status_code, synced=False):
+    """Update the durable list projection after a committed local change."""
+    status_name = STATUS_NAMES.get(status_code, "Неизвестный статус")
+    with ORDERS_CACHE_LOCK:
+        for cached_order in ORDERS_CACHE["items"]:
+            cached_id = cached_order.get("id") or cached_order.get("ID")
+            if str(cached_id or "") == str(order_id):
+                cached_order["status"] = status_code
+                if synced:
+                    cached_order["bitrix_status"] = status_code
+                cached_order["status_name"] = status_name
+        cached_items = copy.deepcopy(ORDERS_CACHE["items"])
+        cached_loaded_at = ORDERS_CACHE["loaded_at"]
+    if cached_items:
+        save_orders_cache(cached_items, cached_loaded_at)
+        try:
+            OrdersSnapshotStore().replace(cached_items, cached_loaded_at)
+        except sqlite3.Error:
+            app.logger.exception(
+                "Order query snapshot status update failed: %s", order_id
+            )
+
+
 @app.post("/order/<int:order_id>/comments")
 def order_comment_add(order_id):
     if not can_view_orders():
@@ -3605,6 +3648,7 @@ def order_status_update(order_id):
         "N": ERP_UNCONFIRMED,
         "A": ERP_CONFIRMED,
         "D": ERP_ASSEMBLED,
+        "C": ERP_REFUSED,
     }
     if new_status not in targets:
         return order_status_reply(
@@ -3633,6 +3677,23 @@ def order_status_update(order_id):
         )
     target = targets[new_status]
     current = service.get(order_id) or {}
+    if current.get("erp_status") == ERP_REFUSED and target != ERP_REFUSED:
+        return order_status_reply(
+            order_id, False, "Статус «Отказ» является конечным", 409
+        )
+    if target == ERP_REFUSED:
+        inventory = SalesInventory(service.database)
+        active_sale = (
+            inventory.get_sale(current["sale_id"])
+            if current.get("sale_id") else
+            inventory.find_active_sale("tictactoy", str(order_id))
+        )
+        if active_sale and not (
+            active_sale.get("cancelled_at") or active_sale.get("deleted_at")
+        ):
+            return order_status_reply(
+                order_id, False, "Сначала отмените связанную продажу", 409
+            )
     if (
         current.get("erp_status") == target
         and current.get("bitrix_status") == new_status
@@ -3674,27 +3735,7 @@ def order_status_update(order_id):
             500,
         )
 
-    with ORDERS_CACHE_LOCK:
-        for cached_order in ORDERS_CACHE["items"]:
-            cached_id = cached_order.get("id") or cached_order.get("ID")
-            if str(cached_id or "") == str(order_id):
-                cached_order["status"] = new_status
-                cached_order["bitrix_status"] = new_status
-                cached_order["status_name"] = {
-                    "N": "Не подтверждён",
-                    "A": "Подтверждён",
-                    "D": "Собран",
-                }[new_status]
-        cached_items = copy.deepcopy(ORDERS_CACHE["items"])
-        cached_loaded_at = ORDERS_CACHE["loaded_at"]
-    if cached_items:
-        save_orders_cache(cached_items, cached_loaded_at)
-        try:
-            OrdersSnapshotStore().replace(cached_items, cached_loaded_at)
-        except sqlite3.Error:
-            app.logger.exception(
-                "Order query snapshot status update failed: %s", order_id
-            )
+    cache_order_status(order_id, new_status, synced=True)
     return order_status_reply(
         order_id, True, "Статус заказа обновлён в ERP и Bitrix"
     )
@@ -11042,6 +11083,8 @@ def sale_cancel():
     if managed is not None:
         try:
             external_order_id = str(managed.get("external_order_id") or "").strip()
+            actor = current_audit_actor()
+            sale_number = str(managed.get("order_number") or sale_id)
             inventory.cancel_sale(
                 sale_id,
                 reason=reason,
@@ -11051,23 +11094,28 @@ def sale_cancel():
                     request.headers.get("Idempotency-Key")
                     or "sale-cancel:{}".format(sale_id)
                 ),
-                audit_actor=current_audit_actor(),
+                audit_actor=actor,
                 failure_hook=(
                     lambda connection: OrderStatusService(
                         inventory.database
                     ).change(
-                        external_order_id, ERP_CONFIRMED,
-                        current_audit_actor(), connection=connection,
-                        clear_sale=True,
+                        external_order_id, ERP_REFUSED, actor,
+                        sale_id=sale_id, connection=connection,
+                        order_number=external_order_id,
+                        event_message=(
+                            "Статус автоматически изменён на “Отказ” "
+                            "при отмене продажи №{}"
+                        ).format(sale_number),
                     )
                     if external_order_id else None
                 ),
             )
             _cached_api_receipt_records.cache_clear()
             if external_order_id:
-                OrderStatusService(inventory.database).sync_one(
+                synced = OrderStatusService(inventory.database).sync_one(
                     external_order_id, update_order_status
                 )
+                cache_order_status(external_order_id, "C", synced=synced)
         except CancellationConflictError as error:
             return respond_to_sales_action(
                 str(error), notice="error", status_code=409,
@@ -11080,7 +11128,13 @@ def sale_cancel():
                 status_code=500,
             )
         _cached_api_sales_records.cache_clear()
-        return respond_to_sales_action("Продажа отменена")
+        message = (
+            "Продажа отменена. Товар возвращён на склад, приход создан, "
+            "заказ переведён в статус “Отказ”"
+            if external_order_id else
+            "Продажа отменена. Товар возвращён на склад, приход создан"
+        )
+        return respond_to_sales_action(message)
 
     record = _sales_action_record(sale_id, sale_type)
     if record is None:
@@ -16487,6 +16541,8 @@ def build_analytics_data(
     filtered_receipts = []
 
     for receipt in receipts if isinstance(receipts, list) else []:
+        if receipt.get("automatic_type") == "sale_cancellation":
+            continue
         receipt_date = parse_analytics_date(
             receipt.get("receipt_date")
             or receipt.get("created_at")
@@ -21393,6 +21449,10 @@ def api_receipts_collection():
     for receipt in visible:
         receipt.pop("_canonical_timestamp", None)
         receipt.pop("_filtered_quantity", None)
+    purchase_receipts = [
+        item for item in receipts
+        if item.get("automatic_type") != "sale_cancellation"
+    ]
     return api_success(
         visible,
         page=page,
@@ -21403,8 +21463,11 @@ def api_receipts_collection():
         totals={
             "quantity": filtered_quantity_total,
             "amount": (
-                round(sum(item["total_amount"] for item in receipts), 2)
-                if all(item["total_amount"] is not None for item in receipts)
+                round(sum(item["total_amount"] for item in purchase_receipts), 2)
+                if all(
+                    item["total_amount"] is not None
+                    for item in purchase_receipts
+                )
                 else None
             ),
         },
@@ -21432,10 +21495,21 @@ def api_receipt_resource(receipt_id):
         None,
     )
     if receipt is None:
+        receipt = next((
+            item for item in ReceiptInventory().list_sale_cancellation_receipts()
+            if str(item.get("id") or "") == str(receipt_id)
+        ), None)
+    if receipt is None:
         return api_error("RECEIPT_NOT_FOUND", "Приход не найден.", 404)
     if request.method == "GET":
         return api_success(serialize_api_receipt(receipt))
     require_csrf_when_authenticated()
+    if receipt.get("is_automatic"):
+        return api_error(
+            "RECEIPT_IMMUTABLE",
+            "Автоматический приход нельзя редактировать или удалять.",
+            409,
+        )
     if request.method == "DELETE" and receipt.get("status") == "cancelled":
         return api_success({
             "id": str(receipt_id),
@@ -22466,6 +22540,8 @@ def api_sale_cancel(sale_id):
         managed = inventory.get_sale(sale_id)
         if managed is not None:
             external_order_id = str(managed.get("external_order_id") or "").strip()
+            actor = current_audit_actor()
+            sale_number = str(managed.get("order_number") or sale_id)
             sale = inventory.cancel_sale(
                 sale_id=sale_id,
                 reason=reason,
@@ -22476,23 +22552,28 @@ def api_sale_cancel(sale_id):
                     or payload.get("idempotency_key")
                     or "sale-cancel:{}".format(sale_id)
                 ),
-                audit_actor=current_audit_actor(),
+                audit_actor=actor,
                 failure_hook=(
                     lambda connection: OrderStatusService(
                         inventory.database
                     ).change(
-                        external_order_id, ERP_CONFIRMED,
-                        current_audit_actor(), connection=connection,
-                        clear_sale=True,
+                        external_order_id, ERP_REFUSED, actor,
+                        sale_id=sale_id, connection=connection,
+                        order_number=external_order_id,
+                        event_message=(
+                            "Статус автоматически изменён на “Отказ” "
+                            "при отмене продажи №{}"
+                        ).format(sale_number),
                     )
                     if external_order_id else None
                 ),
             )
             _cached_api_receipt_records.cache_clear()
             if external_order_id:
-                OrderStatusService(inventory.database).sync_one(
+                synced = OrderStatusService(inventory.database).sync_one(
                     external_order_id, update_order_status
                 )
+                cache_order_status(external_order_id, "C", synced=synced)
         else:
             record = find_api_sale(sale_id)
             if record is None:
@@ -22541,7 +22622,14 @@ def api_sale_cancel(sale_id):
         )
     _cached_api_sales_records.cache_clear()
     updated = find_api_sale(sale["id"])
-    return api_success(serialize_api_sale(updated or sale), 200)
+    message = (
+        "Продажа отменена. Товар возвращён на склад, приход создан, "
+        "заказ переведён в статус “Отказ”"
+        if managed is not None and external_order_id else
+        "Продажа отменена. Товар возвращён на склад, приход создан"
+        if managed is not None else "Продажа отменена"
+    )
+    return api_success(serialize_api_sale(updated or sale), 200, message=message)
 
 
 @app.route("/api/sales/<sale_id>/returns", methods=["POST"])

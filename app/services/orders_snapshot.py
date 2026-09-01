@@ -589,5 +589,11 @@ class OrdersSnapshotStore:
                 "unconfirmed": counts.get("N", 0),
                 "confirmed": counts.get("A", 0),
                 "assembled": counts.get("D", 0),
+                "refused": counts.get("C", 0),
+                "active": (
+                    counts.get("N", 0)
+                    + counts.get("A", 0)
+                    + counts.get("D", 0)
+                ),
             },
         }

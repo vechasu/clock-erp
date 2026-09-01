@@ -9,15 +9,18 @@ from app.services.audit_journal import AuditJournal
 ERP_UNCONFIRMED = "unconfirmed"
 ERP_CONFIRMED = "confirmed"
 ERP_ASSEMBLED = "assembled"
+ERP_REFUSED = "refused"
 ERP_STATUS_NAMES = {
     ERP_UNCONFIRMED: "Не подтверждён",
     ERP_CONFIRMED: "Подтверждён",
     ERP_ASSEMBLED: "Собран",
+    ERP_REFUSED: "Отказ",
 }
 ERP_TO_UI_CODE = {
     ERP_UNCONFIRMED: "N",
     ERP_CONFIRMED: "A",
     ERP_ASSEMBLED: "D",
+    ERP_REFUSED: "C",
 }
 
 
@@ -47,6 +50,7 @@ class OrderStatusMapping:
             ),
             ERP_CONFIRMED: _codes("BITRIX_ORDER_STATUS_CONFIRMED_CODES", "A"),
             ERP_ASSEMBLED: _codes("BITRIX_ORDER_STATUS_ASSEMBLED_CODES", "D"),
+            ERP_REFUSED: _codes("BITRIX_ORDER_STATUS_REFUSED_CODES", "C"),
         }
         self.outbound = {
             ERP_UNCONFIRMED: os.getenv(
@@ -57,6 +61,9 @@ class OrderStatusMapping:
             ).strip().upper(),
             ERP_ASSEMBLED: os.getenv(
                 "BITRIX_ORDER_STATUS_ASSEMBLED", "D"
+            ).strip().upper(),
+            ERP_REFUSED: os.getenv(
+                "BITRIX_ORDER_STATUS_REFUSED", "C"
             ).strip().upper(),
         }
 
@@ -78,6 +85,7 @@ class OrderStatusService:
         self, connection, order_id, old_status, new_status, actor,
         source, sync_result, bitrix_status=None, message=None,
         occurred_at=None, origin="runtime", order_number=None,
+        sale_id=None,
     ):
         actor_data = actor if isinstance(actor, dict) else {}
         if actor_data:
@@ -123,6 +131,8 @@ class OrderStatusService:
                 "number": str(order_number or order_id),
                 "origin": origin,
                 "sync_result": sync_result,
+                "sale_id": str(sale_id or ""),
+                "text_snapshot": str(message or ""),
             },
             actor_id=actor_id,
             actor_name=actor_name,
@@ -235,6 +245,8 @@ class OrderStatusService:
                 "SELECT erp_status FROM erp_order_status_sync_queue "
                 "WHERE external_order_id=?", (order_id,),
             ).fetchone()
+            if current["erp_status"] == ERP_REFUSED and mapped != ERP_REFUSED:
+                return self.get(order_id, connection)
             if pending is not None:
                 if pending["erp_status"] == mapped:
                     connection.execute(
@@ -264,7 +276,7 @@ class OrderStatusService:
 
     def change(
         self, order_id, target, actor, sale_id=None, connection=None,
-        order_number=None, clear_sale=False,
+        order_number=None, clear_sale=False, event_message=None,
     ):
         if target not in ERP_STATUS_NAMES:
             raise OrderStatusError("Недопустимый статус заказа")
@@ -282,6 +294,22 @@ class OrderStatusService:
                 )
                 current = self.get(order_id, connection)
             old = current["erp_status"]
+            if old == ERP_REFUSED and target != ERP_REFUSED:
+                raise OrderStatusError("Статус «Отказ» является конечным")
+            if target == ERP_REFUSED:
+                linked_sale_id = str(current.get("sale_id") or "").strip()
+                active_sale_id = linked_sale_id or str(sale_id or "").strip()
+                if active_sale_id:
+                    active_sale = connection.execute(
+                        "SELECT cancelled_at,deleted_at FROM erp_sales WHERE id=?",
+                        (active_sale_id,),
+                    ).fetchone()
+                    if active_sale is not None and not (
+                        active_sale["cancelled_at"] or active_sale["deleted_at"]
+                    ):
+                        raise OrderStatusError(
+                            "Сначала отмените связанную продажу"
+                        )
             if old == target:
                 if clear_sale and current.get("sale_id"):
                     now = _now()
@@ -332,7 +360,8 @@ class OrderStatusService:
             self._queue(connection, order_id, target, bitrix_code)
             self._event(
                 connection, order_id, old, target, actor, "erp", "pending",
-                bitrix_code, order_number=order_number,
+                bitrix_code, message=event_message,
+                order_number=order_number, sale_id=sale_id,
             )
             result = self.get(order_id, connection)
             if owns:
@@ -362,6 +391,19 @@ class OrderStatusService:
                 old = None
             else:
                 old = current["erp_status"]
+                if old == ERP_REFUSED and target != ERP_REFUSED:
+                    raise OrderStatusError("Статус «Отказ» является конечным")
+                if target == ERP_REFUSED and current.get("sale_id"):
+                    active_sale = connection.execute(
+                        "SELECT cancelled_at,deleted_at FROM erp_sales WHERE id=?",
+                        (current["sale_id"],),
+                    ).fetchone()
+                    if active_sale is not None and not (
+                        active_sale["cancelled_at"] or active_sale["deleted_at"]
+                    ):
+                        raise OrderStatusError(
+                            "Сначала отмените связанную продажу"
+                        )
                 connection.execute(
                     "UPDATE erp_order_statuses SET erp_status=?, bitrix_status=?, "
                     "sync_status='synced', updated_at=? WHERE external_order_id=?",

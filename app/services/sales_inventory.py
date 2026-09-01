@@ -1116,7 +1116,7 @@ class SalesInventory:
             return None
         with self.database.connect() as connection:
             row = connection.execute(
-                "SELECT id FROM erp_sales WHERE source = ? "
+                "SELECT id FROM erp_sales WHERE lower(source) = ? "
                 "AND external_order_id = ? AND cancelled_at IS NULL "
                 "AND deleted_at IS NULL ORDER BY inserted_at DESC LIMIT 1",
                 (
@@ -2286,6 +2286,7 @@ class SalesInventory:
         payload.update({
             "id": row["id"],
             "source": row["source"],
+            "external_order_id": row["external_order_id"] or "",
             "created_at": row["created_at"],
             "product_id": str(row["product_id"]),
             "quantity": quantity,

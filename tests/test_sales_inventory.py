@@ -23,6 +23,12 @@ from app.services.sales_inventory import (
     positive_integer,
 )
 from app.services.audit_journal import AuditJournal
+from app.services.order_lifecycle import OrderLifecycle
+from app.services.order_status import (
+    ERP_ASSEMBLED,
+    ERP_REFUSED,
+    OrderStatusService,
+)
 
 
 class SalesInventoryTest(unittest.TestCase):
@@ -1879,7 +1885,10 @@ class SalesInventoryWebTest(SalesInventoryTest):
             with mock.patch("app.web.requests.request") as external_request:
                 response = self.cancel_sale_form(sale)
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.get_json()["message"], "Продажа отменена")
+            self.assertEqual(
+                response.get_json()["message"],
+                "Продажа отменена. Товар возвращён на склад, приход создан",
+            )
             self.assertEqual(self.stock(self.product["id"]), stock_before + 1)
             self.assertEqual(
                 self.inventory.get_sale(sale["id"])["order_status"],
@@ -1903,6 +1912,78 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertIn("Не указана", row)
         self.assertNotIn("js-edit-receipt", row)
         self.assertNotIn("/receipts/delete", row)
+
+    def test_linked_sale_cancellation_atomically_refuses_order_once(self):
+        payload = self.payload(self.product, "linked-cancel")
+        payload["order_number"] = "42"
+        sale = self.inventory.create_sale(
+            payload, self.product["id"], 1, 1000,
+            enforce_external_unique=True,
+        )
+        statuses = OrderStatusService(self.database)
+        statuses.ingest("42", "D")
+        statuses.change(
+            "42", ERP_ASSEMBLED, "Максим", sale_id=sale["id"]
+        )
+
+        with mock.patch.object(
+            web, "update_order_status", return_value={"status": "ok"}
+        ):
+            first = self.cancel_sale_form(sale, reason="duplicate")
+            repeated = self.cancel_sale_form(sale, reason="duplicate")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertIn("заказ переведён в статус “Отказ”", first.get_json()["message"])
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(self.stock(self.product["id"]), 3)
+        state = statuses.get("42")
+        self.assertEqual(state["erp_status"], ERP_REFUSED)
+        self.assertEqual(state["sale_id"], sale["id"])
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_receipts WHERE id=?",
+                ("sale-cancellation:{}".format(sale["id"]),),
+            ).fetchone()[0], 1)
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_audit_events "
+                "WHERE entity_type='order' AND entity_id='42' "
+                "AND action='status_changed'"
+            ).fetchone()[0], 1)
+        details = [
+            event["detail"] for event in OrderLifecycle(self.database).timeline("42")["events"]
+        ]
+        self.assertIn(
+            "Статус автоматически изменён на “Отказ” "
+            "при отмене продажи №42",
+            details,
+        )
+
+    def test_order_status_failure_rolls_back_entire_cancellation(self):
+        payload = self.payload(self.product, "linked-rollback")
+        payload["order_number"] = "43"
+        sale = self.inventory.create_sale(
+            payload, self.product["id"], 1, 1000,
+            enforce_external_unique=True,
+        )
+        statuses = OrderStatusService(self.database)
+        statuses.ingest("43", "D")
+        statuses.change(
+            "43", ERP_ASSEMBLED, "Максим", sale_id=sale["id"]
+        )
+        with mock.patch.object(
+            OrderStatusService, "change", side_effect=RuntimeError("forced")
+        ):
+            response = self.cancel_sale_form(sale, reason="duplicate")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(self.stock(self.product["id"]), 2)
+        self.assertFalse(self.inventory.get_sale(sale["id"])["cancelled_at"])
+        self.assertEqual(statuses.get("43")["erp_status"], ERP_ASSEMBLED)
+        with self.database.connect() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM erp_receipts WHERE id=?",
+                ("sale-cancellation:{}".format(sale["id"]),),
+            ).fetchone()[0], 0)
 
     def test_cancellation_reason_validation_and_other_comment(self):
         sale = self.create_managed_sale(sale_id="cancel-reason")

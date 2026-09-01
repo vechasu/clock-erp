@@ -23,6 +23,7 @@ from app.schema_migrations import (
     MigrationError,
     MigrationLock,
     apply_migrations,
+    apply_order_refusal_migration,
     require_integrity,
     schema_fingerprint,
     validate_known_sql_compatibility,
@@ -95,6 +96,39 @@ class SchemaMigrationTest(unittest.TestCase):
         before_hash = self._comment_hash()
         apply_migrations(self.database_path, app_commit="upgrade")
         self.assertEqual(self._comment_hash(), before_hash)
+
+    def test_order_refusal_migration_preserves_status_rows_and_sale_links(self):
+        with sqlite3.connect(str(self.database_path)) as connection:
+            connection.execute(
+                "CREATE TABLE erp_sales(id TEXT PRIMARY KEY)"
+            )
+            connection.execute("INSERT INTO erp_sales(id) VALUES('sale-1')")
+            connection.execute(
+                "CREATE TABLE erp_order_statuses("
+                "external_order_id TEXT PRIMARY KEY,"
+                "erp_status TEXT NOT NULL CHECK(erp_status IN "
+                "('unconfirmed','confirmed','assembled'))"
+                ",bitrix_status TEXT,sync_status TEXT NOT NULL,"
+                "sale_id TEXT REFERENCES erp_sales(id) ON DELETE RESTRICT,"
+                "created_at TEXT NOT NULL,updated_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO erp_order_statuses VALUES("
+                "'42','assembled','D','synced','sale-1','x','x')"
+            )
+            apply_order_refusal_migration(connection)
+            connection.execute(
+                "INSERT INTO erp_order_statuses VALUES("
+                "'43','refused','C','synced',NULL,'x','x')"
+            )
+            rows = connection.execute(
+                "SELECT external_order_id,erp_status,sale_id "
+                "FROM erp_order_statuses ORDER BY external_order_id"
+            ).fetchall()
+        self.assertEqual(rows, [
+            ("42", "assembled", "sale-1"),
+            ("43", "refused", None),
+        ])
 
     def test_audit_constraint_upgrade_does_not_confuse_actor_user_value(self):
         connection = sqlite3.connect(str(self.database_path))

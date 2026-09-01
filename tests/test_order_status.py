@@ -8,6 +8,7 @@ from app.catalog_migration_steps import apply_fresh_catalog_schema
 from app.services.order_status import (
     ERP_ASSEMBLED,
     ERP_CONFIRMED,
+    ERP_REFUSED,
     ERP_UNCONFIRMED,
     OrderStatusError,
     OrderStatusService,
@@ -45,6 +46,7 @@ class OrderStatusServiceTests(unittest.TestCase):
             ("2", "O", ERP_UNCONFIRMED),
             ("3", "A", ERP_CONFIRMED),
             ("4", "D", ERP_ASSEMBLED),
+            ("5", "C", ERP_REFUSED),
         )
         for order_id, code, expected in cases:
             state = self.service.ingest(order_id, code)
@@ -289,6 +291,32 @@ class OrderStatusServiceTests(unittest.TestCase):
         self.assertEqual(state["erp_status"], ERP_ASSEMBLED)
         self.assertEqual(state["sale_id"], "sale-recovered")
 
+    def test_refused_is_terminal_and_available_without_active_sale(self):
+        self.service.ingest("42", "A")
+        state = self.service.change("42", ERP_REFUSED, "Максим")
+        self.assertEqual(state["erp_status"], ERP_REFUSED)
+        self.assertEqual(self.rows(
+            "SELECT bitrix_status FROM erp_order_status_sync_queue"
+        )[0]["bitrix_status"], "C")
+        with self.assertRaisesRegex(OrderStatusError, "конечным"):
+            self.service.change("42", ERP_CONFIRMED, "Максим")
+        self.assertEqual(
+            self.service.ingest("42", "A")["erp_status"], ERP_REFUSED
+        )
+
+    def test_manual_refusal_is_blocked_while_linked_sale_is_active(self):
+        self.service.ingest("42", "D")
+        with self.database.transaction() as connection:
+            self.insert_sale(connection)
+            connection.execute(
+                "UPDATE erp_order_statuses SET sale_id='sale-1' "
+                "WHERE external_order_id='42'"
+            )
+        with self.assertRaisesRegex(
+            OrderStatusError, "Сначала отмените связанную продажу"
+        ):
+            self.service.change("42", ERP_REFUSED, "Максим")
+
 
 class OrderStatusFrontendContractTests(unittest.TestCase):
     def test_orders_template_has_exact_status_actions_and_mobile_layout(self):
@@ -302,6 +330,8 @@ class OrderStatusFrontendContractTests(unittest.TestCase):
         self.assertIn('data-status-filter="N"', template)
         self.assertIn('data-status-filter="A"', template)
         self.assertIn('data-status-filter="D"', template)
+        self.assertIn('data-status-filter="C"', template)
+        self.assertIn('<option value="C"', template)
         self.assertIn('name="status"', template)
         self.assertNotIn(">Сохранить статус</button>", template)
         self.assertIn("data-status-autosave", template)

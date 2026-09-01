@@ -1,7 +1,7 @@
 {% macro order_status_badge(code, existing_label='') -%}
     {% set normalized = code|string|upper %}
-    {% set label = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else existing_label or 'Неизвестный статус' %}
-    <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% else %}badge-default{% endif %}">{{ label }}</span>
+    {% set label = 'Не подтверждён' if normalized == 'N' else 'Подтверждён' if normalized == 'A' else 'Собран' if normalized == 'D' else 'Отказ' if normalized == 'C' else existing_label or 'Неизвестный статус' %}
+    <span class="badge {% if normalized == 'N' %}badge-new{% elif normalized == 'A' %}badge-work{% elif normalized == 'D' %}badge-done{% elif normalized == 'C' %}badge-refused{% else %}badge-default{% endif %}">{{ label }}</span>
 {%- endmacro %}
 {% set navigation_query_args = orders_query_args|default(request.args) %}
 <div data-orders-results>
