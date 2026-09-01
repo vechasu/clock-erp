@@ -98,6 +98,7 @@ from app.services.purchases import (
     PurchaseValidationError,
 )
 from app.services.wildberries_orders import synchronize_wildberries_orders
+from app.services.user_notifications import UserNotificationStore
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
 from app.catalog.application import CatalogApplication
@@ -311,6 +312,10 @@ app.config.setdefault(
     "TASKS_DATABASE",
     os.getenv("ERP_TASKS_DATABASE", "").strip()
     or str(PROJECT_ROOT / "instance" / "tasks.db"),
+)
+app.config.setdefault(
+    "NOTIFICATIONS_DATABASE",
+    app.config["AUTH_DATABASE"],
 )
 app.config.setdefault(
     "MAIL_DATABASE",
@@ -1184,6 +1189,29 @@ def exact_order_search_state(number, local_rows, client=None, store=None):
     return state
 
 
+def _notification_store():
+    return UserNotificationStore(app.config["NOTIFICATIONS_DATABASE"])
+
+
+def _order_notification_recipients():
+    return [
+        int(user["id"])
+        for user in _task_users()
+        if str(user.get("role") or "") in ORDER_VIEW_ROLES
+    ]
+
+
+def _publish_saved_order_batch(source, previous_ids, orders):
+    if app.testing and not app.config.get("NOTIFICATIONS_TESTING"):
+        return
+    try:
+        _notification_store().publish_saved_orders(
+            source, previous_ids, orders, _order_notification_recipients()
+        )
+    except Exception:
+        app.logger.exception("Order notifications could not be persisted source=%s", source)
+
+
 def refresh_orders_cache():
     """Refresh the durable Bitrix snapshot outside ordinary page requests."""
     now = time.time()
@@ -1217,7 +1245,9 @@ def refresh_orders_cache():
         save_orders_cache(orders, now)
         try:
             snapshot_store = OrdersSnapshotStore()
+            previous_ids = snapshot_store.source_ids("tictactoy")
             snapshot_store.replace(orders, now)
+            _publish_saved_order_batch("tictactoy", previous_ids, orders)
             backfill_order_item_units(snapshot_store, limit=5)
         except sqlite3.Error:
             app.logger.exception("Order query snapshot could not be refreshed")
@@ -1679,7 +1709,16 @@ def wildberries_orders_sync_api():
             base_url=os.getenv("WB_API_BASE_URL", WB_DEFAULT_BASE_URL),
         )
         store = OrdersSnapshotStore()
+        previous_ids = store.source_ids("wildberries")
         result = synchronize_wildberries_orders(client, store)
+        current_ids = store.source_ids("wildberries")
+        saved_orders = [
+            store.get(order_id)
+            for order_id in sorted(current_ids - previous_ids)
+        ]
+        _publish_saved_order_batch(
+            "wildberries", previous_ids, [order for order in saved_orders if order]
+        )
         assembly_rows = build_wb_fbs_assembly_rows(store=store)
         result["matched"] = sum(
             1 for row in assembly_rows if row["matching_status"] == "matched"
@@ -23241,6 +23280,28 @@ def _task_users():
     return [dict(row) for row in rows]
 
 
+def _task_user_name(user_id):
+    user = next((row for row in _task_users() if int(row["id"]) == int(user_id)), {})
+    return " ".join(
+        str(user.get(key) or "").strip() for key in ("first_name", "last_name")
+    ).strip() or str(user.get("email") or "Сотрудник")
+
+
+def _publish_task_assignment(task, actor_id):
+    assignee_id = int(task.get("assignee_id") or 0)
+    if not assignee_id or assignee_id == int(actor_id or 0):
+        return False
+    if app.testing and not app.config.get("NOTIFICATIONS_TESTING"):
+        return False
+    try:
+        return _notification_store().publish_task(
+            task, assignee_id, _task_user_name(actor_id)
+        )
+    except Exception:
+        app.logger.exception("Task notification could not be persisted task_id=%s", task.get("id"))
+        return False
+
+
 def _task_user_exists(user_id):
     return any(int(user["id"]) == int(user_id) for user in _task_users())
 
@@ -23445,6 +23506,7 @@ def api_tasks_collection_post():
         return _task_api_error(error)
     if created:
         _record_task_audit(task, "created")
+        _publish_task_assignment(task, user.get("id"))
     return api_success(_serialize_tasks([task])[0], 201 if created else 200,
                        duplicate=not created)
 
@@ -23452,10 +23514,12 @@ def api_tasks_collection_post():
 @app.route("/api/v1/tasks/<int:task_id>", methods=["GET", "PATCH"])
 def api_task_resource(task_id):
     user = current_auth_user() or {}
+    previous_assignee_id = None
     try:
         if request.method == "GET":
             task = _tasks_store().get(task_id)
         else:
+            previous_assignee_id = _tasks_store().get(task_id).get("assignee_id")
             payload = api_json_payload()
             payload.setdefault("assignment_operation_key", request.headers.get("Idempotency-Key"))
             task = _tasks_store().update(
@@ -23466,6 +23530,8 @@ def api_task_resource(task_id):
         return _task_api_error(error)
     if request.method != "GET":
         _record_task_audit(task)
+        if int(previous_assignee_id or 0) != int(task.get("assignee_id") or 0):
+            _publish_task_assignment(task, user.get("id"))
     return api_success(_serialize_tasks([task])[0])
 
 
@@ -23569,6 +23635,47 @@ def api_task_notifications():
     store = _tasks_store()
     store.generate_notifications(user.get("id"))
     return api_success(store.notifications(user.get("id"), request.args.get("mark_seen") == "1"))
+
+
+@app.get("/api/v1/notifications")
+def api_user_notifications():
+    user = current_auth_user() or {}
+    if not user.get("id"):
+        return api_success({"items": [], "unread": 0, "preferences": {}})
+    return api_success(_notification_store().feed(user["id"]))
+
+
+@app.post("/api/v1/notifications/<int:notification_id>/read")
+def api_user_notification_read(notification_id):
+    require_csrf_when_authenticated()
+    user = current_auth_user() or {}
+    if not user.get("id") or not _notification_store().mark_read(user["id"], notification_id):
+        return api_error("NOTIFICATION_NOT_FOUND", "Уведомление не найдено.", 404)
+    return api_success({"id": notification_id, "read": True})
+
+
+@app.post("/api/v1/notifications/read-all")
+def api_user_notifications_read_all():
+    require_csrf_when_authenticated()
+    user = current_auth_user() or {}
+    if not user.get("id"):
+        return api_success({"updated": 0})
+    return api_success({"updated": _notification_store().mark_all_read(user["id"])})
+
+
+@app.put("/api/v1/notification-preferences")
+def api_user_notification_preferences():
+    require_csrf_when_authenticated()
+    user = current_auth_user() or {}
+    if not user.get("id"):
+        return api_error("AUTH_REQUIRED", "Войдите в ERP.", 401)
+    payload = api_json_payload()
+    allowed = {"order_sound", "task_sound", "browser_notifications"}
+    if any(key not in allowed for key in payload):
+        return api_error("NOTIFICATION_PREFERENCES_INVALID", "Неизвестная настройка.", 422)
+    if any(not isinstance(value, bool) for value in payload.values()):
+        return api_error("NOTIFICATION_PREFERENCES_INVALID", "Настройка должна быть включена или выключена.", 422)
+    return api_success(_notification_store().save_preferences(user["id"], payload))
 
 
 @app.get("/api/v1/tasks/by-entity/<entity_type>/<entity_id>")

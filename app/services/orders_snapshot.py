@@ -171,6 +171,18 @@ class OrdersSnapshotStore:
                 "SELECT COUNT(*) FROM orders_snapshot"
             ).fetchone()[0])
 
+    def source_ids(self, source):
+        """Return durable identities for one source before/after a sync."""
+        self.initialize()
+        with self.connection() as connection:
+            return {
+                str(row["order_id"])
+                for row in connection.execute(
+                    "SELECT order_id FROM orders_snapshot WHERE source = ?",
+                    (str(source or "").strip(),),
+                ).fetchall()
+            }
+
     def replace(self, orders, loaded_at):
         self.initialize()
         loaded_at = float(loaded_at or 0)
