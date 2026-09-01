@@ -294,6 +294,113 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(reloaded["region"], "Москва")
         self.assertEqual(reloaded["city"], "Москва")
 
+    def test_all_editable_fields_survive_snapshot_readback_and_nullable_clear(self):
+        sale = self.create_sale(quantity=1).get_json()["data"]
+        stock_before = self.stock()
+        database = CatalogDatabase(self.database_path)
+        movements_before = SalesInventory(database).list_movements(
+            self.product["id"]
+        )
+        with database.transaction() as connection:
+            row = connection.execute(
+                "SELECT metadata_json FROM erp_sales WHERE id = ?",
+                (sale["id"],),
+            ).fetchone()
+            item = connection.execute(
+                "SELECT id FROM erp_sale_items WHERE sale_id = ?",
+                (sale["id"],),
+            ).fetchone()
+            metadata = json.loads(row["metadata_json"])
+            metadata["items"] = [{
+                "sale_item_id": item["id"],
+                "unit_price": 1000,
+                "original_unit_price": 1000,
+                "discount_type": "none",
+                "discount_value": 0,
+                "discount_reason": "Старое основание",
+                "order_status": "completed",
+                "commission": "Оплата по СБП (0)",
+                "commission_amount": 0,
+                "track_number": "OLD-TRACK",
+                "country": "Старая страна",
+                "region": "Старый регион",
+                "city": "Старый город",
+                "note": "Старое примечание",
+            }]
+            connection.execute(
+                "UPDATE erp_sales SET metadata_json = ? WHERE id = ?",
+                (json.dumps(metadata, ensure_ascii=False), sale["id"]),
+            )
+        web._cached_api_sales_records.cache_clear()
+
+        final_price = self.client.patch(
+            "/api/v1/sales/{}".format(sale["id"]),
+            json={"unit_price": 1175.5},
+        )
+        self.assertEqual(final_price.status_code, 200)
+        self.assertEqual(final_price.get_json()["data"]["unit_price"], 1175.5)
+
+        changes = {
+            "original_unit_price": 1300,
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "discount_reason": "Промокод",
+            "order_status": "shipped",
+            "commission": "Оплата иностранной картой (0,97)",
+            "commission_amount": 39.25,
+            "track_number": "NEW-TRACK",
+            "country": "Россия",
+            "region": "Москва",
+            "city": "Москва",
+            "note": "Новое примечание",
+        }
+        response = self.client.patch(
+            "/api/v1/sales/{}".format(sale["id"]),
+            json=changes,
+        )
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        updated = response.get_json()["data"]
+        self.assertEqual(updated["unit_price"], 1200)
+        self.assertEqual(updated["original_unit_price"], 1300)
+        self.assertEqual(updated["discount_type"], "fixed")
+        self.assertEqual(updated["discount_value"], 100)
+        self.assertEqual(updated["discount_reason"], "Промокод")
+        for field in (
+            "order_status", "commission", "commission_amount",
+            "track_number", "country", "region", "city", "note",
+        ):
+            self.assertEqual(updated[field], changes[field], field)
+
+        reopened = self.client.get(
+            "/api/v1/sales/{}".format(sale["id"])
+        ).get_json()["data"]
+        for field in (
+            "unit_price", "original_unit_price", "discount_type",
+            "discount_value", "discount_reason", "order_status", "commission",
+            "commission_amount", "track_number", "country", "region", "city",
+            "note",
+        ):
+            self.assertEqual(reopened[field], updated[field], field)
+
+        cleared = self.client.patch(
+            "/api/v1/sales/{}".format(sale["id"]),
+            json={"track_number": "", "note": "", "region": "", "city": ""},
+        )
+        self.assertEqual(cleared.status_code, 200)
+        for field in ("track_number", "note", "region", "city"):
+            self.assertEqual(cleared.get_json()["data"][field], "", field)
+        reread = self.client.get(
+            "/api/v1/sales/{}".format(sale["id"])
+        ).get_json()["data"]
+        for field in ("track_number", "note", "region", "city"):
+            self.assertEqual(reread[field], "", field)
+        self.assertEqual(self.stock(), stock_before)
+        self.assertEqual(
+            SalesInventory(database).list_movements(self.product["id"]),
+            movements_before,
+        )
+
     def test_order_number_and_delivery_cost_are_immutable_for_all_channels(self):
         for index, source in enumerate(
             ("Tictactoy", "Amazon", "Wildberries"), start=1
@@ -328,6 +435,34 @@ class Stage2SalesApiTest(unittest.TestCase):
             ).get_json()["data"]
             self.assertEqual(reloaded["order_number"], "ORDER-{}".format(index))
             self.assertEqual(reloaded["delivery_cost"], 350)
+
+    def test_product_quantity_brand_and_category_are_immutable(self):
+        sale = self.create_sale(quantity=1).get_json()["data"]
+        attempts = (
+            {"product_id": "999999"},
+            {"product_name": "Другой товар"},
+            {"quantity": 2},
+            {"brand": "Другой бренд"},
+            {"brand_id": int(sale["brand_id"]) + 1000},
+            {"category": "Другая категория"},
+            {"category_id": int(sale["category_id"]) + 1000},
+        )
+        for payload in attempts:
+            with self.subTest(payload=payload):
+                response = self.client.patch(
+                    "/api/v1/sales/{}".format(sale["id"]),
+                    json=payload,
+                )
+                self.assertEqual(response.status_code, 409)
+
+        reloaded = self.client.get(
+            "/api/v1/sales/{}".format(sale["id"])
+        ).get_json()["data"]
+        for field in (
+            "product_id", "product_name", "quantity", "brand", "brand_id",
+            "category", "category_id",
+        ):
+            self.assertEqual(reloaded[field], sale[field], field)
 
     def test_editable_fields_persist_for_amazon_and_wildberries(self):
         cases = (
@@ -885,6 +1020,52 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         load_manual_sales.assert_called_once_with()
+
+    def test_automatic_sale_editable_fields_can_be_cleared_and_read_back(self):
+        self.operations_path.write_text(
+            json.dumps([{
+                "id": "automatic-clear",
+                "created_at": "2026-07-28",
+                "source": "Заказ Битрикс",
+                "sales_source": "Amazon",
+                "type": "writeoff",
+                "product_id": str(self.product["id"]),
+                "product_name": "Casio G-Shock",
+                "quantity": 1,
+                "order_number": "BX-CLEAR",
+                "recipient_name": "Иван Иванов",
+                "country": "Германия",
+                "delivery_address": "Berlin",
+                "platform": "Amazon.de",
+                "invoice_number": "TRACK-OLD",
+                "payment_method": "Карта",
+            }]),
+            encoding="utf-8",
+        )
+        web._cached_api_sales_records.cache_clear()
+
+        response = self.client.patch(
+            "/api/v1/sales/automatic-clear",
+            json={
+                "recipient_name": "",
+                "country": "",
+                "delivery_address": "",
+                "platform": "",
+                "invoice_number": "",
+                "payment_method": "",
+                "note": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        reopened = self.client.get(
+            "/api/v1/sales/automatic-clear"
+        ).get_json()["data"]
+        for field in (
+            "recipient_name", "country", "delivery_address", "platform",
+            "invoice_number", "payment_method", "note",
+        ):
+            self.assertEqual(reopened[field], "", field)
 
 
 if __name__ == "__main__":

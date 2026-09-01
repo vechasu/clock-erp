@@ -80,7 +80,9 @@ def validate_performed_sale_update(current, requested):
             lambda value: str(value or "").strip(),
         ),
         ("brand", "Бренд", lambda value: str(value or "").strip()),
+        ("brand_id", "Бренд", lambda value: str(value or "").strip()),
         ("category", "Категорию", lambda value: str(value or "").strip()),
+        ("category_id", "Категорию", lambda value: str(value or "").strip()),
         ("quantity", "Количество", lambda value: float(value)),
         (
             "order_number",
@@ -1497,9 +1499,9 @@ class SalesInventory:
             metadata.update({
                 "id": sale_id,
                 "product_id": str(product_id),
-                "product_name": current.get("product_name"),
-                "brand": current.get("brand"),
-                "category": current.get("category"),
+                "product_name": canonical.get("product_name"),
+                "brand": canonical.get("brand"),
+                "category": canonical.get("category"),
                 "quantity": float(item["quantity"]),
                 **pricing,
                 "unit_price": requested_price,
@@ -2275,21 +2277,27 @@ class SalesInventory:
 
     @staticmethod
     def _sale_payload(row, movement_plan=None):
-        payload = SalesInventory._metadata(row)
-        sale_level_payload = dict(payload)
+        sale_level_payload = SalesInventory._metadata(row)
         item_snapshot = next((
-            item for item in payload.get("items", [])
+            item for item in sale_level_payload.get("items", [])
             if isinstance(item, dict)
             and int(item.get("sale_item_id") or 0) == int(row["item_id"])
         ), None)
-        if item_snapshot:
-            payload.update(item_snapshot)
-            for field in (
-                "track_number", "invoice_number", "note", "country",
-                "region", "city", "delivery_cost", "order_number",
+        # Item snapshots preserve historical product data. Mutable sale-level
+        # metadata must take precedence after an edit; otherwise an older item
+        # snapshot makes the readback return the pre-update value.
+        payload = dict(item_snapshot or {})
+        for field, value in sale_level_payload.items():
+            if (
+                field in {
+                    "product_name", "article", "barcode", "brand",
+                    "category", "brand_id", "category_id",
+                }
+                and value in (None, "")
+                and field in payload
             ):
-                if field in sale_level_payload:
-                    payload[field] = sale_level_payload[field]
+                continue
+            payload[field] = value
         quantity = float(row["quantity"])
         returned_quantity = float(row["returned_quantity"] or 0)
         stored_order_status = str(payload.get("order_status") or "completed")
