@@ -293,7 +293,11 @@ class CatalogApplication:
         catalog = self._shared_catalog_factory()
         if kind == "brand":
             items = (
-                catalog.list_strap_brands(query=query, limit=limit)
+                catalog.list_strap_brands(
+                    query=query,
+                    limit=limit,
+                    available_for_sale=available_for_sale,
+                )
                 if catalog_scope == "straps"
                 else catalog.list_brands(
                     query=query,
@@ -308,6 +312,7 @@ class CatalogApplication:
                     brand_id=brand_id,
                     query=query,
                     limit=limit,
+                    available_for_sale=available_for_sale,
                 )
                 if catalog_scope == "straps"
                 else catalog.list_category_options(

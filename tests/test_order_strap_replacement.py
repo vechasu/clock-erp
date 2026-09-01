@@ -376,6 +376,8 @@ class OrderStrapReplacementTest(unittest.TestCase):
         self.assertIn("После проведения", template)
         self.assertIn("Number(item.stock||0)<=0", template)
         self.assertIn("product_kind:picker.dataset.productKind", template)
+        self.assertIn("strap_product_picker('removed_strap'", template)
+        self.assertIn("strap_product_picker('installed_strap'", template)
         self.assertIn("data-catalog-scope=\"{{ 'straps'", template)
         self.assertIn("shared_catalog_kind='brand'", template)
         self.assertIn("shared_catalog_kind='category'", template)
@@ -391,6 +393,9 @@ class OrderStrapReplacementTest(unittest.TestCase):
         self.assertIn(
             "if(!response.ok)throw new Error(payload?.message", template
         )
+        self.assertIn("renderPickerStatus(picker,'Загрузка…','loading')", template)
+        self.assertIn("renderPickerStatus(picker,error.message", template)
+        self.assertIn("'Ничего не найдено','empty'", template)
 
     def test_migration_preserves_existing_business_rows(self):
         before = self.stocks()
