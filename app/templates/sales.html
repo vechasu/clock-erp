@@ -3232,7 +3232,7 @@
                         class="source-specific-fields"
                         data-source-fields="wildberries"
                     >
-                        <div class="field">
+                        <div class="field" data-wb-sticker-field>
                             <label for="wildberries_sticker_number">
                                 Номер стикера
                             </label>
@@ -6483,6 +6483,11 @@
             control.disabled = locked;
         });
         document.getElementById("created_at").readOnly = locked;
+        manualSaleForm.querySelectorAll(
+            '[name="order_number"], [name="delivery_cost"]'
+        ).forEach((control) => {
+            control.disabled = locked;
+        });
         document.querySelectorAll("[data-sale-legacy-price-field]")
             .forEach((field) => {
                 field.hidden = locked;
@@ -6490,9 +6495,15 @@
                     control.disabled = locked;
                 });
             });
-        document.getElementById("saleUnitPriceLabel").textContent = locked
-            ? "Цена"
-            : "Итоговая цена";
+        document.querySelectorAll("[data-wb-sticker-field]")
+            .forEach((field) => {
+                field.hidden = locked;
+                field.querySelectorAll("input").forEach((control) => {
+                    control.disabled = locked;
+                });
+            });
+        document.getElementById("saleUnitPriceLabel").textContent =
+            "Итоговая цена";
         saleFinalPrice.readOnly = !locked;
     }
 
@@ -6992,7 +7003,10 @@
                 );
             }
             const persistedSale = result.data;
-            const expectedFields = ["track_number", "invoice_number", "note"]
+            const expectedFields = [
+                "track_number", "invoice_number", "note",
+                "country", "region", "city",
+            ]
                 .filter((field) => submittedForm.has(field));
             const notApplied = expectedFields.filter((field) =>
                 String(persistedSale?.[field] || "").trim()
