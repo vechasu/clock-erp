@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 import sqlite3
@@ -41,6 +42,11 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
         apply_domain_migrations(self.store.path, "orders", "test")
         self.orders = [order_row(index) for index in range(455)]
         self.store.replace(self.orders, 1000)
+        self.sorted_orders = sorted(
+            self.orders,
+            key=lambda row: (row["created_at"], row["id"]),
+            reverse=True,
+        )
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -52,9 +58,9 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
         first = self.query()
         self.assertEqual(first["physical_total"], 455)
         self.assertEqual(first["total"], 455)
-        self.assertEqual(first["page_size"], 20)
-        self.assertEqual(first["page_count"], 23)
-        self.assertEqual(len(first["rows"]), 20)
+        self.assertEqual(first["page_size"], 50)
+        self.assertEqual(first["page_count"], 10)
+        self.assertEqual(len(first["rows"]), 50)
 
         for size in (20, 50, 100, 200):
             with self.subTest(size=size):
@@ -68,13 +74,13 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
             )
         self.assertEqual(len(walked), 455)
         self.assertEqual(len(set(walked)), 455)
-        self.assertEqual(walked, [row["id"] for row in self.orders])
+        self.assertEqual(walked, [row["id"] for row in self.sorted_orders])
 
         boundaries = {
-            1: self.orders[:50],
-            2: self.orders[50:100],
-            5: self.orders[200:250],
-            10: self.orders[450:],
+            1: self.sorted_orders[:50],
+            2: self.sorted_orders[50:100],
+            5: self.sorted_orders[200:250],
+            10: self.sorted_orders[450:],
         }
         for page, expected in boundaries.items():
             with self.subTest(page=page):
@@ -85,10 +91,32 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
                 )
         self.assertEqual(self.query(page=999, page_size=50)["page"], 10)
 
-        all_rows = self.query(page_size="all")
-        self.assertEqual(all_rows["page_size"], "all")
-        self.assertEqual(len(all_rows["rows"]), 455)
-        self.assertEqual(all_rows["page_count"], 1)
+        capped_rows = self.query(page_size="all")
+        self.assertEqual(capped_rows["page_size"], 50)
+        self.assertEqual(len(capped_rows["rows"]), 50)
+        self.assertEqual(capped_rows["page_count"], 10)
+
+    def test_incremental_refresh_retains_history_and_erp_only_payload(self):
+        oldest = dict(self.orders[-1])
+        with self.store.connection() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM orders_snapshot WHERE order_id=?",
+                (oldest["id"],),
+            ).fetchone()
+            payload = json.loads(row["payload_json"])
+            payload["erp_private_note"] = "Сохранить"
+            connection.execute(
+                "UPDATE orders_snapshot SET payload_json=? WHERE order_id=?",
+                (json.dumps(payload), oldest["id"]),
+            )
+
+        refreshed = dict(oldest, customer="Обновлён Bitrix")
+        self.store.replace([refreshed], 1002)
+
+        self.assertEqual(self.store.count(), 455)
+        stored = self.store.get(oldest["id"])
+        self.assertEqual(stored["customer"], "Обновлён Bitrix")
+        self.assertEqual(stored["erp_private_note"], "Сохранить")
 
     def test_search_includes_product_model_article_and_source(self):
         detailed = dict(self.orders[0])
@@ -313,8 +341,11 @@ class OrdersListIntegrationTest(unittest.TestCase):
         self.assertEqual(payload["total_available"], 75)
         self.assertEqual(payload["total_filtered"], 25)
         self.assertEqual(payload["page"], 2)
-        self.assertIn("Страница 2 из 2", payload["html"])
-        self.assertNotIn("2 / 2", payload["html"])
+        self.assertEqual(payload["total"], 25)
+        self.assertEqual(payload["total_pages"], 2)
+        self.assertEqual(len(payload["items"]), 5)
+        self.assertIn("Показано 21–25 из 25", payload["html"])
+        self.assertIn('aria-current="page">2</span>', payload["html"])
 
     def test_compact_header_has_live_search_filters_and_no_legacy_scope_or_kpis(self):
         with (

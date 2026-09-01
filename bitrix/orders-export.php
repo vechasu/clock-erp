@@ -32,7 +32,12 @@ if (!CModule::IncludeModule('sale')) {
 $limit = max(1, min(200, (int) ($_GET['limit'] ?? 100)));
 $cursor = (int) ($_GET['cursor'] ?? 0);
 $filter = $cursor > 0 ? array('<ID' => $cursor) : array();
-$select = array('ID', 'ACCOUNT_NUMBER', 'DATE_INSERT', 'DATE_UPDATE', 'STATUS_ID', 'PRICE', 'USER_ID', 'CANCELED');
+$select = array(
+    'ID', 'ACCOUNT_NUMBER', 'DATE_INSERT', 'DATE_UPDATE', 'STATUS_ID',
+    'PRICE', 'CURRENCY', 'USER_ID', 'CANCELED', 'PAYED', 'PAY_SYSTEM_ID',
+    'DELIVERY_ID', 'DELIVERY_PRICE', 'USER_DESCRIPTION', 'COMMENTS',
+    'TRACKING_NUMBER'
+);
 $dbOrders = CSaleOrder::GetList(array('ID' => 'DESC'), $filter, false, array('nTopCount' => $limit + 1), $select);
 $rawOrders = array();
 $ids = array();
@@ -66,6 +71,36 @@ if ($ids) {
         if ($name !== '') {
             $properties[$orderId]['NAME:' . $name] = $value;
         }
+    }
+}
+
+$basketItems = array();
+if ($ids) {
+    $dbBasket = CSaleBasket::GetList(
+        array('ORDER_ID' => 'ASC', 'ID' => 'ASC'),
+        array('ORDER_ID' => $ids),
+        false,
+        false,
+        array(
+            'ID', 'ORDER_ID', 'PRODUCT_ID', 'PRODUCT_XML_ID', 'XML_ID',
+            'NAME', 'QUANTITY', 'PRICE', 'BASE_PRICE', 'DISCOUNT_PRICE'
+        )
+    );
+    while ($basket = $dbBasket->Fetch()) {
+        $orderId = (string) $basket['ORDER_ID'];
+        if (!isset($basketItems[$orderId])) {
+            $basketItems[$orderId] = array();
+        }
+        $basketItems[$orderId][] = array(
+            'id' => (string) $basket['ID'],
+            'product_id' => (string) $basket['PRODUCT_ID'],
+            'xml_id' => (string) ($basket['PRODUCT_XML_ID'] ?: $basket['XML_ID']),
+            'name' => (string) $basket['NAME'],
+            'quantity' => (float) $basket['QUANTITY'],
+            'price' => (float) $basket['PRICE'],
+            'base_price' => (float) $basket['BASE_PRICE'],
+            'discount' => (float) $basket['DISCOUNT_PRICE'],
+        );
     }
 }
 
@@ -106,12 +141,21 @@ foreach ($rawOrders as $order) {
         'updated_at' => (string) $order['DATE_UPDATE'],
         'status' => (string) $order['STATUS_ID'],
         'price' => (float) $order['PRICE'],
+        'currency' => (string) $order['CURRENCY'],
         'cancelled' => ((string) $order['CANCELED'] === 'Y'),
+        'paid' => (string) $order['PAYED'],
+        'payment_system' => (string) $order['PAY_SYSTEM_ID'],
+        'delivery' => (string) $order['DELIVERY_ID'],
+        'delivery_price' => (float) $order['DELIVERY_PRICE'],
+        'comment' => trim((string) $order['USER_DESCRIPTION']),
+        'bitrix_comment' => trim((string) $order['COMMENTS']),
+        'tracking' => trim((string) $order['TRACKING_NUMBER']),
         'external_customer_id' => ((int) $order['USER_ID'] > 0 ? (string) $order['USER_ID'] : ''),
         'customer' => firstProperty($props, array('FIO', 'NAME', 'CONTACT_PERSON', 'NAME:Ф.И.О.', 'NAME:ИМЯ')),
         'phone' => firstProperty($props, array('PHONE', 'MOBILE', 'NAME:ТЕЛЕФОН')),
         'email' => firstProperty($props, array('EMAIL', 'NAME:E-MAIL', 'NAME:EMAIL')),
         'city' => resolvedCity($props),
+        'products' => $basketItems[$id] ?? array(),
     );
 }
 

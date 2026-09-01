@@ -139,6 +139,42 @@ class BitrixOrdersReadOnlyClientTest(unittest.TestCase):
         with self.assertRaisesRegex(BitrixReadOnlyError, "unexpected JSON structure"):
             invalid_shape.get_latest_orders(limit=1)
 
+    def test_history_cursor_pages_are_bounded_and_resumable(self):
+        session = FakeSession([
+            FakeResponse(payload={
+                "orders": [{"id": "3"}, {"id": "2"}],
+                "has_more": True, "next_cursor": 2,
+            }),
+            FakeResponse(payload={
+                "orders": [{"id": "1"}],
+                "has_more": False, "next_cursor": None,
+            }),
+        ])
+        client = BitrixOrdersReadOnlyClient(
+            history_url="http://127.0.0.1:81/api/orders-export.php",
+            session=session, max_retries=0,
+        )
+
+        pages = list(client.history_pages(limit=2, start_cursor=4))
+
+        self.assertEqual([page["count"] for page in pages], [2, 1])
+        self.assertEqual(
+            [call[1]["params"] for call in session.calls],
+            [{"limit": 2, "cursor": 4}, {"limit": 2, "cursor": 2}],
+        )
+
+    def test_history_rejects_non_advancing_cursor(self):
+        client = BitrixOrdersReadOnlyClient(
+            history_url="https://example.test/orders-history",
+            session=FakeSession([FakeResponse(payload={
+                "orders": [{"id": "2"}], "has_more": True,
+                "next_cursor": 2,
+            })]),
+            max_retries=0,
+        )
+        with self.assertRaisesRegex(BitrixReadOnlyError, "did not advance"):
+            list(client.history_pages(start_cursor=2))
+
 
 class BitrixOrdersDryRunSafetyTest(unittest.TestCase):
     def test_catalog_matching_loads_all_pages_with_mocked_get_requests(self):

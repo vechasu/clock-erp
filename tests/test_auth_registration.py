@@ -403,20 +403,17 @@ class AuthHardeningTest(unittest.TestCase):
         )
 
     def test_missing_external_secret_keeps_startup_and_order_reads_available(self):
-        response = mock.Mock()
-        response.raise_for_status.return_value = None
-        response.json.return_value = {"orders": []}
+        client = mock.Mock()
+        client.list_orders.return_value = []
         web.ORDERS_CACHE.update(items=[], loaded_at=0)
         with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(
-            web.requests,
-            "get",
-            return_value=response,
-        ) as get, mock.patch.object(web.requests, "post") as post:
+            web, "bitrix_orders_client", return_value=client,
+        ), mock.patch.object(web.requests, "post") as post:
             os.environ.pop("UPDATE_ORDER_STATUS_TOKEN", None)
             self.assertEqual(self.client.get("/login").status_code, 200)
             self.assertEqual(web.get_orders(force=True), [])
 
-        get.assert_called_once_with(web.ORDERS_URL, timeout=20)
+        client.list_orders.assert_called_once_with(limit=50)
         post.assert_not_called()
 
     def test_external_status_token_is_not_exposed_in_errors_or_logs(self):

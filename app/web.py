@@ -87,6 +87,7 @@ from app.services.orders_snapshot import (
     OrdersSnapshotStore,
     normalize_exact_order_number_query,
     order_item_units,
+    pagination_items,
 )
 from app.services.customer_registry import CustomerRegistry, PAGE_SIZES as CUSTOMER_PAGE_SIZES
 from app.services.purchases import (
@@ -987,8 +988,8 @@ def normalize_order(order):
 
 def bitrix_orders_client():
     return BitrixOrdersReadOnlyClient(
-        orders_url=os.getenv("BITRIX_ORDERS_URL", ORDERS_URL),
-        order_url=os.getenv("BITRIX_ORDER_URL", ORDER_URL),
+        orders_url=os.getenv("BITRIX_ORDERS_URL") or ORDERS_URL,
+        order_url=os.getenv("BITRIX_ORDER_URL") or ORDER_URL,
         token=os.getenv("BITRIX_ORDERS_TOKEN"),
         max_retries=int(os.getenv("BITRIX_API_MAX_RETRIES", "2")),
     )
@@ -1236,23 +1237,13 @@ def _publish_saved_order_batch(source, previous_ids, orders):
 
 
 def refresh_orders_cache():
-    """Refresh the durable Bitrix snapshot outside ordinary page requests."""
+    """Incrementally refresh the recent Bitrix window without deleting history."""
     now = time.time()
     try:
         order_status_service().retry_pending(update_order_status, limit=10)
-        # The legacy list endpoint exposes a fixed recent window and ignores
-        # pagination parameters. Keep its established request contract, cap the
-        # local window. Detail cards stay on-demand; a bounded background read
-        # fills only missing item-unit counters for compact list rows.
-        response = requests.get(ORDERS_URL, timeout=20)
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise BitrixReadOnlyError("Bitrix returned an unexpected JSON structure")
-        short_orders = payload.get("orders") or []
-        if not isinstance(short_orders, list):
-            raise BitrixReadOnlyError("Bitrix order list is not an array")
-        short_orders = short_orders[:50]
+        # The ordinary list endpoint is intentionally a bounded recent window.
+        # Full cursor traversal belongs only to the explicit history backfill.
+        short_orders = bitrix_orders_client().list_orders(limit=50)
 
         orders = []
 
@@ -1269,7 +1260,7 @@ def refresh_orders_cache():
         try:
             snapshot_store = OrdersSnapshotStore()
             previous_ids = snapshot_store.source_ids("tictactoy")
-            snapshot_store.replace(orders, now)
+            snapshot_store.upsert_bitrix(orders, now)
             _publish_saved_order_batch("tictactoy", previous_ids, orders)
             backfill_order_item_units(snapshot_store, limit=5)
         except sqlite3.Error:
@@ -1499,6 +1490,7 @@ def orders_list_api():
         orders_page_size=list_state["page_size"],
         orders_page_sizes=ORDER_PAGE_SIZES,
         orders_page_count=list_state["page_count"],
+        orders_page_items=list_state.get("page_items", [list_state["page"]]),
         order_kpis=list_state["kpis"],
         sync_error=ORDERS_CACHE.get("error", ""),
         exact_search=exact_search,
@@ -1537,6 +1529,9 @@ def orders_list_api():
         "page": list_state["page"],
         "page_size": list_state["page_size"],
         "page_count": list_state["page_count"],
+        "total": list_state["total"],
+        "total_pages": list_state["page_count"],
+        "items": list_state["rows"],
         "kpis": list_state["kpis"],
         "exact_search": ({
             "number": exact_search["number"],
@@ -1903,7 +1898,6 @@ def current_orders_list_state(args, force=False, allowed_order_ids=None):
     orders = get_orders(force=force)
     if app.testing and not app.config.get("ORDERS_SNAPSHOT_TESTING"):
         state = prepare_orders_list(orders, args, allowed_order_ids=allowed_order_ids)
-        state["page_size"] = 20
         state["physical_total"] = len(orders)
         state["rows"] = enrich_orders_list_rows(state["rows"])
         return orders, state
@@ -1990,14 +1984,14 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
             if created.date() < (now - timedelta(days=days)).date():
                 continue
         filtered_orders.append(order)
-    raw_page_size = "all" if exact_number is not None else str(args.get("page_size") or 20).strip().casefold()
-    per_page = "all" if raw_page_size == "all" else 20
+    raw_page_size = str(args.get("page_size") or 50).strip().casefold()
+    per_page = "all" if exact_number is not None else 50
     if per_page != "all":
         try:
             requested_size = int(raw_page_size)
-            per_page = requested_size if requested_size in ORDER_PAGE_SIZES else 20
+            per_page = requested_size if requested_size in ORDER_PAGE_SIZES else 50
         except ValueError:
-            per_page = 20
+            per_page = 50
     try:
         page = max(1, int(args.get("page") or 1))
     except ValueError:
@@ -2017,6 +2011,7 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
         "total": total,
         "page": page,
         "page_count": page_count,
+        "page_items": pagination_items(page, page_count),
         "page_size": per_page,
         "exact_number": (
             exact_candidate if exact_number is not None or total == 0 else None
@@ -2113,9 +2108,10 @@ def render_orders_page(
         selected_order_explicit=selected_order_explicit,
         orders_total=list_state["total"],
         orders_page=list_state["page"],
-        orders_page_size=list_state.get("page_size", 20),
+        orders_page_size=list_state.get("page_size", 50),
         orders_page_sizes=ORDER_PAGE_SIZES,
         orders_page_count=list_state["page_count"],
+        orders_page_items=list_state.get("page_items", [list_state["page"]]),
         order_kpis=list_state["kpis"],
         sync_error=detail_error or ORDERS_CACHE.get("error", ""),
         exact_search=exact_search,

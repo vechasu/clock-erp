@@ -70,7 +70,7 @@ h1 { font-size:27px; line-height:1.15; letter-spacing:-.025em; }
 .list-footer { display:flex; flex:0 0 auto; justify-content:space-between; align-items:center; gap:8px 12px; padding:10px 12px; color:var(--muted); border-top:1px solid var(--line); font-size:12px; }
 .pagination { gap:5px; }
 .page-link { padding:4px 7px; color:#334155; text-decoration:none; border:1px solid var(--line); border-radius:5px; background:#fff; }
-.page-link.is-disabled { opacity:.45; }
+.page-link.is-disabled { color:#64748b; background:#f8fafc; }
 .orders-page-size { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
 .orders-page-size .field { width:auto; min-height:30px; height:30px; padding:2px 28px 2px 8px; font-size:12px; }
 .detail-scroll { min-height:0; overflow:auto; }
