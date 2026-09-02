@@ -5004,9 +5004,31 @@ def warehouse_page():
             ),
         )
     if warehouse_view == "analytics":
+        stock_analytics = product_catalog.stock_analytics(
+            request.args.get("category_id")
+        )
+        selected_brand_key = (request.args.get("brand") or "").strip()
+        selected_brand = next((
+            item for item in stock_analytics["brands"]
+            if item["key"] == selected_brand_key
+        ), None)
         return render_template(
             "warehouse_analytics.html",
             analytics=product_catalog.product_analytics(),
+            stock_analytics=stock_analytics,
+            analytics_mode=(
+                request.args.get("mode")
+                if request.args.get("mode") in {"brands", "models"}
+                else "brands"
+            ),
+            selected_brand=selected_brand,
+            selected_brand_models=(
+                [
+                    item for item in stock_analytics["models"]
+                    if selected_brand is not None
+                    and item["brand_key"] == selected_brand["key"]
+                ]
+            ),
             product_metrics=product_metrics,
             format_stock_number=format_stock_number,
         )

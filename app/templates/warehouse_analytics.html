@@ -16,6 +16,98 @@
         {% from "_products_workspace.html" import products_workspace_header %}
         {{ products_workspace_header('analytics', product_metrics) }}
 
+        <section class="stock-analytics" aria-labelledby="stockAnalyticsTitle">
+            <div class="stock-analytics-header">
+                <div>
+                    <h2 id="stockAnalyticsTitle">Аналитика остатков</h2>
+                    <p>Фактическая структура текущих складских остатков по категории.</p>
+                </div>
+                <form class="stock-analytics-category" method="get" action="{{ url_for('warehouse_page') }}">
+                    <input type="hidden" name="view" value="analytics">
+                    <label for="stockAnalyticsCategory">Категория</label>
+                    <select id="stockAnalyticsCategory" name="category_id" onchange="this.form.submit()" {% if not stock_analytics.categories %}disabled{% endif %}>
+                        {% if not stock_analytics.categories %}<option>Категорий нет</option>{% endif %}
+                        {% for category in stock_analytics.categories %}
+                            <option value="{{ category.id }}" {% if stock_analytics.selected_category and category.id == stock_analytics.selected_category.id %}selected{% endif %}>{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+
+            {% if stock_analytics.category_missing %}
+                <div class="erp-empty-state" role="status"><strong>Категория не найдена</strong><br>Выберите существующую категорию из списка.</div>
+            {% elif not stock_analytics.selected_category %}
+                <div class="erp-empty-state" role="status"><strong>Категорий пока нет</strong><br>Аналитика появится после создания категории товаров.</div>
+            {% else %}
+                <div class="stock-analytics-summary" aria-label="Сводка по категории {{ stock_analytics.selected_category.name }}">
+                    <article><span>Всего в категории</span><strong>{{ format_stock_number(stock_analytics.summary.total_stock) }} <small>шт.</small></strong></article>
+                    <article><span>Брендов</span><strong>{{ stock_analytics.summary.brands }}</strong></article>
+                    <article><span>Моделей</span><strong>{{ stock_analytics.summary.models }}</strong></article>
+                    <article><span>Средний остаток на модель</span><strong>{{ "%.2f"|format(stock_analytics.summary.average_stock) }} <small>шт.</small></strong></article>
+                </div>
+
+                <div class="stock-analytics-toolbar">
+                    <nav class="stock-analytics-switch" aria-label="Разбивка аналитики остатков">
+                        <a class="{% if analytics_mode == 'brands' %}is-active{% endif %}" href="{{ url_for('warehouse_page', view='analytics', category_id=stock_analytics.selected_category.id, mode='brands') }}" {% if analytics_mode == 'brands' %}aria-current="page"{% endif %}>По брендам</a>
+                        <a class="{% if analytics_mode == 'models' %}is-active{% endif %}" href="{{ url_for('warehouse_page', view='analytics', category_id=stock_analytics.selected_category.id, mode='models') }}" {% if analytics_mode == 'models' %}aria-current="page"{% endif %}>По моделям</a>
+                    </nav>
+                    {% if selected_brand %}
+                        <a class="stock-analytics-back" href="{{ url_for('warehouse_page', view='analytics', category_id=stock_analytics.selected_category.id, mode='brands') }}">← Все бренды</a>
+                    {% endif %}
+                </div>
+
+                {% if analytics_mode == 'models' %}
+                    <div class="products-analytics-table-wrap" tabindex="0" aria-label="Все модели выбранной категории">
+                        <table class="products-analytics-table stock-analytics-table">
+                            <thead><tr><th scope="col">Модель</th><th scope="col">Бренд</th><th scope="col">Артикул</th><th scope="col">Остаток, шт.</th></tr></thead>
+                            <tbody>
+                            {% for item in stock_analytics.models %}
+                                <tr><td title="{{ item.name }}">{{ item.name }}</td><td>{{ item.brand }}</td><td>{{ item.article or '—' }}</td><td>{{ format_stock_number(item.stock) }}</td></tr>
+                            {% else %}
+                                <tr><td colspan="4" class="stock-analytics-empty-cell">В этой категории пока нет моделей.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% elif selected_brand %}
+                    <div class="stock-analytics-detail-heading">
+                        <div><span>Бренд</span><h3>{{ selected_brand.name }}</h3></div>
+                        <strong>{{ format_stock_number(selected_brand.stock) }} шт. · {{ selected_brand.models }} моделей</strong>
+                    </div>
+                    <div class="products-analytics-table-wrap" tabindex="0" aria-label="Модели бренда {{ selected_brand.name }}">
+                        <table class="products-analytics-table stock-analytics-table">
+                            <thead><tr><th scope="col">Модель</th><th scope="col">Артикул</th><th scope="col">Остаток, шт.</th><th scope="col">Доля бренда</th></tr></thead>
+                            <tbody>
+                            {% for item in selected_brand_models %}
+                                <tr><td title="{{ item.name }}">{{ item.name }}</td><td>{{ item.article or '—' }}</td><td>{{ format_stock_number(item.stock) }}</td><td><div class="stock-analytics-value"><span>{{ "%.1f"|format(item.brand_share) }}%</span><progress max="100" value="{{ item.brand_share }}" aria-label="Доля модели {{ item.name }} в остатке бренда: {{ item.brand_share }}%"></progress></div></td></tr>
+                            {% else %}
+                                <tr><td colspan="4" class="stock-analytics-empty-cell">У бренда нет моделей в этой категории.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="products-analytics-table-wrap" tabindex="0" aria-label="Остатки по брендам выбранной категории">
+                        <table class="products-analytics-table stock-analytics-table is-clickable">
+                            <thead><tr><th scope="col">Бренд</th><th scope="col">Остаток, шт.</th><th scope="col">Моделей</th><th scope="col">Доля от категории</th></tr></thead>
+                            <tbody>
+                            {% for item in stock_analytics.brands %}
+                                <tr data-href="{{ url_for('warehouse_page', view='analytics', category_id=stock_analytics.selected_category.id, mode='brands', brand=item.key) }}" tabindex="0" onclick="window.location.href=this.dataset.href" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href=this.dataset.href}">
+                                    <td title="{{ item.name }}"><a href="{{ url_for('warehouse_page', view='analytics', category_id=stock_analytics.selected_category.id, mode='brands', brand=item.key) }}">{{ item.name }}</a></td>
+                                    <td><div class="stock-analytics-value"><span>{{ format_stock_number(item.stock) }}</span><progress max="100" value="{{ item.stock_percent }}" aria-label="Остаток бренда {{ item.name }}: {{ format_stock_number(item.stock) }} штук"></progress></div></td>
+                                    <td>{{ item.models }}</td>
+                                    <td><div class="stock-analytics-value"><span>{{ "%.1f"|format(item.share) }}%</span><progress max="100" value="{{ item.share }}" aria-label="Доля бренда {{ item.name }} в категории: {{ item.share }}%"></progress></div></td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="4" class="stock-analytics-empty-cell">В этой категории пока нет моделей.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% endif %}
+            {% endif %}
+        </section>
+
         <div class="products-analytics-grid">
             <section class="products-analytics-card" aria-labelledby="productsBrandsRanking">
                 <h2 id="productsBrandsRanking">Бренды по числу позиций</h2>

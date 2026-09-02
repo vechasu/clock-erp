@@ -1217,6 +1217,166 @@ class ExcelProductCatalog:
             "top_cells": top_cells,
         }
 
+    def stock_analytics(self, category_id=None):
+        """Return the current stock structure for one ERP category.
+
+        The product predicate intentionally matches ``list_products`` and the
+        existing catalog counters: active cards from the current visible
+        source are read directly from ``catalog_excel_products.stock``.
+        """
+        self.database.initialize()
+        visible_products_sql = (
+            "SELECT p.id, p.excel_name_raw, p.model, p.excel_article, "
+            "p.excel_brand, p.brand_id, p.category_id, p.stock "
+            "FROM catalog_excel_products p "
+            "JOIN catalog_excel_batches batch ON batch.id = p.current_batch_id "
+            "WHERE p.active = 1 AND "
+            + VISIBLE_PRODUCT_SQL.replace("b.", "batch.")
+        )
+
+        with self.database.connect() as connection:
+            category_rows = connection.execute(
+                "SELECT c.id, c.name, COUNT(visible.id) AS model_count "
+                "FROM erp_categories c LEFT JOIN (" + visible_products_sql + ") visible "
+                "ON visible.category_id = c.id WHERE c.active = 1 "
+                "GROUP BY c.id, c.name ORDER BY c.name COLLATE NOCASE, c.id"
+            ).fetchall()
+            uncategorized = connection.execute(
+                "SELECT COUNT(*) AS model_count FROM (" + visible_products_sql + ") "
+                "visible WHERE visible.category_id IS NULL"
+            ).fetchone()
+
+            categories = [{
+                "id": int(row["id"]),
+                "name": row["name"],
+                "model_count": int(row["model_count"] or 0),
+            } for row in category_rows]
+            if int(uncategorized["model_count"] or 0):
+                categories.insert(0, {
+                    "id": 0,
+                    "name": "Без категории",
+                    "model_count": int(uncategorized["model_count"]),
+                })
+
+            requested_category_id = None
+            category_missing = False
+            if category_id not in (None, ""):
+                try:
+                    requested_category_id = int(category_id)
+                except (TypeError, ValueError):
+                    category_missing = True
+            elif categories:
+                requested_category_id = next(
+                    (item["id"] for item in categories if item["model_count"]),
+                    categories[0]["id"],
+                )
+
+            selected_category = next(
+                (
+                    item for item in categories
+                    if item["id"] == requested_category_id
+                ),
+                None,
+            )
+            if requested_category_id is not None and selected_category is None:
+                category_missing = True
+
+            product_rows = []
+            if selected_category is not None:
+                category_predicate = (
+                    "visible.category_id IS NULL"
+                    if selected_category["id"] == 0
+                    else "visible.category_id = ?"
+                )
+                parameters = (
+                    [] if selected_category["id"] == 0
+                    else [selected_category["id"]]
+                )
+                product_rows = connection.execute(
+                    "SELECT visible.*, canonical_brand.name AS canonical_brand "
+                    "FROM (" + visible_products_sql + ") visible "
+                    "LEFT JOIN erp_brands canonical_brand "
+                    "ON canonical_brand.id = visible.brand_id WHERE "
+                    + category_predicate
+                    + " ORDER BY visible.stock DESC, "
+                    "visible.excel_name_raw COLLATE NOCASE, visible.id",
+                    parameters,
+                ).fetchall()
+
+        models = []
+        brand_groups = {}
+        for row in product_rows:
+            stock = float(row["stock"] or 0)
+            raw_brand = str(row["excel_brand"] or "").strip()
+            if row["brand_id"] is not None:
+                brand_key = "id:{}".format(int(row["brand_id"]))
+            elif raw_brand:
+                brand_key = "name:{}".format(raw_brand.casefold())
+            else:
+                brand_key = "missing"
+            brand_name = str(row["canonical_brand"] or raw_brand or "Без бренда")
+            model_name = str(
+                row["model"] or row["excel_name_raw"] or "Без названия"
+            ).strip() or "Без названия"
+            model = {
+                "id": int(row["id"]),
+                "name": model_name,
+                "brand_key": brand_key,
+                "brand": brand_name,
+                "article": str(row["excel_article"] or "").strip(),
+                "stock": stock,
+            }
+            models.append(model)
+            brand = brand_groups.setdefault(brand_key, {
+                "key": brand_key,
+                "name": brand_name,
+                "stock": 0.0,
+                "models": 0,
+            })
+            brand["stock"] += stock
+            brand["models"] += 1
+
+        total_stock = sum(item["stock"] for item in models)
+        brands = sorted(
+            brand_groups.values(),
+            key=lambda item: (-item["stock"], item["name"].casefold()),
+        )
+        maximum_brand_stock = max(
+            [item["stock"] for item in brands] or [0]
+        )
+        for brand in brands:
+            brand["share"] = (
+                round(brand["stock"] * 100.0 / total_stock, 1)
+                if total_stock else 0.0
+            )
+            brand["stock_percent"] = (
+                round(brand["stock"] * 100.0 / maximum_brand_stock, 1)
+                if maximum_brand_stock else 0.0
+            )
+
+        for model in models:
+            brand_stock = brand_groups[model["brand_key"]]["stock"]
+            model["brand_share"] = (
+                round(model["stock"] * 100.0 / brand_stock, 1)
+                if brand_stock else 0.0
+            )
+
+        return {
+            "categories": categories,
+            "selected_category": selected_category,
+            "category_missing": category_missing,
+            "summary": {
+                "total_stock": total_stock,
+                "brands": len(brands),
+                "models": len(models),
+                "average_stock": (
+                    total_stock / len(models) if models else 0.0
+                ),
+            },
+            "brands": brands,
+            "models": models,
+        }
+
     def get_product(self, product_id):
         self.database.initialize()
         with self.database.connect() as connection:
