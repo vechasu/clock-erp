@@ -61,8 +61,8 @@ class SalesKpiContractTest(unittest.TestCase):
 
         result = web.calculate_sales_kpis(records)
 
-        self.assertEqual(result["sales_count"], 2)
-        self.assertEqual(result["quantity"], 5)
+        self.assertEqual(result["sales_count"], 8)
+        self.assertEqual(result["quantity"], 16)
         self.assertEqual(result["revenue"], 500)
         self.assertEqual(result["revenue_display"], "500 ₽")
         self.assertEqual(result["average_receipt"], 250)
@@ -120,8 +120,8 @@ class SalesKpiContractTest(unittest.TestCase):
 
         result = web.calculate_sales_kpis(records)
 
-        self.assertEqual(result["sales_count"], 1)
-        self.assertEqual(result["quantity"], 2)
+        self.assertEqual(result["sales_count"], 2)
+        self.assertEqual(result["quantity"], 9)
         self.assertEqual(result["revenue"], 240)
         self.assertEqual(result["average_receipt"], 240)
 
@@ -132,8 +132,8 @@ class SalesKpiContractTest(unittest.TestCase):
             sale("cancelled", status="cancelled", quantity=9, amount=None),
         ])
 
-        self.assertEqual(result["sales_count"], 2)
-        self.assertEqual(result["quantity"], 5)
+        self.assertEqual(result["sales_count"], 3)
+        self.assertEqual(result["quantity"], 14)
         self.assertEqual(result["cancelled_count"], 1)
         self.assertIsNone(result["revenue"])
         self.assertIsNone(result["average_receipt"])
@@ -251,9 +251,45 @@ class SalesKpiContractTest(unittest.TestCase):
 
         self.assertEqual(web.calculate_sales_kpis(completed)["revenue"], 300)
         cancelled_kpis = web.calculate_sales_kpis(cancelled)
-        self.assertEqual(cancelled_kpis["sales_count"], 0)
+        self.assertEqual(cancelled_kpis["sales_count"], 1)
         self.assertEqual(cancelled_kpis["revenue_display"], "0 ₽")
         self.assertEqual(cancelled_kpis["cancelled_count"], 1)
+
+    def test_all_source_keeps_null_empty_and_unknown_records(self):
+        records = [
+            sale("known", source="Tictactoy"),
+            {**sale("null"), "source": None},
+            {**sale("empty"), "source": ""},
+            {**sale("unknown"), "source": "Marketplace X"},
+        ]
+
+        self.assertEqual(
+            {item["id"] for item in web.filter_sales_by_source(records, "all")},
+            {"known", "null", "empty", "unknown"},
+        )
+        self.assertEqual(
+            [item["id"] for item in web.filter_sales_by_source(records, "tictactoy")],
+            ["known"],
+        )
+
+    def test_tictactoy_source_case_does_not_split_one_automatic_sale(self):
+        records = [
+            sale(
+                "line-1", source="Tictactoy", sale_type="automatic",
+                order_number="ORDER-1", quantity=2,
+            ),
+            sale(
+                "line-2", source="tictactoy", sale_type="automatic",
+                order_number="ORDER-1", quantity=3, product_id="p2",
+            ),
+        ]
+
+        result = web.calculate_sales_kpis(
+            web.filter_sales_by_source(records, "tictactoy")
+        )
+
+        self.assertEqual(result["sales_count"], 1)
+        self.assertEqual(result["quantity"], 5)
 
 
 if __name__ == "__main__":
