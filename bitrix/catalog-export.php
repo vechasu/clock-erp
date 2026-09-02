@@ -1008,11 +1008,16 @@ try {
         }
         $filter['ID'] = (int) $_GET['product_id'];
     } elseif ($search !== '') {
-        $filter[] = array(
-            'LOGIC' => 'OR',
-            '%NAME' => $search,
-            '%CODE' => $search,
-        );
+        $searchFilter = array('LOGIC' => 'OR');
+        $terms = preg_split('/\s+/u', $search, -1, PREG_SPLIT_NO_EMPTY) ?: array();
+        foreach (array_unique(array_merge(array($search), $terms)) as $term) {
+            $searchFilter[] = array(
+                'LOGIC' => 'OR',
+                '%NAME' => $term,
+                '%CODE' => $term,
+            );
+        }
+        $filter[] = $searchFilter;
     }
     if (!$includeInactive) {
         $filter['ACTIVE'] = 'Y';
