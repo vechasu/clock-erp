@@ -1,5 +1,6 @@
 import copy
 import unittest
+from unittest import mock
 
 from app.clients.bitrix_catalog import (
     BitrixCatalogReadOnlyClient,
@@ -165,6 +166,34 @@ class CatalogNormalizationTest(unittest.TestCase):
         self.assertEqual(product["sale_price"]["value"], 19000.0)
         self.assertEqual(product["sale_price"]["role"], "base")
         self.assertEqual(product["images"][0]["width"], 1200)
+
+    def test_search_filters_unrelated_rows_and_ranks_exact_article_first(self):
+        client = object.__new__(BitrixCatalogReadOnlyClient)
+        products = [
+            normalize_product({"ID": 1, "NAME": "Gravity", "ARTICLE": "GR-1"}),
+            normalize_product({"ID": 2, "NAME": "C-OPO RETRO GOLD case", "ARTICLE": "OTHER"}),
+            normalize_product({"ID": 3, "NAME": "Watch", "ARTICLE": "C-OPO RETRO GOLD"}),
+            normalize_product({"ID": 4, "NAME": "Mercury", "ARTICLE": "ME-1"}),
+        ]
+        with mock.patch.object(client, "get_products_page", return_value={"products": products}):
+            result = client.search_products("c-opo retro gold")
+        self.assertEqual([item["external_product_id"] for item in result], ["3", "2"])
+
+    def test_search_sends_compatible_query_parameters(self):
+        client = object.__new__(BitrixCatalogReadOnlyClient)
+        client.base_url = "https://example.test/"
+        with mock.patch.object(client, "_get_json", return_value={"products": []}) as request_json:
+            client.search_products("retro gold")
+        params = request_json.call_args[0][0]
+        self.assertEqual((params["q"], params["search"]), ("retro gold", "retro gold"))
+
+    def test_search_exact_bitrix_id_uses_direct_lookup(self):
+        client = object.__new__(BitrixCatalogReadOnlyClient)
+        product = normalize_product({"ID": 7, "NAME": "Watch"})
+        with mock.patch.object(client, "get_product", return_value=product) as get_product:
+            result = client.search_products("7")
+        get_product.assert_called_once_with("7")
+        self.assertEqual(result, [product])
 
 
 class CatalogMatchingTest(unittest.TestCase):
