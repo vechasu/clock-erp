@@ -190,6 +190,24 @@ class CatalogNormalizationTest(unittest.TestCase):
             result = client.search_products("C-OPO RETRO GOLD")
         self.assertEqual([item["external_product_id"] for item in result], ["244102"])
 
+    def test_search_checks_later_filtered_pages_without_returning_unrelated_rows(self):
+        client = object.__new__(BitrixCatalogReadOnlyClient)
+        unrelated = [
+            normalize_product({"ID": identity, "NAME": "Other Gold {}".format(identity)})
+            for identity in range(1, 51)
+        ]
+        target = normalize_product({
+            "ID": 244102, "NAME": "C-0PO RETRO GOLD", "CODE": "c-0po-gold",
+        })
+        pages = [
+            {"products": unrelated, "has_more": True},
+            {"products": [target], "has_more": False},
+        ]
+        with mock.patch.object(client, "get_products_page", side_effect=pages) as get_page:
+            result = client.search_products("C-OPO RETRO GOLD")
+        self.assertEqual([item["external_product_id"] for item in result], ["244102"])
+        self.assertEqual(get_page.call_count, 2)
+
     def test_search_sends_compatible_query_parameters(self):
         client = object.__new__(BitrixCatalogReadOnlyClient)
         client.base_url = "https://example.test/"

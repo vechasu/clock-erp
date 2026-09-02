@@ -604,10 +604,16 @@ class BitrixCatalogReadOnlyClient:
             return [product] if product is not None else []
         if len(query) < 2:
             return []
-        products = self.get_products_page(
-            page=1, limit=min(max(int(limit), 1), 50),
-            include_inactive=False, query=query,
-        )["products"]
+        page_limit = 50
+        products = []
+        for page in range(1, 21):
+            result = self.get_products_page(
+                page=page, limit=page_limit,
+                include_inactive=False, query=query,
+            )
+            products.extend(result["products"])
+            if not result.get("has_more"):
+                break
         # Product labels in the live catalog contain both Latin O and digit 0
         # for the same model family (for example C-OPO / C-0PO).
         search_key = query.casefold().replace("0", "o")
