@@ -180,6 +180,16 @@ class CatalogNormalizationTest(unittest.TestCase):
             result = client.search_products("c-opo retro gold")
         self.assertEqual([item["external_product_id"] for item in result], ["3", "2"])
 
+    def test_search_matches_live_c_opo_spelling_with_catalog_zero(self):
+        client = object.__new__(BitrixCatalogReadOnlyClient)
+        products = [
+            normalize_product({"ID": 244102, "NAME": "C-0PO RETRO GOLD", "CODE": "c-0po-gold"}),
+            normalize_product({"ID": 1, "NAME": "Gravity", "CODE": "gravity"}),
+        ]
+        with mock.patch.object(client, "get_products_page", return_value={"products": products}):
+            result = client.search_products("C-OPO RETRO GOLD")
+        self.assertEqual([item["external_product_id"] for item in result], ["244102"])
+
     def test_search_sends_compatible_query_parameters(self):
         client = object.__new__(BitrixCatalogReadOnlyClient)
         client.base_url = "https://example.test/"
@@ -199,8 +209,9 @@ class CatalogNormalizationTest(unittest.TestCase):
     def test_export_endpoint_filters_search_by_name_and_article_code(self):
         endpoint = Path("bitrix/catalog-export.php").read_text(encoding="utf-8")
         self.assertIn("$search = searchParameter();", endpoint)
-        self.assertIn("'%NAME' => $search", endpoint)
-        self.assertIn("'%CODE' => $search", endpoint)
+        self.assertIn("'%NAME' => $term", endpoint)
+        self.assertIn("'%CODE' => $term", endpoint)
+        self.assertIn("preg_split('/\\s+/u', $search", endpoint)
 
 
 class CatalogMatchingTest(unittest.TestCase):

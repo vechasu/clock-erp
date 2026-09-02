@@ -608,11 +608,13 @@ class BitrixCatalogReadOnlyClient:
             page=1, limit=min(max(int(limit), 1), 50),
             include_inactive=False, query=query,
         )["products"]
-        search_key = query.casefold()
+        # Product labels in the live catalog contain both Latin O and digit 0
+        # for the same model family (for example C-OPO / C-0PO).
+        search_key = query.casefold().replace("0", "o")
 
         def rank(product):
-            name = _text(product.get("name")).casefold()
-            article = _text(product.get("external_sku")).casefold()
+            name = _text(product.get("name")).casefold().replace("0", "o")
+            article = _text(product.get("external_sku")).casefold().replace("0", "o")
             if article == search_key:
                 return (0, article, name)
             if name == search_key:
