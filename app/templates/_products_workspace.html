@@ -8,9 +8,9 @@
         {# Legacy regression markers: + Добавить товар; toggleWarehouseAddCard() #}
         {% if add_button %}
             <div class="products-add-menu">
-                <button id="openWarehouseAddMenu" class="products-workspace-button is-primary" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleProductsAddMenu(event)">Добавить товар ▾</button>
+                <button id="openWarehouseAddModal" class="products-workspace-button is-primary" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleProductsAddMenu(event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openManualProductCreate();}">Добавить товар ▾</button>
                 <div id="productsAddMenu" class="products-add-menu-list" role="menu" hidden>
-                    <button id="openWarehouseAddModal" type="button" role="menuitem" onclick="openManualProductCreate()">Создать вручную</button>
+                    <button id="openManualProductCreate" type="button" role="menuitem" onclick="openManualProductCreate()">Создать вручную</button>
                     <button id="openBitrixProductImport" type="button" role="menuitem" onclick="openBitrixImportModal()">Добавить из Bitrix</button>
                 </div>
             </div>

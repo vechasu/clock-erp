@@ -7875,7 +7875,7 @@
     function toggleProductsAddMenu(event) {
         event?.stopPropagation();
         const menu = document.getElementById("productsAddMenu");
-        const button = document.getElementById("openWarehouseAddMenu");
+        const button = document.getElementById("openWarehouseAddModal");
         if (!menu || !button) return;
         menu.hidden = !menu.hidden;
         button.setAttribute("aria-expanded", String(!menu.hidden));
@@ -7883,7 +7883,7 @@
 
     function closeProductsAddMenu() {
         const menu = document.getElementById("productsAddMenu");
-        const button = document.getElementById("openWarehouseAddMenu");
+        const button = document.getElementById("openWarehouseAddModal");
         if (menu) menu.hidden = true;
         button?.setAttribute("aria-expanded", "false");
     }
