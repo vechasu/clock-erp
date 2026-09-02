@@ -567,12 +567,15 @@ class BitrixCatalogReadOnlyClient:
             image.get("filename") or source.path.rsplit("/", 1)[-1],
         )
 
-    def get_products_page(self, page=1, limit=100, updated_from=None, include_inactive=False):
+    def get_products_page(self, page=1, limit=100, updated_from=None,
+                          include_inactive=False, query=None):
         params = {"page": max(1, int(page)), "limit": max(1, min(int(limit), 200))}
         if updated_from:
             params["updated_from"] = updated_from
         if include_inactive:
             params["include_inactive"] = 1
+        if _text(query):
+            params["q"] = _text(query)
         payload = self._get_json(params)
         rows = payload.get("products") or payload.get("items") or []
         if not isinstance(rows, list):
@@ -589,6 +592,20 @@ class BitrixCatalogReadOnlyClient:
             "api_version": _text(payload.get("api_version")),
             "generated_at": _text(payload.get("generated_at")),
         }
+
+    def search_products(self, query, limit=20):
+        """Use the catalog export's bounded server-side product search."""
+        query = _text(query)
+        if len(query) < 2:
+            return []
+        return self.get_products_page(
+            page=1, limit=min(max(int(limit), 1), 50),
+            include_inactive=False, query=query,
+        )["products"]
+
+    def download_product_image(self, image, max_bytes=3 * 1024 * 1024):
+        """Download a product image from the same trusted Bitrix host."""
+        return self.download_brand_image(image, max_bytes=max_bytes)
 
     def get_product(self, product_id):
         product_id = _text(product_id)

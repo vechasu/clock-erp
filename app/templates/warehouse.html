@@ -4159,6 +4159,26 @@
             }
         }
 
+        .products-add-menu { position: relative; }
+        .products-add-menu-list { position:absolute;right:0;top:calc(100% + 6px);z-index:80;min-width:210px;padding:6px;border:1px solid #d8e0ea;border-radius:10px;background:#fff;box-shadow:0 12px 30px rgba(15,23,42,.16); }
+        .products-add-menu-list button { width:100%;padding:9px 10px;border:0;border-radius:7px;background:transparent;text-align:left;cursor:pointer; }
+        .products-add-menu-list button:hover { background:#f1f5f9; }
+        .bitrix-import-dialog { width:min(720px,calc(100vw - 32px)); }
+        .bitrix-import-body { display:grid;gap:14px;padding:18px; }
+        .bitrix-search-row { display:flex;gap:8px; }
+        .bitrix-search-row input { flex:1;min-height:40px;padding:0 11px;border:1px solid #cbd5e1;border-radius:9px; }
+        .bitrix-results { display:grid;gap:6px;max-height:260px;overflow:auto; }
+        .bitrix-result { display:grid;grid-template-columns:52px 1fr auto;gap:10px;align-items:center;padding:8px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;text-align:left;cursor:pointer; }
+        .bitrix-result img,.bitrix-preview-photo { width:52px;height:52px;border-radius:8px;object-fit:cover;background:#f1f5f9; }
+        .bitrix-result small,.bitrix-muted { color:#64748b; }
+        .bitrix-preview { display:grid;grid-template-columns:96px 1fr;gap:16px;padding:14px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc; }
+        .bitrix-preview-photo { width:96px;height:96px; }
+        .bitrix-preview-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px; }
+        .bitrix-taxonomy { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+        .bitrix-taxonomy select { width:100%;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;background:#fff; }
+        .bitrix-import-actions { display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap; }
+        .bitrix-import-error { color:#b91c1c; }
+        @media(max-width:620px){.bitrix-preview{grid-template-columns:1fr}.bitrix-preview-fields,.bitrix-taxonomy{grid-template-columns:1fr}}
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy') }}">
@@ -4802,6 +4822,50 @@
                     </div>
                 </form>
             </div>
+            </div>
+
+            <div id="bitrixImportModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="bitrixImportTitle" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
+                <div class="modal-dialog erp-modal-dialog bitrix-import-dialog">
+                    <div class="modal-header">
+                        <div><div class="add-title" id="bitrixImportTitle">Добавить товар из Bitrix</div><p class="warehouse-add-subtitle">Импортируется только выбранный товар</p></div>
+                        <button class="modal-close" type="button" aria-label="Закрыть" onclick="closeBitrixImportModal()">×</button>
+                    </div>
+                    <div class="bitrix-import-body">
+                        <div class="bitrix-search-row">
+                            <input id="bitrixProductSearch" type="search" autocomplete="off" placeholder="Название, артикул или Bitrix ID" aria-label="Поиск товара в Bitrix">
+                        </div>
+                        <div id="bitrixProductStatus" class="bitrix-muted" role="status" aria-live="polite">Введите минимум 2 символа</div>
+                        <div id="bitrixProductResults" class="bitrix-results"></div>
+                        <section id="bitrixProductPreview" class="bitrix-preview" hidden>
+                            <div><img id="bitrixPreviewPhoto" class="bitrix-preview-photo" alt="Фото товара" hidden><span id="bitrixPreviewNoPhoto" class="bitrix-preview-photo">Нет фото</span></div>
+                            <div>
+                                <h3 id="bitrixPreviewName"></h3>
+                                <div class="bitrix-preview-fields">
+                                    <span>Артикул: <strong id="bitrixPreviewArticle">—</strong></span>
+                                    <span>Bitrix ID: <strong id="bitrixPreviewId">—</strong></span>
+                                    <span>Бренд: <strong id="bitrixPreviewBrand">—</strong></span>
+                                    <span>Категория: <strong id="bitrixPreviewCategory">—</strong></span>
+                                    <span>Цена: <strong id="bitrixPreviewPrice">—</strong></span>
+                                    <span>Остаток: <strong id="bitrixPreviewStock">—</strong></span>
+                                </div>
+                            </div>
+                        </section>
+                        <div id="bitrixDuplicateNotice" hidden>
+                            <strong>Товар уже есть в ERP.</strong> <span id="bitrixDuplicateText"></span>
+                            <div id="bitrixChanges" class="bitrix-muted"></div>
+                        </div>
+                        <div id="bitrixTaxonomy" class="bitrix-taxonomy" hidden>
+                            <label>Бренд<select id="bitrixBrandSelect"><option value="">Выберите бренд</option>{% for item in brand_groups %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
+                            <label>Категория<select id="bitrixCategorySelect"><option value="">Выберите категорию</option>{% for item in category_groups %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
+                        </div>
+                        <div id="bitrixImportError" class="bitrix-import-error" role="alert"></div>
+                        <div class="bitrix-import-actions">
+                            <a id="bitrixOpenExisting" class="products-workspace-button" href="#" hidden>Открыть товар</a>
+                            <button id="bitrixUpdateProduct" class="products-workspace-button" type="button" hidden>Обновить из Bitrix</button>
+                            <button id="bitrixImportProduct" class="products-workspace-button is-primary" type="button" hidden>Добавить товар в ERP</button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div
@@ -7804,6 +7868,225 @@
 
 <script>
     let warehouseAddReturnFocus = null;
+
+    let bitrixSearchTimer = null;
+    let bitrixSelectedProduct = null;
+
+    function toggleProductsAddMenu(event) {
+        event?.stopPropagation();
+        const menu = document.getElementById("productsAddMenu");
+        const button = document.getElementById("openWarehouseAddModal");
+        if (!menu || !button) return;
+        menu.hidden = !menu.hidden;
+        button.setAttribute("aria-expanded", String(!menu.hidden));
+    }
+
+    function closeProductsAddMenu() {
+        const menu = document.getElementById("productsAddMenu");
+        const button = document.getElementById("openWarehouseAddModal");
+        if (menu) menu.hidden = true;
+        button?.setAttribute("aria-expanded", "false");
+    }
+
+    function openManualProductCreate() {
+        closeProductsAddMenu();
+        toggleWarehouseAddCard();
+    }
+
+    async function loadBitrixTaxonomyOptions() {
+        const pairs = [
+            ["brand", document.getElementById("bitrixBrandSelect")],
+            ["category", document.getElementById("bitrixCategorySelect")],
+        ];
+        await Promise.all(pairs.map(async function(pair) {
+            const response = await fetch(
+                "/api/v1/catalog/options?type=" + pair[0] + "&limit=200"
+                    + (pair[0] === "category" ? "&category_scope=all" : ""),
+                {headers:{Accept:"application/json"}}
+            );
+            const payload = await response.json();
+            if (!response.ok) throw new Error("Не удалось загрузить справочник.");
+            const placeholder = pair[1].options[0];
+            pair[1].replaceChildren(placeholder);
+            (payload.data || []).forEach(function(item) {
+                if (!item.id) return;
+                const option = document.createElement("option");
+                option.value = item.id;
+                option.textContent = item.name;
+                pair[1].appendChild(option);
+            });
+        }));
+        if (bitrixSelectedProduct) {
+            document.getElementById("bitrixBrandSelect").value = bitrixSelectedProduct.brand_id || "";
+            document.getElementById("bitrixCategorySelect").value = bitrixSelectedProduct.category_id || "";
+        }
+    }
+
+    function openBitrixImportModal() {
+        closeProductsAddMenu();
+        const modal = document.getElementById("bitrixImportModal");
+        modal?.classList.add("is-open");
+        modal?.setAttribute("aria-hidden", "false");
+        loadBitrixTaxonomyOptions().catch(function(error) {
+            bitrixImportMessage(error.message);
+        });
+        document.getElementById("bitrixProductSearch")?.focus();
+    }
+
+    function closeBitrixImportModal() {
+        const modal = document.getElementById("bitrixImportModal");
+        modal?.classList.remove("is-open");
+        modal?.setAttribute("aria-hidden", "true");
+    }
+
+    function bitrixImportMessage(message) {
+        document.getElementById("bitrixImportError").textContent = message || "";
+    }
+
+    function bitrixMoney(value, currency) {
+        if (value === null || value === undefined || value === "") return "—";
+        return new Intl.NumberFormat("ru-RU", {maximumFractionDigits: 2}).format(value)
+            + (currency ? " " + currency : "");
+    }
+
+    function renderBitrixResults(products) {
+        const results = document.getElementById("bitrixProductResults");
+        results.replaceChildren();
+        products.forEach(function(product) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "bitrix-result";
+            if (product.image_url) {
+                const image = document.createElement("img");
+                image.src = product.image_url;
+                image.alt = "";
+                button.appendChild(image);
+            } else {
+                const empty = document.createElement("span");
+                empty.textContent = "Нет фото";
+                button.appendChild(empty);
+            }
+            const label = document.createElement("span");
+            const strong = document.createElement("strong");
+            strong.textContent = product.name;
+            const small = document.createElement("small");
+            small.textContent = "Артикул: " + (product.article || "—");
+            label.append(strong, document.createElement("br"), small);
+            const id = document.createElement("small");
+            id.textContent = "ID " + product.bitrix_id;
+            button.append(label, id);
+            button.addEventListener("click", function() {
+                loadBitrixProduct(product.bitrix_id);
+            });
+            results.appendChild(button);
+        });
+    }
+
+    async function searchBitrixProducts(query) {
+        const status = document.getElementById("bitrixProductStatus");
+        if (query.trim().length < 2) {
+            status.textContent = "Введите минимум 2 символа";
+            renderBitrixResults([]);
+            return;
+        }
+        status.textContent = "Ищем в Bitrix…";
+        bitrixImportMessage("");
+        try {
+            const response = await fetch("/api/v1/bitrix-products/search?q=" + encodeURIComponent(query), {headers:{Accept:"application/json"}});
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message || "Поиск недоступен.");
+            renderBitrixResults(payload.data || []);
+            status.textContent = payload.data?.length ? "Найдено: " + payload.data.length : "Товары не найдены";
+        } catch (error) {
+            renderBitrixResults([]);
+            status.textContent = "";
+            bitrixImportMessage(error.message);
+        }
+    }
+
+    function showBitrixPreview(product) {
+        bitrixSelectedProduct = product;
+        document.getElementById("bitrixProductPreview").hidden = false;
+        document.getElementById("bitrixPreviewName").textContent = product.name || "—";
+        document.getElementById("bitrixPreviewArticle").textContent = product.article || "—";
+        document.getElementById("bitrixPreviewId").textContent = product.bitrix_id || "—";
+        document.getElementById("bitrixPreviewBrand").textContent = product.brand || "Не распознан";
+        document.getElementById("bitrixPreviewCategory").textContent = product.category || "Не распознана";
+        document.getElementById("bitrixPreviewPrice").textContent = bitrixMoney(product.price, product.currency);
+        document.getElementById("bitrixPreviewStock").textContent = product.stock ?? "Недоступен";
+        const photo = document.getElementById("bitrixPreviewPhoto");
+        photo.hidden = !product.image_url;
+        document.getElementById("bitrixPreviewNoPhoto").hidden = Boolean(product.image_url);
+        if (product.image_url) photo.src = product.image_url;
+        const brand = document.getElementById("bitrixBrandSelect");
+        const category = document.getElementById("bitrixCategorySelect");
+        brand.value = product.brand_id || "";
+        category.value = product.category_id || "";
+        document.getElementById("bitrixTaxonomy").hidden = product.brand_recognized && product.category_recognized;
+        const duplicate = Boolean(product.duplicate);
+        document.getElementById("bitrixDuplicateNotice").hidden = !duplicate;
+        document.getElementById("bitrixImportProduct").hidden = duplicate;
+        document.getElementById("bitrixUpdateProduct").hidden = !duplicate || !product.existing || product.ambiguous;
+        const open = document.getElementById("bitrixOpenExisting");
+        open.hidden = !product.existing;
+        open.href = product.existing ? "/warehouse/product/" + product.existing.id : "#";
+        document.getElementById("bitrixDuplicateText").textContent = product.existing
+            ? product.existing.name + " · ID " + product.existing.id : "Нужно выбрать совпадение вручную.";
+        const labels = {excel_name_raw:"Название",excel_article:"Артикул",excel_brand:"Бренд",excel_category:"Категория",bitrix_price_amount:"Цена",bitrix_primary_image_url:"Фотография"};
+        const changes = Object.entries(product.changes || {}).filter(function(entry){return labels[entry[0]];});
+        document.getElementById("bitrixChanges").textContent = changes.length
+            ? "Изменятся поля: " + changes.map(function(entry){return labels[entry[0]];}).join(", ")
+            : "Данные карточки уже актуальны.";
+    }
+
+    async function loadBitrixProduct(id) {
+        bitrixImportMessage("");
+        document.getElementById("bitrixProductStatus").textContent = "Загружаем карточку…";
+        try {
+            const response = await fetch("/api/v1/bitrix-products/" + encodeURIComponent(id), {headers:{Accept:"application/json"}});
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.message || "Не удалось загрузить товар.");
+            showBitrixPreview(payload.data);
+            document.getElementById("bitrixProductResults").replaceChildren();
+            document.getElementById("bitrixProductStatus").textContent = "";
+        } catch (error) {
+            bitrixImportMessage(error.message);
+        }
+    }
+
+    async function submitBitrixImport(action) {
+        if (!bitrixSelectedProduct) return;
+        const button = action === "update" ? document.getElementById("bitrixUpdateProduct") : document.getElementById("bitrixImportProduct");
+        button.disabled = true;
+        bitrixImportMessage("");
+        try {
+            const response = await fetch("/api/v1/bitrix-products/" + encodeURIComponent(bitrixSelectedProduct.bitrix_id) + "/import", {
+                method:"POST", credentials:"same-origin",
+                headers:{"Content-Type":"application/json","Accept":"application/json","X-CSRF-Token":document.querySelector('#warehouseAddForm [name="csrf_token"]')?.value || ""},
+                body:JSON.stringify({action:action,brand_id:document.getElementById("bitrixBrandSelect").value || null,category_id:document.getElementById("bitrixCategorySelect").value || null})
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                if (payload.fields?.preview) showBitrixPreview(Object.assign({}, bitrixSelectedProduct, payload.fields.preview));
+                throw new Error(payload.message || "Импорт не выполнен.");
+            }
+            window.location.assign("/warehouse?notice=success&message=" + encodeURIComponent(action === "update" ? "Товар обновлён из Bitrix" : "Товар добавлен из Bitrix"));
+        } catch (error) {
+            bitrixImportMessage(error.message);
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    document.addEventListener("click", function(event) {
+        if (!event.target.closest(".products-add-menu")) closeProductsAddMenu();
+    });
+    document.getElementById("bitrixProductSearch")?.addEventListener("input", function(event) {
+        clearTimeout(bitrixSearchTimer);
+        bitrixSearchTimer = setTimeout(function(){searchBitrixProducts(event.target.value);}, 300);
+    });
+    document.getElementById("bitrixImportProduct")?.addEventListener("click", function(){submitBitrixImport("create");});
+    document.getElementById("bitrixUpdateProduct")?.addEventListener("click", function(){submitBitrixImport("update");});
 
     function openWarehouseAddModal() {
         const modal = document.getElementById("warehouseAddModal");

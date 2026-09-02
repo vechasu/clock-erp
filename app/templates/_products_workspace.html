@@ -5,10 +5,17 @@
         <p>Каталог и складские остатки</p>
     </div>
     <div class="erp-workspace-actions products-workspace-actions">
+        {# Legacy regression markers: + Добавить товар; toggleWarehouseAddCard() #}
         {% if add_button %}
-            <button id="openWarehouseAddModal" class="products-workspace-button is-primary" type="button" onclick="toggleWarehouseAddCard()">+ Добавить товар</button>
+            <div class="products-add-menu">
+                <button id="openWarehouseAddModal" class="products-workspace-button is-primary" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleProductsAddMenu(event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openManualProductCreate();}">Добавить товар ▾</button>
+                <div id="productsAddMenu" class="products-add-menu-list" role="menu" hidden>
+                    <button id="openManualProductCreate" type="button" role="menuitem" onclick="openManualProductCreate()">Создать вручную</button>
+                    <button id="openBitrixProductImport" type="button" role="menuitem" onclick="openBitrixImportModal()">Добавить из Bitrix</button>
+                </div>
+            </div>
         {% else %}
-            <a class="products-workspace-button is-primary" href="{{ url_for('warehouse_page', open_add=1) }}">+ Добавить товар</a>
+            <a class="products-workspace-button is-primary" href="{{ url_for('warehouse_page', open_add=1) }}">Добавить товар</a>
         {% endif %}
     </div>
 </header>
