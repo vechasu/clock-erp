@@ -68,6 +68,24 @@ class FakeBitrixClient:
         return PNG, "image/png", image["filename"]
 
 
+class SearchBitrixClient(FakeBitrixClient):
+    def __init__(self, products):
+        self.products = products
+        self.unavailable = False
+
+    def search_products(self, query, limit=20):
+        key = query.casefold()
+        matches = [item for item in self.products if (
+            key in item["name"].casefold()
+            or key in item["external_sku"].casefold()
+            or key == item["external_product_id"]
+        )]
+        return sorted(matches, key=lambda item: (
+            0 if item["external_sku"].casefold() == key else
+            1 if item["name"].casefold() == key else 2
+        ))[:limit]
+
+
 class SingleBitrixProductImportTest(unittest.TestCase):
     def setUp(self):
         self.original_config = dict(web.app.config)
@@ -195,6 +213,60 @@ class SingleBitrixProductImportTest(unittest.TestCase):
         self.assertIn("setTimeout(function(){searchBitrixProducts", template)
         self.assertIn("Изменятся поля:", template)
         self.assertIn("Обновить из Bitrix", template)
+
+    def test_search_c_opo_retro_gold_excludes_unrelated_products(self):
+        products = [
+            source_product("601", "Gravity Blue", "GRAVITY-BLUE"),
+            source_product("602", "C-OPO Retro Gold", "C-OPO RETRO GOLD"),
+            source_product("603", "Mercury Silver", "MERCURY-SILVER"),
+        ]
+        with mock.patch.object(web, "_bitrix_single_client", return_value=SearchBitrixClient(products)):
+            response = self.client.get("/api/v1/bitrix-products/search?q=C-OPO%20RETRO%20GOLD")
+        self.assertEqual([item["bitrix_id"] for item in response.get_json()["data"]], ["602"])
+
+    def test_search_exact_article_is_first(self):
+        products = [
+            source_product("611", "Accessory BX-611", "OTHER"),
+            source_product("612", "Watch", "BX-611"),
+        ]
+        with mock.patch.object(web, "_bitrix_single_client", return_value=SearchBitrixClient(products)):
+            response = self.client.get("/api/v1/bitrix-products/search?q=bx-611")
+        self.assertEqual(response.get_json()["data"][0]["bitrix_id"], "612")
+
+    def test_search_partial_name_is_case_insensitive(self):
+        product = source_product("621", "C-OPO Retro Gold", "RETRO-1")
+        with mock.patch.object(web, "_bitrix_single_client", return_value=SearchBitrixClient([product])):
+            response = self.client.get("/api/v1/bitrix-products/search?q=retro%20gold")
+        self.assertEqual(response.get_json()["data"][0]["bitrix_id"], "621")
+
+    def test_search_exact_bitrix_id(self):
+        product = source_product("631", "Retro", "RETRO-2")
+        with mock.patch.object(web, "_bitrix_single_client", return_value=SearchBitrixClient([product])):
+            response = self.client.get("/api/v1/bitrix-products/search?q=631")
+        self.assertEqual(response.get_json()["data"][0]["bitrix_id"], "631")
+
+    def test_search_without_matches_returns_empty_data(self):
+        with mock.patch.object(web, "_bitrix_single_client", return_value=SearchBitrixClient([source_product()])):
+            response = self.client.get("/api/v1/bitrix-products/search?q=missing")
+        self.assertEqual(response.get_json()["data"], [])
+
+    def test_frontend_clears_search_selection_and_ignores_stale_responses(self):
+        template = Path("app/templates/warehouse.html").read_text(encoding="utf-8")
+        self.assertIn("resetBitrixSelection();", template)
+        self.assertIn("renderBitrixResults([]);", template)
+        self.assertIn("bitrixSelectedProduct = null;", template)
+        self.assertIn("bitrixSearchController?.abort();", template)
+        self.assertIn("requestVersion !== bitrixRequestVersion", template)
+        self.assertIn("setTimeout(function(){searchBitrixProducts(query, requestVersion);}, 300)", template)
+
+    def test_stock_999_is_preserved_in_preview_and_import(self):
+        product = source_product("641", "Stocked", "STOCK-999")
+        product["stock"] = 999
+        with mock.patch.object(web, "_bitrix_single_client", return_value=FakeBitrixClient(product)):
+            preview = self.client.get("/api/v1/bitrix-products/641")
+        self.assertEqual(preview.get_json()["data"]["stock"], 999)
+        saved = self.post_import(product).get_json()["data"]["product"]
+        self.assertEqual(saved["stock"], 999)
 
 
 if __name__ == "__main__":

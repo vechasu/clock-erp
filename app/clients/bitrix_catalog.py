@@ -576,6 +576,9 @@ class BitrixCatalogReadOnlyClient:
             params["include_inactive"] = 1
         if _text(query):
             params["q"] = _text(query)
+            # The protected export has used both names in deployed versions.
+            # Supplying both keeps interactive search compatible with either one.
+            params["search"] = _text(query)
         payload = self._get_json(params)
         rows = payload.get("products") or payload.get("items") or []
         if not isinstance(rows, list):
@@ -596,12 +599,37 @@ class BitrixCatalogReadOnlyClient:
     def search_products(self, query, limit=20):
         """Use the catalog export's bounded server-side product search."""
         query = _text(query)
+        if query.isdigit():
+            product = self.get_product(query)
+            return [product] if product is not None else []
         if len(query) < 2:
             return []
-        return self.get_products_page(
+        products = self.get_products_page(
             page=1, limit=min(max(int(limit), 1), 50),
             include_inactive=False, query=query,
         )["products"]
+        search_key = query.casefold()
+
+        def rank(product):
+            name = _text(product.get("name")).casefold()
+            article = _text(product.get("external_sku")).casefold()
+            if article == search_key:
+                return (0, article, name)
+            if name == search_key:
+                return (1, name, article)
+            if search_key in article:
+                return (2, article, name)
+            if search_key in name:
+                return (3, name, article)
+            return None
+
+        ranked = [(rank(product), product) for product in products]
+        return [
+            product for product_rank, product in sorted(
+                (item for item in ranked if item[0] is not None),
+                key=lambda item: item[0],
+            )[:min(max(int(limit), 1), 50)]
+        ]
 
     def download_product_image(self, image, max_bytes=3 * 1024 * 1024):
         """Download a product image from the same trusted Bitrix host."""

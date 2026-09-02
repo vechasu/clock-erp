@@ -19885,7 +19885,7 @@ def _bitrix_single_source_payload(product, database=None):
 @app.route("/api/v1/bitrix-products/search", methods=["GET"])
 def api_bitrix_products_search():
     query = str(request.args.get("q") or "").strip()
-    if len(query) < 2:
+    if len(query) < 2 and not query.isdigit():
         return api_success([])
     try:
         products = _bitrix_single_client().search_products(query, limit=20)
