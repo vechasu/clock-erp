@@ -653,7 +653,8 @@ class SalesInventoryTest(unittest.TestCase):
         self.assertTrue(first["deleted_at"])
         self.assertEqual(second["deleted_at"], first["deleted_at"])
         self.assertEqual(self.stock(product["id"]), 3)
-        self.assertEqual(self.inventory.list_sales(), [])
+        self.assertEqual(len(self.inventory.list_sales()), 1)
+        self.assertTrue(self.inventory.list_sales()[0]["deleted_at"])
         cancellations = [
             movement for movement in self.inventory.list_movements(product["id"])
             if movement["type"] == "cancellation"
@@ -966,7 +967,9 @@ class SalesInventoryTest(unittest.TestCase):
         self.assertEqual(first["deleted_at"], second["deleted_at"])
         self.assertEqual(self.stock(product["id"]), stock_before_delete)
         self.assertEqual(self.inventory.list_movements(product["id"]), movements_before_delete)
-        self.assertEqual(self.inventory.list_sales(), [])
+        historical = self.inventory.list_sales()
+        self.assertEqual(len(historical), 1)
+        self.assertTrue(historical[0]["deleted_at"])
         self.assertIsNotNone(self.inventory.get_sale("sale-1"))
 
     def test_cancel_inactive_historical_product_and_reuse_order_number(self):
@@ -2032,7 +2035,7 @@ class SalesInventoryWebTest(SalesInventoryTest):
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(repeated.status_code, 200)
         self.assertEqual(self.stock(self.product["id"]), stock_before)
-        self.assertNotIn(
+        self.assertIn(
             "ORDER-soft-delete",
             self.client.get("/app/sales?source=all").get_data(as_text=True),
         )

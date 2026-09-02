@@ -389,7 +389,7 @@ class SalesServerFiltersTest(unittest.TestCase):
 
         builder.assert_called_once_with(warehouse_items=[])
         self.assertEqual([item["id"] for item in context["sales"]], ["2"])
-        self.assertEqual(context["total_sales"], 0)
+        self.assertEqual(context["total_sales"], 1)
         self.assertEqual(context["total_cancelled"], 1)
         self.assertIn("brand_id=b1", context["report_url"])
         self.assertIn("category_id=0", context["report_url"])

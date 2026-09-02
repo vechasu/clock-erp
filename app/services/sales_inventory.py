@@ -2116,9 +2116,8 @@ class SalesInventory:
             "FROM erp_sales s JOIN erp_sale_items i ON i.sale_id = s.id"
         )
         parameters = ()
-        query += " WHERE s.deleted_at IS NULL"
         if sale_id is not None:
-            query += " AND s.id = ?"
+            query += " WHERE s.id = ?"
             parameters = (str(sale_id),)
         query += " ORDER BY s.inserted_at DESC, i.id"
         with self.database.connect() as connection:
@@ -2128,10 +2127,8 @@ class SalesInventory:
                 [row["id"] for row in rows],
             )
         return [
-            payload for payload in (
-                self._sale_payload(row, plans.get(row["id"])) for row in rows
-            )
-            if not payload.get("deleted_at")
+            self._sale_payload(row, plans.get(row["id"]))
+            for row in rows
         ]
 
     @classmethod

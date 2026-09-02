@@ -766,7 +766,7 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(first.content_type, "application/json")
         self.assertEqual(self.stock(), 5)
         self.assertEqual(
-            self.client.get("/api/v1/sales").get_json()["meta"]["total"], 0,
+            self.client.get("/api/v1/sales").get_json()["meta"]["total"], 1,
         )
 
     def test_amazon_country_is_canonical_and_commission_is_not_in_contract(self):
@@ -1004,7 +1004,7 @@ class Stage2SalesApiTest(unittest.TestCase):
         self.assertEqual(automatic_deleted.status_code, 200)
         self.assertEqual(
             self.client.get("/api/sales?source=all").get_json()["meta"]["total"],
-            0,
+            1,
         )
 
     def test_unchanged_sales_sources_are_built_once_for_repeated_pages(self):

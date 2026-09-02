@@ -9451,17 +9451,22 @@ def calculate_sales_kpis(sales):
     for sale in sales:
         status = get_sale_status_presentation(sale)["value"]
 
-        if status == "deleted" or sale.get("deleted_at"):
-            continue
-
         key = sales_kpi_document_key(sale)
         document = documents.setdefault(key, {
             "statuses": set(),
+            "gross_quantity": 0.0,
             "net_quantity": 0.0,
             "net_amount": 0.0,
             "amount_complete": True,
         })
         document["statuses"].add(status)
+
+        try:
+            document["gross_quantity"] += float(
+                sale.get("quantity_value") or 0
+            )
+        except (TypeError, ValueError):
+            pass
 
         if status not in FINANCIAL_SALE_STATUSES:
             continue
@@ -9494,10 +9499,10 @@ def calculate_sales_kpis(sales):
         and not document["statuses"] & CANCELLED_SALE_STATUSES
         and "returned" not in document["statuses"]
     ]
-    sales_count = len(financial_documents)
+    sales_count = len(documents)
     quantity = sum(
-        document["net_quantity"]
-        for document in financial_documents
+        document["gross_quantity"]
+        for document in documents.values()
     )
     amount_complete = all(
         document["amount_complete"]
@@ -9509,9 +9514,9 @@ def calculate_sales_kpis(sales):
         else None
     )
     average_receipt = (
-        revenue / sales_count
-        if revenue is not None and sales_count
-        else 0.0 if not sales_count else None
+        revenue / len(financial_documents)
+        if revenue is not None and financial_documents
+        else 0.0 if not financial_documents else None
     )
     cancelled_count = sum(
         bool(document["statuses"] & CANCELLED_SALE_STATUSES)
@@ -9609,6 +9614,10 @@ def get_sales_columns(source_key):
 
 def filter_sales_by_source(sales, source_key):
     source_key = get_active_sales_source(source_key)
+
+    if source_key == "all":
+        return list(sales)
+
     result = []
 
     for sale in sales:
@@ -9616,10 +9625,7 @@ def filter_sales_by_source(sales, source_key):
             sale.get("source")
         )
 
-        if source_key == "all":
-            if sale_source_key not in SALES_SOURCE_LABELS:
-                continue
-        elif sale_source_key != source_key:
+        if sale_source_key != source_key:
             continue
 
         result.append(sale)
@@ -11812,9 +11818,6 @@ def build_sales_report_records(
         })
 
     for stored_sale in reversed(stored_manual_sales):
-        if stored_sale.get("deleted_at"):
-            continue
-
         quantity_number = parse_manual_sale_quantity(
             stored_sale.get("quantity")
         )
@@ -11867,6 +11870,7 @@ def build_sales_report_records(
             stored_sale_type = "manual"
         manual_sales.append({
             "id": str(stored_sale.get("id") or ""),
+            "deleted_at": str(stored_sale.get("deleted_at") or ""),
             "archived_at": str(stored_sale.get("archived_at") or ""),
             "archived_by": str(stored_sale.get("archived_by") or ""),
             "sale_type": stored_sale_type,
