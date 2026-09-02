@@ -58,6 +58,10 @@ from app.clients.wildberries_orders import (
     WildberriesReadOnlyError,
 )
 from app.services.bitrix_catalog_importer import BitrixCatalogImporter
+from app.services.bitrix_erp_product_sync import (
+    BitrixERPProductSync,
+    enrichment_from_product,
+)
 from app.services.audit_journal import AuditJournal
 from app.services.service_vault import (
     ServiceConflictError,
@@ -19824,6 +19828,190 @@ def api_products_collection():
         sort_by=listing.get("sort_by", sort_by),
         sort_dir=listing.get("sort_dir", sort_dir),
     )
+
+
+def _bitrix_single_client():
+    return BitrixCatalogReadOnlyClient(
+        os.getenv("BITRIX_CATALOG_URL", ""),
+        os.getenv("BITRIX_CATALOG_TOKEN"),
+    )
+
+
+def _bitrix_single_source_payload(product, database=None):
+    database = database or CatalogDatabase()
+    enrichment = enrichment_from_product(product)
+    brand_name = str(enrichment.get("bitrix_brand") or "").strip()
+    category_name = str(enrichment.get("bitrix_category") or "").strip()
+    brand = category = None
+    database.initialize()
+    with database.connect() as connection:
+        if brand_name:
+            brand = connection.execute(
+                "SELECT id, name FROM erp_brands WHERE active = 1 "
+                "AND lower(trim(name)) = lower(trim(?)) LIMIT 1",
+                (brand_name,),
+            ).fetchone()
+        if category_name:
+            category = connection.execute(
+                "SELECT id, name FROM erp_categories WHERE active = 1 "
+                "AND lower(trim(name)) = lower(trim(?)) LIMIT 1",
+                (category_name,),
+            ).fetchone()
+    image = next((
+        item for item in product.get("images") or []
+        if item.get("is_primary") and item.get("original_url")
+    ), None) or next((
+        item for item in product.get("images") or []
+        if item.get("original_url")
+    ), None)
+    sale_price = product.get("sale_price") or {}
+    return {
+        "bitrix_id": product.get("external_product_id"),
+        "name": product.get("name") or "",
+        "article": product.get("external_sku") or "",
+        "brand": brand_name,
+        "brand_id": brand["id"] if brand else None,
+        "brand_recognized": bool(brand),
+        "category": category_name,
+        "category_id": category["id"] if category else None,
+        "category_recognized": bool(category),
+        "price": sale_price.get("value"),
+        "currency": sale_price.get("currency") or "",
+        "stock": product.get("stock"),
+        "image_url": image.get("original_url") if image else "",
+    }
+
+
+@app.route("/api/v1/bitrix-products/search", methods=["GET"])
+def api_bitrix_products_search():
+    query = str(request.args.get("q") or "").strip()
+    if len(query) < 2:
+        return api_success([])
+    try:
+        products = _bitrix_single_client().search_products(query, limit=20)
+        return api_success([
+            _bitrix_single_source_payload(product) for product in products
+        ])
+    except BitrixCatalogReadOnlyError:
+        app.logger.exception("Interactive Bitrix product search failed")
+        return api_error(
+            "BITRIX_UNAVAILABLE",
+            "Bitrix сейчас недоступен. Попробуйте ещё раз позже.", 503,
+        )
+
+
+@app.route("/api/v1/bitrix-products/<int:bitrix_id>", methods=["GET"])
+def api_bitrix_product_preview(bitrix_id):
+    try:
+        product = _bitrix_single_client().get_product(bitrix_id)
+        if product is None:
+            return api_error("BITRIX_PRODUCT_NOT_FOUND", "Товар Bitrix не найден.", 404)
+        database = CatalogDatabase()
+        source = _bitrix_single_source_payload(product, database)
+        preview = BitrixERPProductSync(database).preview_single(product)
+        source.update(preview)
+        return api_success(source)
+    except BitrixCatalogReadOnlyError:
+        app.logger.exception("Interactive Bitrix product preview failed")
+        return api_error(
+            "BITRIX_UNAVAILABLE",
+            "Bitrix сейчас недоступен. Попробуйте ещё раз позже.", 503,
+        )
+
+
+@app.route("/api/v1/bitrix-products/<int:bitrix_id>/import", methods=["POST"])
+def api_bitrix_product_import(bitrix_id):
+    require_csrf_when_authenticated()
+    payload = request.get_json(silent=True) or {}
+    action = str(payload.get("action") or "create").strip()
+    database = CatalogDatabase()
+    store = ProductImageStore(database)
+    prepared = None
+    previous_path = ""
+    try:
+        client = _bitrix_single_client()
+        product = client.get_product(bitrix_id)
+        if product is None:
+            return api_error("BITRIX_PRODUCT_NOT_FOUND", "Товар Bitrix не найден.", 404)
+        source = _bitrix_single_source_payload(product, database)
+        brand_id = payload.get("brand_id") or source.get("brand_id")
+        category_id = payload.get("category_id") or source.get("category_id")
+        if source.get("brand") and not brand_id:
+            return api_error(
+                "BITRIX_TAXONOMY_REQUIRED", "Выберите бренд для товара.", 422,
+            )
+        if source.get("category") and not category_id:
+            return api_error(
+                "BITRIX_TAXONOMY_REQUIRED", "Выберите категорию для товара.", 422,
+            )
+        preview = BitrixERPProductSync(database).preview_single(
+            product, brand_id=brand_id, category_id=category_id
+        )
+        if action == "create" and preview["duplicate"]:
+            return api_error(
+                "PRODUCT_ALREADY_EXISTS",
+                "Товар уже существует в ERP.", 409,
+                {"existing": preview.get("existing"), "preview": preview},
+            )
+        if action == "update" and not preview.get("existing"):
+            return api_error(
+                "PRODUCT_NOT_FOUND", "Совпадающий товар ERP не найден.", 404,
+            )
+        image = next((
+            item for item in product.get("images") or []
+            if item.get("is_primary") and item.get("original_url")
+        ), None) or next((
+            item for item in product.get("images") or []
+            if item.get("original_url")
+        ), None)
+        if image:
+            content, mime_type, filename = client.download_product_image(image)
+            prepared = store.prepare_image(content, filename, mime_type)
+        if preview.get("existing"):
+            current = ExcelProductCatalog(database).get_product(
+                preview["existing"]["id"]
+            )
+            previous_path = str((current or {}).get("local_image_path") or "")
+            if (
+                prepared
+                and (current or {}).get("local_image_sha256") == prepared["sha256"]
+                and str((current or {}).get("local_image_external_id") or "")
+                == "bitrix:{}".format(product["external_product_id"])
+            ):
+                store.discard_prepared(prepared)
+                prepared = None
+        result = BitrixERPProductSync(database).apply_single(
+            product, action, brand_id=brand_id, category_id=category_id,
+            prepared_image=prepared, actor=current_audit_actor(),
+        )
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+        if previous_path and previous_path != (prepared or {}).get("path"):
+            store._remove_if_unused(previous_path)
+        return api_success({
+            **result,
+            "product": serialize_api_product(
+                ExcelProductCatalog(database).get_product(result["erp_product_id"])
+            ),
+        }, 201 if result["status"] == "created" else 200)
+    except (BitrixCatalogReadOnlyError, OSError):
+        store.discard_prepared(prepared)
+        app.logger.exception("Interactive Bitrix product import failed")
+        return api_error(
+            "BITRIX_UNAVAILABLE",
+            "Не удалось получить товар или фотографию из Bitrix. Товар не изменён.",
+            503,
+        )
+    except ValueError as error:
+        store.discard_prepared(prepared)
+        return api_error("BITRIX_IMPORT_INVALID", str(error), 422)
+    except Exception:
+        store.discard_prepared(prepared)
+        app.logger.exception("Interactive Bitrix product save failed")
+        return api_error(
+            "BITRIX_IMPORT_FAILED",
+            "Не удалось сохранить товар. Изменения отменены.", 500,
+        )
 
 
 @app.route("/api/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])

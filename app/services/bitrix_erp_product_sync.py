@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.catalog_db import CatalogDatabase
+from app.services.audit_journal import AuditJournal
 from app.services.brand_values import normalize_brand
 from app.services.excel_product_catalog import load_bitrix_enrichment
 from app.services.inventory_lock import (
@@ -166,6 +167,178 @@ class BitrixERPProductSync:
         self.database = database or CatalogDatabase()
         self._label_cache = {}
         self._known_brands = None
+
+    @staticmethod
+    def _single_match(connection, product):
+        """Match only by the two identities allowed by the interactive import."""
+        external_id = _text(product.get("external_product_id"))
+        rows = connection.execute(
+            "SELECT * FROM catalog_excel_products WHERE active = 1 "
+            "AND bitrix_external_product_id = ? ORDER BY id",
+            (external_id,),
+        ).fetchall()
+        if rows:
+            return {"method": "bitrix_id", "products": rows}
+        article = _text(product.get("external_sku"))
+        if article:
+            rows = connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE active = 1 "
+                "AND lower(trim(COALESCE(excel_article, ''))) = ? ORDER BY id",
+                (article.casefold(),),
+            ).fetchall()
+        return {"method": "article", "products": rows if article else []}
+
+    def preview_single(self, product, brand_id=None, category_id=None):
+        """Preview an interactive one-product import without writing anything."""
+        self.database.initialize()
+        with self.database.connect() as connection:
+            selected = self._selected_taxonomy(
+                connection, product, brand_id, category_id
+            )
+            match = self._single_match(connection, selected)
+            rows = match["products"]
+            existing = rows[0] if len(rows) == 1 else None
+            changes = {}
+            if existing is not None:
+                enrichment = enrichment_from_product(selected)
+                changes = self._card_changes(
+                    connection, existing, selected, enrichment
+                )
+            return {
+                "duplicate": bool(rows),
+                "ambiguous": len(rows) > 1,
+                "match_method": match["method"] if rows else "not_found",
+                "existing": (
+                    {"id": existing["id"], "name": existing["excel_name_raw"],
+                     "article": existing["excel_article"] or ""}
+                    if existing is not None else None
+                ),
+                "candidate_ids": [row["id"] for row in rows],
+                "changes": changes,
+            }
+
+    def apply_single(self, product, action, brand_id=None, category_id=None,
+                     prepared_image=None, actor=None):
+        """Create or explicitly update one card in one SQLite transaction."""
+        if action not in {"create", "update"}:
+            raise ValueError("Неподдерживаемое действие импорта.")
+        validation = self._validate(product)
+        if validation:
+            raise ValueError("Товар Bitrix не содержит ID или названия.")
+        actor = actor or {}
+        self.database.initialize()
+        with self.database.transaction() as connection:
+            selected = self._selected_taxonomy(
+                connection, product, brand_id, category_id
+            )
+            match = self._single_match(connection, selected)
+            rows = match["products"]
+            if len(rows) > 1:
+                raise ValueError("Найдено несколько совпадающих товаров ERP.")
+            existing = rows[0] if rows else None
+            if action == "create" and existing is not None:
+                return {
+                    "status": "duplicate", "match_method": match["method"],
+                    "erp_product_id": existing["id"], "changes": {},
+                }
+            if action == "update" and existing is None:
+                raise ValueError("Совпадающий товар ERP не найден.")
+
+            enrichment = enrichment_from_product(selected)
+            before = {}
+            if existing is None:
+                product_id = self._insert_card(connection, selected, enrichment)
+                status = "created"
+                changes = {}
+            else:
+                product_id = existing["id"]
+                before = self._audit_card(existing)
+                changes = self._card_changes(
+                    connection, existing, selected, enrichment
+                )
+                if changes:
+                    self._update_card(
+                        connection, existing, selected, enrichment, changes
+                    )
+                status = "updated" if changes or prepared_image else "unchanged"
+
+            brand_id_value = selected.get("_erp_brand_id")
+            category_id_value = selected.get("_erp_category_id")
+            assign_product_taxonomy(
+                connection, product_id,
+                brand=selected.get("brand"),
+                category=(selected.get("category") or {}).get("name"),
+                brand_id=brand_id_value, category_id=category_id_value,
+            )
+            if prepared_image:
+                connection.execute(
+                    "UPDATE catalog_excel_products SET local_image_path = ?, "
+                    "local_image_source = 'bitrix', local_image_sha256 = ?, "
+                    "local_image_external_id = ?, local_image_updated_at = ?, "
+                    "updated_at = ? WHERE id = ?",
+                    (
+                        prepared_image["path"], prepared_image["sha256"],
+                        "bitrix:{}".format(selected["external_product_id"]),
+                        prepared_image["updated_at"], utc_now(), product_id,
+                    ),
+                )
+            row = connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE id = ?",
+                (product_id,),
+            ).fetchone()
+            after = self._audit_card(row)
+            if status != "unchanged":
+                AuditJournal(self.database).record(
+                    "product", product_id,
+                    "created" if status == "created" else "updated",
+                    row["excel_name_raw"], row["excel_article"] or "",
+                    before=before, after=after,
+                    metadata={
+                        "article": row["excel_article"] or "",
+                        "bitrix_id": selected["external_product_id"],
+                    },
+                    source="bitrix_single_import", connection=connection,
+                    **actor
+                )
+            return {
+                "status": status, "match_method": match["method"],
+                "erp_product_id": product_id, "changes": changes,
+            }
+
+    @staticmethod
+    def _audit_card(row):
+        if not row:
+            return {}
+        return {
+            "name": row["excel_name_raw"], "article": row["excel_article"] or "",
+            "brand": row["excel_brand"] or "", "category": row["excel_category"] or "",
+            "price": row["bitrix_price_amount"], "stock": row["stock"],
+        }
+
+    @staticmethod
+    def _selected_taxonomy(connection, product, brand_id, category_id):
+        selected = dict(product)
+        brand = None
+        category = None
+        if brand_id not in (None, ""):
+            brand = connection.execute(
+                "SELECT id, name FROM erp_brands WHERE id = ? AND active = 1",
+                (int(brand_id),),
+            ).fetchone()
+            if brand is None:
+                raise ValueError("Выбранный бренд не найден.")
+            selected["brand"] = brand["name"]
+            selected["_erp_brand_id"] = brand["id"]
+        if category_id not in (None, ""):
+            category = connection.execute(
+                "SELECT id, name FROM erp_categories WHERE id = ? AND active = 1",
+                (int(category_id),),
+            ).fetchone()
+            if category is None:
+                raise ValueError("Выбранная категория не найдена.")
+            selected["category"] = {"name": category["name"]}
+            selected["_erp_category_id"] = category["id"]
+        return selected
 
     def preview_products(self, products, create_only=False, require_exact_stock=False):
         products = list(products)
