@@ -1,5 +1,6 @@
 import copy
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from app.clients.bitrix_catalog import (
@@ -194,6 +195,12 @@ class CatalogNormalizationTest(unittest.TestCase):
             result = client.search_products("7")
         get_product.assert_called_once_with("7")
         self.assertEqual(result, [product])
+
+    def test_export_endpoint_filters_search_by_name_and_article_code(self):
+        endpoint = Path("bitrix/catalog-export.php").read_text(encoding="utf-8")
+        self.assertIn("$search = searchParameter();", endpoint)
+        self.assertIn("'%NAME' => $search", endpoint)
+        self.assertIn("'%CODE' => $search", endpoint)
 
 
 class CatalogMatchingTest(unittest.TestCase):

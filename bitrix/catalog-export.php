@@ -126,6 +126,15 @@ function updatedFromParameter(): ?DateTimeImmutable
     return null;
 }
 
+function searchParameter(): string
+{
+    $value = trim((string) ($_GET['search'] ?? $_GET['q'] ?? ''));
+    if (strlen($value) > 200) {
+        exportError('invalid_search', 400);
+    }
+    return $value;
+}
+
 function isoDate($value): ?string
 {
     if ($value instanceof DateTimeInterface) {
@@ -987,6 +996,7 @@ try {
     $limit = positiveIntegerParameter('limit', CATALOG_EXPORT_DEFAULT_LIMIT, CATALOG_EXPORT_MAX_LIMIT);
     $includeInactive = booleanParameter('include_inactive');
     $updatedFrom = updatedFromParameter();
+    $search = searchParameter();
 
     $filter = array(
         'IBLOCK_ID' => CATALOG_EXPORT_IBLOCK_ID,
@@ -997,6 +1007,12 @@ try {
             exportError('invalid_product_id', 400);
         }
         $filter['ID'] = (int) $_GET['product_id'];
+    } elseif ($search !== '') {
+        $filter[] = array(
+            'LOGIC' => 'OR',
+            '%NAME' => $search,
+            '%CODE' => $search,
+        );
     }
     if (!$includeInactive) {
         $filter['ACTIVE'] = 'Y';
