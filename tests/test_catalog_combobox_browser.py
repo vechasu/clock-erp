@@ -169,6 +169,16 @@ class CatalogComboboxStructureTest(unittest.TestCase):
         for script_tag in sidebar_scripts:
             self.assertRegex(script_tag, r"\basync\b")
 
+        sidebar_styles = re.findall(
+            r"<link\b[^>]*\brel=[\"']stylesheet[\"'][^>]*>",
+            sidebar,
+            re.DOTALL,
+        )
+        self.assertTrue(sidebar_styles)
+        for style_tag in sidebar_styles:
+            self.assertRegex(style_tag, r"\bmedia=[\"']print[\"']")
+            self.assertRegex(style_tag, r"\bonload=")
+
 
 class CatalogComboboxBrowserTest(unittest.TestCase):
     @staticmethod
