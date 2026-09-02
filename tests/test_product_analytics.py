@@ -102,6 +102,127 @@ class ProductAnalyticsTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(html.count("erp-empty-state"), 3)
 
+    def test_category_stock_analytics_reconciles_brands_models_and_edge_values(self):
+        catalog = ExcelProductCatalog(CatalogDatabase(self.database_path))
+        baseline = catalog.stock_analytics()
+        watches_id = next(
+            item["id"] for item in baseline["categories"]
+            if item["name"] == "Часы"
+        )
+        catalog.create_product(
+            "Beta Watch", article="BETA-1", brand="Beta",
+            category_id=watches_id, model="Beta Model", stock=1000000,
+        )
+        catalog.create_product(
+            "No Brand Watch", article="", brand="",
+            category_id=watches_id, model="", stock=5,
+        )
+
+        analytics = catalog.stock_analytics(watches_id)
+
+        self.assertEqual(analytics["summary"]["total_stock"], 1001004)
+        self.assertEqual(analytics["summary"]["brands"], 3)
+        self.assertEqual(analytics["summary"]["models"], 4)
+        self.assertEqual(
+            analytics["summary"]["average_stock"], 1001004 / 4
+        )
+        self.assertEqual(
+            sum(item["stock"] for item in analytics["brands"]),
+            analytics["summary"]["total_stock"],
+        )
+        alpha = next(
+            item for item in analytics["brands"] if item["name"] == "Alpha"
+        )
+        self.assertEqual(alpha["stock"], 999)
+        self.assertEqual(alpha["models"], 2)
+        self.assertEqual(
+            sum(
+                item["stock"] for item in analytics["models"]
+                if item["brand_key"] == alpha["key"]
+            ),
+            alpha["stock"],
+        )
+        missing_brand = next(
+            item for item in analytics["brands"]
+            if item["name"] == "Без бренда"
+        )
+        missing_model = next(
+            item for item in analytics["models"]
+            if item["brand_key"] == missing_brand["key"]
+        )
+        self.assertEqual(missing_model["article"], "")
+        self.assertEqual(analytics["models"][0]["stock"], 1000000)
+
+    def test_category_stock_analytics_handles_empty_missing_and_uncategorized(self):
+        catalog = ExcelProductCatalog(CatalogDatabase(self.database_path))
+        with catalog.database.transaction() as connection:
+            brand_id = connection.execute(
+                "SELECT id FROM erp_brands ORDER BY id LIMIT 1"
+            ).fetchone()[0]
+            connection.execute(
+                "INSERT INTO erp_categories "
+                "(brand_id, name, normalized_name, active, created_at, updated_at) "
+                "VALUES (?, 'Пустая', 'пустая', 1, '2026-01-01', '2026-01-01')",
+                (brand_id,),
+            )
+            empty_id = connection.execute(
+                "SELECT id FROM erp_categories WHERE normalized_name = 'пустая'"
+            ).fetchone()[0]
+        catalog.create_product(
+            "Без категории", article="NO-CATEGORY", brand="Alpha", stock=0
+        )
+
+        empty = catalog.stock_analytics(empty_id)
+        missing = catalog.stock_analytics("not-an-id")
+        uncategorized = catalog.stock_analytics(0)
+
+        self.assertEqual(empty["summary"], {
+            "total_stock": 0,
+            "brands": 0,
+            "models": 0,
+            "average_stock": 0.0,
+        })
+        self.assertTrue(missing["category_missing"])
+        self.assertIsNone(missing["selected_category"])
+        self.assertEqual(uncategorized["selected_category"]["name"], "Без категории")
+        self.assertEqual(uncategorized["summary"]["models"], 1)
+        self.assertEqual(uncategorized["summary"]["total_stock"], 0)
+
+    def test_stock_analytics_page_supports_category_modes_and_brand_drilldown(self):
+        catalog = ExcelProductCatalog(CatalogDatabase(self.database_path))
+        watches_id = next(
+            item["id"] for item in catalog.stock_analytics()["categories"]
+            if item["name"] == "Часы"
+        )
+        analytics = catalog.stock_analytics(watches_id)
+        alpha = next(
+            item for item in analytics["brands"] if item["name"] == "Alpha"
+        )
+
+        brands_response = self.client.get(
+            "/app/products?view=analytics&category_id={}".format(watches_id)
+        )
+        models_response = self.client.get(
+            "/app/products?view=analytics&category_id={}&mode=models".format(
+                watches_id
+            )
+        )
+        detail_response = self.client.get(
+            "/app/products?view=analytics&category_id={}&mode=brands&brand={}".format(
+                watches_id, alpha["key"]
+            )
+        )
+        brands_html = brands_response.get_data(as_text=True)
+
+        self.assertEqual(brands_response.status_code, 200)
+        self.assertIn("Аналитика остатков", brands_html)
+        self.assertIn("Всего в категории", brands_html)
+        self.assertIn("Доля от категории", brands_html)
+        self.assertIn("<progress", brands_html)
+        self.assertIn("Модель", models_response.get_data(as_text=True))
+        self.assertIn("← Все бренды", detail_response.get_data(as_text=True))
+        self.assertIn("Доля бренда", detail_response.get_data(as_text=True))
+
 
 if __name__ == "__main__":
     unittest.main()
