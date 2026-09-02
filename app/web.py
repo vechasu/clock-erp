@@ -5634,6 +5634,7 @@ def normalized_bitrix_gallery(product, images=None):
             seen_ids.add(file_id)
         if normalized_url:
             seen_urls.add(normalized_url)
+        is_local = source_url.startswith("/product-images/")
         result.append({
             "external_file_id": file_id,
             "kind": str(
@@ -5646,7 +5647,7 @@ def normalized_bitrix_gallery(product, images=None):
             "order": int(image.get("order") or image.get("sort") or index),
             "original_url": (
                 "/warehouse/product/{}/image/{}".format(product_id, file_id)
-                if product_id and file_id
+                if product_id and file_id and not is_local
                 else source_url
             ),
         })
@@ -5789,7 +5790,14 @@ def warehouse_product_detail(product_id):
     live_product = None
     moysklad_images = None
     gallery_error = ""
-    if str(product.get("bitrix_external_product_id") or "").strip():
+    has_local_bitrix_gallery = any(
+        bitrix_image_source_url(image).startswith("/product-images/")
+        for image in product.get("gallery") or []
+    )
+    if (
+        str(product.get("bitrix_external_product_id") or "").strip()
+        and not has_local_bitrix_gallery
+    ):
         try:
             live_product = _live_bitrix_product(product)
         except (BitrixCatalogReadOnlyError, ValueError, OSError):
@@ -17025,12 +17033,30 @@ def product_image_file(filename):
     database = CatalogDatabase(cache_initialization=True)
     database.initialize()
     with database.connect() as connection:
-        exists = connection.execute(
-            "SELECT 1 FROM catalog_excel_products "
-            "WHERE local_image_path = ? LIMIT 1",
-            (safe_name,),
-        ).fetchone()
-    if exists is None:
+        rows = connection.execute(
+            "SELECT local_image_path, bitrix_gallery_json "
+            "FROM catalog_excel_products "
+            "WHERE local_image_path = ? "
+            "OR bitrix_gallery_json LIKE ?",
+            (safe_name, "%{}%".format(safe_name)),
+        ).fetchall()
+    linked = False
+    for row in rows:
+        if Path(str(row["local_image_path"] or "")).name == safe_name:
+            linked = True
+            break
+        try:
+            gallery = json.loads(row["bitrix_gallery_json"] or "[]")
+        except (TypeError, ValueError):
+            gallery = []
+        if any(
+            isinstance(image, dict)
+            and Path(str(image.get("local_image_path") or "")).name == safe_name
+            for image in gallery if isinstance(gallery, list)
+        ):
+            linked = True
+            break
+    if not linked:
         abort(404)
     return send_from_directory(
         ProductImageStore(database).root,

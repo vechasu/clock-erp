@@ -208,8 +208,9 @@ class ProductImageStore:
         with self.database.connect() as connection:
             used = connection.execute(
                 "SELECT 1 FROM catalog_excel_products "
-                "WHERE local_image_path = ? LIMIT 1",
-                (filename,),
+                "WHERE local_image_path = ? "
+                "OR bitrix_gallery_json LIKE ? LIMIT 1",
+                (filename, "%{}%".format(filename)),
             ).fetchone()
         if used is None:
             path = self.root / filename
