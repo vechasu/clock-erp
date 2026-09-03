@@ -114,6 +114,7 @@ from app.services.excel_product_catalog import (
     parse_initial_stock,
 )
 from app.services.product_collections import ProductCollections
+from app.services.composite_products import CompositeProductError, CompositeProducts
 from app.services.excel_receipt_import import (
     MAX_EXCEL_FILE_SIZE,
     ExcelDraftBlockedError,
@@ -1307,6 +1308,12 @@ def backfill_order_item_units(store=None, client=None, limit=200):
                 continue
             if store.enrich_from_detail(order_id, normalized):
                 result["updated"] += 1
+            products = normalized.get("products") or []
+            if products:
+                context = build_order_product_mapping_context(
+                    products, mappings=load_order_product_mappings(order_id)
+                )
+                decorate_order_composites(order_id, products, context)
         except BitrixReadOnlyError:
             result["errors"] += 1
             app.logger.warning(
@@ -2049,6 +2056,12 @@ def render_orders_page(
         order_counts=order_counts,
     )
     is_wildberries = (selected_order or {}).get("source") == "wildberries"
+    if order_id and not is_wildberries:
+        order_mappings = decorate_order_composites(
+            order_id,
+            (selected_order or {}).get("products") or [],
+            order_mappings,
+        )
     auth_user = current_auth_user() or {}
     comments = load_order_comments(order_id) if order_id else []
     for comment in comments:
@@ -2672,6 +2685,55 @@ def get_order_product_mapping(mapping_context, product):
     return mapping_context.get(order_product_mapping_key(product)) or {}
 
 
+def decorate_order_composites(order_id, products, mapping_context, database=None):
+    """Attach immutable component snapshots to mapped order lines."""
+    if not order_id:
+        return mapping_context
+    service = CompositeProducts(database)
+    for product in products or []:
+        key = order_product_mapping_key(product)
+        mapping = mapping_context.get(key) or {}
+        selected = mapping.get("product")
+        order_item_id = bitrix_order_product_identity(product).get(
+            "bitrix_order_line_id"
+        )
+        if not selected or not order_item_id:
+            continue
+        try:
+            quantity = float(str(first_order_product_value(
+                product, "quantity", "QUANTITY"
+            ) or 1).replace(",", "."))
+            components = service.snapshot_order_item(
+                order_id, order_item_id, selected["id"], quantity
+            )
+        except (CompositeProductError, TypeError, ValueError):
+            app.logger.exception(
+                "Composite order snapshot failed order_id=%s item_id=%s",
+                order_id, order_item_id,
+            )
+            continue
+        if not components:
+            continue
+        product_copy = dict(selected)
+        possible = [
+            math.floor(float(component["stock"] or 0) /
+                       float(component["unit_quantity"] or 1))
+            for component in components
+        ]
+        product_copy.update({
+            "is_composite": True,
+            "components": components,
+            "stock": float(min(possible) if possible else 0),
+        })
+        mapping.update({
+            "product": product_copy,
+            "is_composite": True,
+            "components": components,
+        })
+        mapping_context[key] = mapping
+    return mapping_context
+
+
 def build_order_sale_readiness(order, mapping_context, already_conducted=False):
     issues = []
     required = {}
@@ -2996,6 +3058,9 @@ def _conduct_order_sale(order_id):
         strap_line_index = -1
     mapping_context = build_order_product_mapping_context(
         products, mappings=load_order_product_mappings(order_id)
+    )
+    mapping_context = decorate_order_composites(
+        order_id, products, mapping_context, inventory.database
     )
     issues = []
     prepared_items = []
@@ -4966,6 +5031,16 @@ def warehouse_page():
             "units_total", tab_counts.get("units_in_stock", 0)
         )),
     }
+    if warehouse_view == "composites":
+        return render_template(
+            "warehouse_composites.html",
+            mappings=CompositeProducts(product_catalog.database).list_mappings(),
+            product_metrics=product_metrics,
+            can_manage=(
+                not auth_is_enabled()
+                or (current_auth_user() or {}).get("role") == "admin"
+            ),
+        )
     if warehouse_view == "collections":
         collections_service = ProductCollections(product_catalog.database)
         collection_id = request.args.get("collection_id")
@@ -5310,6 +5385,21 @@ def warehouse_page():
     catalog_items = build_excel_warehouse_items(catalog["items"])
     items = get_excel_warehouse_items(catalog=catalog)
     product_database = getattr(product_catalog, "database", None)
+    if isinstance(product_database, CatalogDatabase):
+        composite_by_product = {
+            int(mapping["storefront_product_id"]): mapping
+            for mapping in CompositeProducts(product_database).list_mappings()
+        }
+        for item in items:
+            composite = composite_by_product.get(int(item["id"]))
+            if composite:
+                item["is_composite"] = True
+                item["physical_stock"] = item.get("stock")
+                item["stock"] = (
+                    composite["available_quantity"] if composite["active"] else 0
+                )
+                item["stock_display"] = format_stock_number(item["stock"])
+                item["composite_components"] = composite["components"]
     collections_service = (
         ProductCollections(product_database)
         if isinstance(product_database, CatalogDatabase)
@@ -19459,6 +19549,65 @@ def api_collection_resource(collection_id):
     return api_success(updated)
 
 
+@app.route("/api/v1/composite-products", methods=["GET", "POST"])
+def api_composite_products():
+    service = CompositeProducts()
+    if request.method == "GET":
+        return api_success(service.list_mappings())
+    require_csrf_when_authenticated()
+    if auth_is_enabled() and (current_auth_user() or {}).get("role") != "admin":
+        return api_error("FORBIDDEN", "Недостаточно прав.", 403)
+    payload = request.get_json(silent=True) or {}
+    try:
+        mapping = service.save(
+            payload.get("storefront_product_id"), payload.get("components"),
+            active=payload.get("active", True),
+        )
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+        return api_success(mapping, 201)
+    except (CompositeProductError, TypeError, ValueError) as error:
+        return api_error("COMPOSITE_PRODUCT_INVALID", str(error), 422)
+
+
+@app.get("/api/v1/composite-products/site-stock")
+def api_composite_site_stock():
+    """Read-only quantities keyed by stable Bitrix product id for stock export."""
+    return api_success(CompositeProducts().quantities_for_site())
+
+
+@app.route("/api/v1/composite-products/<int:mapping_id>", methods=["GET", "PATCH", "DELETE"])
+def api_composite_product(mapping_id):
+    service = CompositeProducts()
+    current = service.get(mapping_id)
+    if current is None:
+        return api_error("COMPOSITE_PRODUCT_NOT_FOUND", "Правило не найдено.", 404)
+    if request.method == "GET":
+        return api_success(current)
+    require_csrf_when_authenticated()
+    if auth_is_enabled() and (current_auth_user() or {}).get("role") != "admin":
+        return api_error("FORBIDDEN", "Недостаточно прав.", 403)
+    payload = request.get_json(silent=True) or {}
+    try:
+        if request.method == "DELETE":
+            service.delete(mapping_id)
+            return api_success({"id": mapping_id, "deleted": True})
+        if set(payload).issubset({"active"}) and "active" in payload:
+            mapping = service.set_active(mapping_id, payload["active"])
+        else:
+            mapping = service.save(
+                payload.get("storefront_product_id", current["storefront_product_id"]),
+                payload.get("components", current["components"]),
+                mapping_id=mapping_id,
+                active=payload.get("active", current["active"]),
+            )
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+        return api_success(mapping)
+    except (CompositeProductError, TypeError, ValueError) as error:
+        return api_error("COMPOSITE_PRODUCT_INVALID", str(error), 422)
+
+
 @app.route("/api/v1/collections/<int:collection_id>/products", methods=["GET", "POST", "DELETE"])
 def api_collection_products(collection_id):
     service = ProductCollections()
@@ -19546,6 +19695,14 @@ def api_site_collection_products(slug):
 
 def serialize_api_product(product):
     projected = build_excel_warehouse_items([product])[0]
+    composite = CompositeProducts().resolve(product["id"], active_only=False)
+    if composite:
+        projected["is_composite"] = True
+        projected["composite_active"] = composite["active"]
+        projected["physical_stock"] = projected.get("stock")
+        projected["stock"] = composite["available_quantity"] if composite["active"] else 0
+        projected["stock_display"] = format_stock_number(projected["stock"])
+        projected["components"] = composite["components"]
     collection_items = ProductCollections().product_collections(
         [product["id"]]
     ).get(int(product["id"]), [])
@@ -20088,6 +20245,14 @@ def api_product_resource(product_id):
                 "Переданы неизвестные поля.",
                 422,
                 {"payload": sorted(unknown_fields)},
+            )
+        if "stock" in payload and CompositeProducts().resolve(
+            product_id, active_only=True
+        ):
+            return api_error(
+                "COMPOSITE_STOCK_DERIVED",
+                "Остаток сборного товара вычисляется из физических компонентов.",
+                409,
             )
         if not payload and image_action == "keep":
             return api_error(

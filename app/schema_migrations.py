@@ -232,6 +232,63 @@ ORDER_REFUSAL_MIGRATION_CHECKSUM = hashlib.sha256(
     (ORDER_REFUSAL_MIGRATION_ID + "\n" + ORDER_REFUSAL_MIGRATION_NAME + "\n" +
      "erp-order-status:refused;bitrix:C;preserve-sale-link;sqlite-3.7.17").encode("utf-8")
 ).hexdigest()
+COMPOSITE_PRODUCTS_MIGRATION_ID = "2026-09-03-composite-products-v1"
+COMPOSITE_PRODUCTS_MIGRATION_NAME = "Universal composite storefront products"
+COMPOSITE_PRODUCTS_SQL = """
+CREATE TABLE IF NOT EXISTS composite_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    storefront_product_id INTEGER NOT NULL UNIQUE REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS composite_product_components (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    composite_product_id INTEGER NOT NULL REFERENCES composite_products(id) ON DELETE CASCADE,
+    component_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    component_type TEXT NOT NULL,
+    quantity REAL NOT NULL CHECK (quantity > 0),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    UNIQUE (composite_product_id,component_product_id,component_type)
+);
+CREATE INDEX IF NOT EXISTS idx_composite_components_product ON composite_product_components(component_product_id,composite_product_id);
+CREATE TABLE IF NOT EXISTS order_item_components (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL,
+    order_item_id TEXT NOT NULL,
+    storefront_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    composite_product_id INTEGER REFERENCES composite_products(id) ON DELETE SET NULL,
+    component_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    component_type TEXT NOT NULL,
+    unit_quantity REAL NOT NULL CHECK (unit_quantity > 0),
+    required_quantity REAL NOT NULL CHECK (required_quantity > 0),
+    component_name TEXT NOT NULL,
+    component_article TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (order_id,order_item_id,component_product_id,component_type)
+);
+CREATE INDEX IF NOT EXISTS idx_order_item_components_order ON order_item_components(order_id,order_item_id);
+CREATE TABLE IF NOT EXISTS sale_item_components (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_item_id INTEGER NOT NULL REFERENCES erp_sale_items(id) ON DELETE RESTRICT,
+    composite_product_id INTEGER REFERENCES composite_products(id) ON DELETE SET NULL,
+    component_product_id INTEGER NOT NULL REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    component_type TEXT NOT NULL,
+    unit_quantity REAL NOT NULL CHECK (unit_quantity > 0),
+    quantity REAL NOT NULL CHECK (quantity > 0),
+    returned_quantity REAL NOT NULL DEFAULT 0 CHECK (returned_quantity >= 0 AND returned_quantity <= quantity),
+    component_name TEXT NOT NULL,
+    component_article TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (sale_item_id,component_product_id,component_type)
+);
+CREATE INDEX IF NOT EXISTS idx_sale_item_components_item ON sale_item_components(sale_item_id,id);
+CREATE INDEX IF NOT EXISTS idx_sale_item_components_product ON sale_item_components(component_product_id,created_at);
+"""
+COMPOSITE_PRODUCTS_MIGRATION_CHECKSUM = hashlib.sha256(
+    (COMPOSITE_PRODUCTS_MIGRATION_ID + "\n" + COMPOSITE_PRODUCTS_SQL).encode("utf-8")
+).hexdigest()
 
 MIGRATIONS = (
     {
@@ -304,11 +361,20 @@ MIGRATIONS = (
         "transactional": False,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
+    {
+        "id": COMPOSITE_PRODUCTS_MIGRATION_ID,
+        "name": COMPOSITE_PRODUCTS_MIGRATION_NAME,
+        "checksum": COMPOSITE_PRODUCTS_MIGRATION_CHECKSUM,
+        "transactional": True,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
 )
 
 REQUIRED_TABLES = {
     "catalog_excel_products",
     "catalog_stock_movements",
+    "composite_products",
+    "composite_product_components",
     "erp_audit_events",
     "erp_brands",
     "erp_categories",
@@ -329,6 +395,8 @@ REQUIRED_TABLES = {
     "erp_receipts",
     "erp_sale_items",
     "erp_sales",
+    "order_item_components",
+    "sale_item_components",
     "erp_schema_migrations",
     LEDGER_TABLE,
 }
@@ -1270,6 +1338,23 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                         apply_order_refusal_migration(
                             connection, ddl_observer
                         )
+                    finally:
+                        connection.close()
+                elif migration["id"] == COMPOSITE_PRODUCTS_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    try:
+                        connection.execute("PRAGMA foreign_keys = ON")
+                        connection.execute("BEGIN IMMEDIATE")
+                        for statement in COMPOSITE_PRODUCTS_SQL.split(";"):
+                            statement = statement.strip()
+                            if statement:
+                                if ddl_observer is not None:
+                                    ddl_observer(statement)
+                                connection.execute(statement)
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
                     finally:
                         connection.close()
                 else:

@@ -685,6 +685,50 @@ CREATE TABLE IF NOT EXISTS catalog_excel_manual_stock_operations (
 CREATE INDEX IF NOT EXISTS idx_catalog_excel_manual_stock_product
     ON catalog_excel_manual_stock_operations(product_id, created_at);
 
+CREATE TABLE IF NOT EXISTS composite_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    storefront_product_id INTEGER NOT NULL UNIQUE
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS composite_product_components (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    composite_product_id INTEGER NOT NULL
+        REFERENCES composite_products(id) ON DELETE CASCADE,
+    component_product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    component_type TEXT NOT NULL,
+    quantity REAL NOT NULL CHECK (quantity > 0),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    UNIQUE (composite_product_id, component_product_id, component_type)
+);
+CREATE INDEX IF NOT EXISTS idx_composite_components_product
+    ON composite_product_components(component_product_id, composite_product_id);
+
+CREATE TABLE IF NOT EXISTS order_item_components (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL,
+    order_item_id TEXT NOT NULL,
+    storefront_product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    composite_product_id INTEGER REFERENCES composite_products(id) ON DELETE SET NULL,
+    component_product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    component_type TEXT NOT NULL,
+    unit_quantity REAL NOT NULL CHECK (unit_quantity > 0),
+    required_quantity REAL NOT NULL CHECK (required_quantity > 0),
+    component_name TEXT NOT NULL,
+    component_article TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (order_id, order_item_id, component_product_id, component_type)
+);
+CREATE INDEX IF NOT EXISTS idx_order_item_components_order
+    ON order_item_components(order_id, order_item_id);
+
 CREATE TABLE IF NOT EXISTS erp_sales (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
@@ -829,6 +873,28 @@ CREATE INDEX IF NOT EXISTS idx_erp_sale_items_sale
     ON erp_sale_items(sale_id, id);
 CREATE INDEX IF NOT EXISTS idx_erp_sale_items_product
     ON erp_sale_items(product_id, created_at);
+
+CREATE TABLE IF NOT EXISTS sale_item_components (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_item_id INTEGER NOT NULL REFERENCES erp_sale_items(id) ON DELETE RESTRICT,
+    composite_product_id INTEGER REFERENCES composite_products(id) ON DELETE SET NULL,
+    component_product_id INTEGER NOT NULL
+        REFERENCES catalog_excel_products(id) ON DELETE RESTRICT,
+    component_type TEXT NOT NULL,
+    unit_quantity REAL NOT NULL CHECK (unit_quantity > 0),
+    quantity REAL NOT NULL CHECK (quantity > 0),
+    returned_quantity REAL NOT NULL DEFAULT 0 CHECK (
+        returned_quantity >= 0 AND returned_quantity <= quantity
+    ),
+    component_name TEXT NOT NULL,
+    component_article TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (sale_item_id, component_product_id, component_type)
+);
+CREATE INDEX IF NOT EXISTS idx_sale_item_components_item
+    ON sale_item_components(sale_item_id, id);
+CREATE INDEX IF NOT EXISTS idx_sale_item_components_product
+    ON sale_item_components(component_product_id, created_at);
 
 CREATE TABLE IF NOT EXISTS erp_order_strap_operations (
     id TEXT PRIMARY KEY,

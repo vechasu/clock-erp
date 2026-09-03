@@ -1,6 +1,7 @@
 """Transactional sales, returns and product stock movements."""
 
 import json
+import logging
 import math
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,10 @@ from app.services.shared_catalog import (
     get_or_create_category,
     product_matches_kind,
 )
+from app.services.composite_products import CompositeProducts
+
+
+logger = logging.getLogger(__name__)
 
 
 class SalesInventoryError(ValueError):
@@ -707,6 +712,25 @@ class SalesInventory:
         except (TypeError, ValueError):
             raise SalesInventoryError("Товар не найден.")
 
+        self.initialize()
+        if CompositeProducts(self.database).resolve(product_id, active_only=True):
+            return self.create_sale_batch(
+                payload,
+                [{
+                    "product_id": product_id,
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "original_unit_price": pricing["original_unit_price"],
+                    "discount_type": pricing["discount_type"],
+                    "discount_value": pricing["discount_value"],
+                    "discount_reason": pricing["discount_reason"],
+                }],
+                user_name=user_name,
+                idempotency_key=idempotency_key,
+                enforce_external_unique=enforce_external_unique,
+                failure_hook=failure_hook,
+            )
+
         sale_id = str(payload.get("id") or uuid.uuid4().hex)
         created_at = sale_created_at(payload)
         source = str(payload.get("source") or "Tictactoy")
@@ -727,7 +751,6 @@ class SalesInventory:
         stored_payload["inventory_managed"] = True
         stored_payload["automatic_stock_applied"] = True
 
-        self.initialize()
         with self.database.transaction() as connection:
             existing = connection.execute(
                 "SELECT id FROM erp_sales WHERE id = ? "
@@ -936,13 +959,6 @@ class SalesInventory:
             "automatic_stock_applied": True,
         })
 
-        required_by_product = {}
-        for item in prepared:
-            required_by_product[item["product_id"]] = (
-                required_by_product.get(item["product_id"], 0)
-                + item["quantity"]
-            )
-
         self.initialize()
         with self.database.transaction() as connection:
             existing = connection.execute(
@@ -963,15 +979,63 @@ class SalesInventory:
             if existing is not None:
                 return self._sale_from_connection(connection, existing["id"])
 
-            placeholders = ",".join("?" for _ in required_by_product)
+            composite_service = CompositeProducts(self.database)
+            required_by_product = {}
+            order_identity = str(
+                payload.get("external_order_id") or payload.get("order_id") or ""
+            )
+            for item in prepared:
+                component_rows = []
+                order_item_id = str(item.get("bitrix_order_line_id") or "")
+                if order_identity and order_item_id:
+                    component_rows = composite_service.order_item_snapshot_in_connection(
+                        connection, order_identity, order_item_id
+                    )
+                if component_rows:
+                    item["_components"] = [{
+                        "composite_product_id": row["composite_product_id"],
+                        "product_id": int(row["component_product_id"]),
+                        "component_type": row["component_type"],
+                        "unit_quantity": float(row["unit_quantity"]),
+                        "quantity": float(row["unit_quantity"]) * item["quantity"],
+                        "name": row["component_name"],
+                        "article": row["component_article"],
+                    } for row in component_rows]
+                else:
+                    mapping = composite_service.resolve_in_connection(
+                        connection, item["product_id"], True
+                    )
+                    if mapping:
+                        item["_components"] = [{
+                            "composite_product_id": mapping["id"],
+                            "product_id": int(component["product_id"]),
+                            "component_type": component["component_type"],
+                            "unit_quantity": float(component["quantity"]),
+                            "quantity": float(component["quantity"]) * item["quantity"],
+                            "name": component["name"],
+                            "article": component.get("article"),
+                        } for component in mapping["components"]]
+                physical = item.get("_components") or [{
+                    "product_id": item["product_id"], "quantity": item["quantity"]
+                }]
+                for component in physical:
+                    component_id = int(component["product_id"])
+                    required_by_product[component_id] = (
+                        required_by_product.get(component_id, 0)
+                        + float(component["quantity"])
+                    )
+
+            all_product_ids = set(required_by_product)
+            all_product_ids.update(item["product_id"] for item in prepared)
+            placeholders = ",".join("?" for _ in all_product_ids)
             product_rows = connection.execute(
                 "SELECT p.id, p.stock, p.brand_id, p.category_id, "
                 "p.excel_name_raw AS name FROM catalog_excel_products p "
                 "WHERE p.active = 1 AND p.id IN ({})".format(placeholders),
-                list(required_by_product),
+                list(all_product_ids),
             ).fetchall()
             products = {int(row["id"]): row for row in product_rows}
-            if len(products) != len(required_by_product):
+            if len(products) != len(all_product_ids):
                 raise SalesInventoryError(
                     "Один или несколько товаров отсутствуют или архивированы."
                 )
@@ -1046,43 +1110,65 @@ class SalesInventory:
                 item_id = connection.execute(
                     "SELECT last_insert_rowid()"
                 ).fetchone()[0]
-                stock_after = (
-                    remaining_stock[item["product_id"]] - item["quantity"]
-                )
-                remaining_stock[item["product_id"]] = stock_after
-                movement_key = (
-                    "{}:item:{}".format(idempotency_key, item["line_index"])
-                    if idempotency_key
-                    else None
-                )
-                connection.execute(
-                    "INSERT INTO catalog_stock_movements ("
-                    "id, product_id, movement_type, quantity_delta, stock_after, "
-                    "sale_id, sale_item_id, idempotency_key, source, user_name, "
-                    "comment, created_at) VALUES (?, ?, 'sale', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()),
-                        item["product_id"],
-                        -item["quantity"],
-                        stock_after,
-                        sale_id,
-                        item_id,
-                        movement_key,
-                        source,
-                        str(user_name or "") or None,
-                        "Продажа №{}".format(
-                            stored_payload.get("order_number") or sale_id
+                physical = item.get("_components") or [{
+                    "product_id": item["product_id"], "quantity": item["quantity"]
+                }]
+                component_snapshots = []
+                for component_index, component in enumerate(physical):
+                    physical_id = int(component["product_id"])
+                    physical_quantity = float(component["quantity"])
+                    stock_after = remaining_stock[physical_id] - physical_quantity
+                    remaining_stock[physical_id] = stock_after
+                    movement_key = (
+                        "{}:item:{}:component:{}".format(
+                            idempotency_key, item["line_index"], component_index
+                        ) if idempotency_key else None
+                    )
+                    connection.execute(
+                        "INSERT INTO catalog_stock_movements ("
+                        "id, product_id, movement_type, quantity_delta, stock_after, "
+                        "sale_id, sale_item_id, idempotency_key, source, user_name, "
+                        "comment, created_at) VALUES (?, ?, 'sale', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            str(uuid.uuid4()), physical_id, -physical_quantity,
+                            stock_after, sale_id, item_id, movement_key, source,
+                            str(user_name or "") or None,
+                            "Продажа №{}".format(stored_payload.get("order_number") or sale_id),
+                            inserted_at,
                         ),
-                        inserted_at,
-                    ),
-                )
+                    )
+                    if item.get("_components"):
+                        connection.execute(
+                            "INSERT INTO sale_item_components(sale_item_id,composite_product_id,component_product_id,component_type,unit_quantity,quantity,component_name,component_article,created_at) "
+                            "VALUES(?,?,?,?,?,?,?,?,?)",
+                            (item_id, component.get("composite_product_id"), physical_id,
+                             component["component_type"], component["unit_quantity"],
+                             physical_quantity, component["name"], component.get("article"), inserted_at),
+                        )
+                        component_snapshots.append({
+                            "type": component["component_type"],
+                            "product_id": str(physical_id),
+                            "name": component["name"],
+                            "article": component.get("article") or "",
+                            "unit_quantity": component["unit_quantity"],
+                            "quantity": physical_quantity,
+                        })
                 item_snapshots.append({
                     **item,
                     "sale_item_id": int(item_id),
                     "product_id": str(item["product_id"]),
+                    "is_composite": bool(item.get("_components")),
+                    "components": component_snapshots,
                 })
+                item_snapshots[-1].pop("_components", None)
 
             stored_payload["items"] = item_snapshots
+            for snapshot in item_snapshots:
+                if snapshot.get("is_composite"):
+                    logger.info(
+                        "Composite sale completed sale_id=%s storefront_product_id=%s components=%s",
+                        sale_id, snapshot["product_id"], snapshot["components"],
+                    )
             connection.execute(
                 "UPDATE erp_sales SET metadata_json = ? WHERE id = ?",
                 (
@@ -1165,8 +1251,8 @@ class SalesInventory:
             if idempotency_key:
                 repeated = connection.execute(
                     "SELECT sale_id FROM catalog_stock_movements "
-                    "WHERE idempotency_key = ?",
-                    (idempotency_key,),
+                    "WHERE idempotency_key = ? OR idempotency_key LIKE ?",
+                    (idempotency_key, idempotency_key + ":component:%"),
                 ).fetchone()
                 if repeated is not None:
                     return self._sale_from_connection(
@@ -1195,6 +1281,17 @@ class SalesInventory:
                 raise ReturnConflictError("Продажа удалена.")
             if sale["cancelled_at"]:
                 raise ReturnConflictError("Отменённую продажу нельзя вернуть.")
+
+            component_rows = connection.execute(
+                "SELECT * FROM sale_item_components WHERE sale_item_id=? ORDER BY id",
+                (item["id"],),
+            ).fetchall()
+            if component_rows:
+                return self._return_composite_sale_in_connection(
+                    connection, sale, item, component_rows, quantity, reason,
+                    user_name, idempotency_key, movement_type, returned_at,
+                    failure_hook,
+                )
 
             assert_products_unlocked(
                 connection, [item["product_id"]], ReturnConflictError
@@ -1376,6 +1473,90 @@ class SalesInventory:
             )
 
         return self.get_sale(sale_id)
+
+    def _return_composite_sale_in_connection(
+        self, connection, sale, item, components, quantity, reason, user_name,
+        idempotency_key, movement_type, returned_at, failure_hook,
+    ):
+        remaining = float(item["quantity"]) - float(item["returned_quantity"] or 0)
+        if remaining <= 0:
+            raise ReturnConflictError("Возврат уже оформлен.")
+        if quantity > remaining:
+            raise ReturnConflictError(
+                "Можно вернуть не больше {}.".format(format_number(remaining))
+            )
+        product_ids = [int(row["component_product_id"]) for row in components]
+        assert_products_unlocked(connection, product_ids, ReturnConflictError)
+        new_returned = float(item["returned_quantity"] or 0) + quantity
+        fully_reversed = abs(new_returned - float(item["quantity"])) < 0.000001
+        item_status = "returned" if fully_reversed else "partially_returned"
+        for index, component in enumerate(components):
+            unit_quantity = float(component["unit_quantity"])
+            component_quantity = unit_quantity * quantity
+            remaining_component = (
+                float(component["quantity"])
+                - float(component["returned_quantity"] or 0)
+            )
+            if component_quantity > remaining_component + 0.000001:
+                raise ReturnConflictError("Компоненты этой продажи уже возвращены.")
+            product = connection.execute(
+                "SELECT stock FROM catalog_excel_products WHERE id=? AND active=1",
+                (component["component_product_id"],),
+            ).fetchone()
+            if product is None:
+                raise ReturnConflictError("Компонент сборного товара не найден.")
+            stock_before = float(product["stock"] or 0)
+            stock_after = stock_before + component_quantity
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock=?,stock_source=?,updated_at=? WHERE id=?",
+                (stock_after, "sale_cancel" if movement_type == "cancellation" else "return",
+                 returned_at, component["component_product_id"]),
+            )
+            connection.execute(
+                "UPDATE sale_item_components SET returned_quantity=returned_quantity+? WHERE id=?",
+                (component_quantity, component["id"]),
+            )
+            movement_key = (
+                "{}:component:{}".format(idempotency_key, index)
+                if idempotency_key else None
+            )
+            connection.execute(
+                "INSERT INTO catalog_stock_movements(id,product_id,movement_type,quantity_delta,stock_before,stock_after,sale_id,sale_item_id,idempotency_key,source,user_name,comment,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), component["component_product_id"], movement_type,
+                 component_quantity, stock_before, stock_after, sale["id"], item["id"],
+                 movement_key, sale["source"], str(user_name or "") or None,
+                 "Возврат компонента {} по продаже №{}".format(
+                     component["component_name"], self._sale_number(sale)
+                 ), returned_at),
+            )
+        logger.info(
+            "Composite sale rollback sale_id=%s quantity=%s components=%s",
+            sale["id"], quantity,
+            [(row["component_product_id"], row["unit_quantity"] * quantity)
+             for row in components],
+        )
+        connection.execute(
+            "UPDATE erp_sale_items SET returned_quantity=?,status=?,returned_at=?,return_reason=? WHERE id=?",
+            (new_returned, item_status, returned_at, reason or None, item["id"]),
+        )
+        connection.execute(
+            "UPDATE erp_sales SET status=?,returned_at=?,return_reason=?,updated_at=? WHERE id=?",
+            (item_status, returned_at, reason or None, returned_at, sale["id"]),
+        )
+        if failure_hook:
+            failure_hook(connection)
+        AuditJournal(self.database).record(
+            "sale", sale["id"], "status_changed",
+            "Продажа #{}".format(self._sale_number(sale)), sale["source"],
+            before={"status": sale["status"]}, after={"status": item_status},
+            metadata={"number": self._sale_number(sale), "reason": reason,
+                      "composite_return": True},
+            actor_id=user_name, actor_name=user_name,
+            actor_type="user" if user_name else "system", status=item_status,
+            source=sale["source"], connection=connection,
+        )
+        return self._sale_from_connection(connection, sale["id"])
 
     def update_sale(
         self,
