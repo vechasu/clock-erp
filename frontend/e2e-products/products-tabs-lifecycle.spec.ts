@@ -86,7 +86,7 @@ async function partialAction(
 async function expectUniqueProductsDom(page: Page, activeView: string) {
   await expect(page.locator('main#main-content')).toHaveCount(1);
   await expect(page.locator('.products-workspace-tabs')).toHaveCount(1);
-  await expect(page.locator('[data-products-tab]')).toHaveCount(5);
+  await expect(page.locator('[data-products-tab]')).toHaveCount(6);
   await expectVersionedProductsTabs(page);
   await expect(page.locator(`[data-products-tab="${activeView}"]`)).toHaveAttribute(
     'aria-current',

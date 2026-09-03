@@ -25,6 +25,7 @@
         ('brands', 'Бренды', none),
         ('categories', 'Категории', none),
         ('collections', 'Подборки', none),
+        ('composites', 'Сборные товары', none),
         ('analytics', 'Аналитика', none)
     ) %}
         <a class="erp-section-tab{% if active_view == view %} is-active{% endif %}" href="{{ url_for('warehouse_page', view=view) if view != 'products' else url_for('warehouse_page') }}" data-products-tab="{{ view }}"{% if active_view == view %} aria-current="page"{% endif %}>{{ label }}{% if count is not none %}<span class="warehouse-tab-badge">{{ count }}</span>{% endif %}</a>
