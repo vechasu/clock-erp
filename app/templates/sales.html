@@ -6419,7 +6419,7 @@
     }
 
     function saleAvailableStock(item) {
-        return item?.is_bundle ? item.available_to_assemble : (item?.stock || 0);
+        return item?.is_bundle ? item.available_to_assemble : item?.is_physical_component ? (item.physical_stock || 0) : (item?.stock || 0);
     }
 
     function validateSaleQuantity() {

@@ -71,7 +71,7 @@ class SalesFormDesignSystemContractTest(unittest.TestCase):
             'emptyMessage.textContent = "Загрузка…"',
             '"Ничего не найдено"',
             '"Не удалось загрузить значения"',
-            "Number(item?.is_bundle ? item.available_to_assemble : item?.stock) > 0",
+            "Number(item?.is_bundle ? item.available_to_assemble : item?.is_physical_component ? item.physical_stock : item?.stock) > 0",
         ):
             self.assertIn(marker, self.catalog_script)
         for marker in (

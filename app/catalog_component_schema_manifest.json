@@ -1,0 +1,217 @@
+{
+  "tables": {
+    "erp_bundle_transitions": {
+      "columns": [
+        [
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          "enabled",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          "legacy_stock",
+          "REAL",
+          1,
+          null,
+          0
+        ],
+        [
+          "product_id",
+          "INTEGER",
+          1,
+          null,
+          0
+        ]
+      ],
+      "foreign_keys": [
+        [
+          "catalog_excel_products",
+          "product_id",
+          "id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ]
+      ],
+      "checks": [
+        "enabledin(0,1)"
+      ]
+    },
+    "erp_component_inventory": {
+      "columns": [
+        [
+          "initialized_at",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          "physical_stock",
+          "REAL",
+          0,
+          null,
+          0
+        ],
+        [
+          "product_id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          "updated_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "foreign_keys": [
+        [
+          "catalog_excel_products",
+          "product_id",
+          "id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ]
+      ],
+      "checks": [
+        "physical_stock>=0"
+      ]
+    },
+    "erp_component_inventory_events": {
+      "columns": [
+        [
+          "actor",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          "created_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          "id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          "product_id",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          "reason",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          "stock_after",
+          "REAL",
+          1,
+          null,
+          0
+        ],
+        [
+          "stock_before",
+          "REAL",
+          0,
+          null,
+          0
+        ]
+      ],
+      "foreign_keys": [
+        [
+          "erp_component_inventory",
+          "product_id",
+          "product_id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ]
+      ],
+      "checks": [
+        "stock_after>=0"
+      ]
+    },
+    "erp_physical_documents": {
+      "columns": [
+        [
+          "document_id",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          "document_type",
+          "TEXT",
+          1,
+          null,
+          1
+        ],
+        [
+          "product_id",
+          "INTEGER",
+          1,
+          null,
+          3
+        ]
+      ],
+      "foreign_keys": [
+        [
+          "erp_component_inventory",
+          "product_id",
+          "product_id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ]
+      ],
+      "checks": []
+    }
+  },
+  "indexes": [
+    [
+      "erp_physical_documents",
+      "sqlite_autoindex_erp_physical_documents_1",
+      1,
+      [
+        "document_type",
+        "document_id",
+        "product_id"
+      ]
+    ]
+  ],
+  "triggers": [],
+  "views": []
+}

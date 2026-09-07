@@ -14,6 +14,9 @@ test.each([
   [{ stock: 99, is_bundle: true, available_to_assemble: 0 }, 1, false],
   [{ stock: 0, is_bundle: true, available_to_assemble: 5 }, 1.5, false],
   [{ stock: 0, is_bundle: true, available_to_assemble: 5 }, 0, false],
+  [{ stock: 998, is_physical_component: true, physical_stock: null }, 1, false],
+  [{ stock: 998, is_physical_component: true, physical_stock: 3 }, 4, false],
+  [{ stock: 0, is_physical_component: true, physical_stock: 3 }, 2, true],
   [null, 1, false],
 ])('sale form validates physical or assembly availability: %j × %s', (product, quantity, valid) => {
   document.body.innerHTML = '<form><input type="number"><button>Провести</button></form>';
