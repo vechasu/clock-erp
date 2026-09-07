@@ -40,7 +40,7 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
             "app/templates/_products_workspace.html"
         )
         self.assertIn("products_workspace_header", warehouse)
-        for text in ("Товары", "Каталог и складские остатки", "+ Добавить товар"):
+        for text in ("Товары", "Каталог и складские остатки", "Добавить из Bitrix"):
             self.assertIn(text, products_workspace)
 
     def test_three_pages_use_the_shared_metrics_contract(self):
