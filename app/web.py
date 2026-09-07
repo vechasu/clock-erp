@@ -10411,10 +10411,13 @@ def manual_sale_add():
             notice="error",
         )
 
-    if quantity > catalog_product["stock"]:
+    from app.services.product_bundles import ProductBundles
+    bundle = ProductBundles().get(catalog_product["id"])
+    sale_available = bundle["available_to_assemble"] if bundle["is_bundle"] else catalog_product["stock"]
+    if quantity > sale_available:
         return redirect_to_sales(
             "Недостаточно товара. Сейчас доступно: {} шт.".format(
-                format_stock_number(catalog_product["stock"])
+                format_stock_number(sale_available)
             ),
             notice="error",
         )
@@ -20172,6 +20175,64 @@ def api_bitrix_product_import(bitrix_id):
         )
 
 
+@app.route("/app/products/<int:product_id>/bundle", methods=["GET", "POST"])
+def product_bundle_page(product_id):
+    from app.services.product_bundles import ProductBundles
+    catalog = ExcelProductCatalog()
+    product = catalog.get_product(product_id)
+    if product is None:
+        abort(404)
+    service = ProductBundles(catalog.database)
+    error = ""
+    notice = ""
+    if request.method == "POST":
+        require_csrf_when_authenticated()
+        try:
+            if request.form.get("action") == "create_component":
+                component = catalog.create_product(
+                    name=request.form.get("name"), article=request.form.get("article"),
+                    brand=request.form.get("brand"), category="Комплектующие",
+                    stock=0, local_component=True, enforce_unique=True, **current_audit_actor()
+                )
+                notice = "Создан компонент: {}. Найдите его и добавьте в состав.".format(component["display_name"])
+            else:
+                ids = request.form.getlist("component_id")
+                quantities = request.form.getlist("quantity")
+                if len(ids) != len(quantities):
+                    raise ValueError("Некорректный состав.")
+                if request.form.get("mode") not in {"bundle", "ordinary"}:
+                    raise ValueError("Неизвестный режим учёта.")
+                service.configure(product_id, [
+                    {"component_id": value, "quantity": quantity}
+                    for value, quantity in zip(ids, quantities)
+                ], enabled=request.form.get("mode") == "bundle")
+                return redirect(url_for("product_bundle_page", product_id=product_id, saved=1))
+        except ValueError as failure:
+            error = str(failure)
+    return render_template("product_bundle.html", product=product,
+                           bundle=service.get(product_id), error=error,
+                           notice=notice or ("Состав сохранён." if request.args.get("saved") else "")), 422 if error else 200
+
+
+@app.route("/api/v1/products/<int:product_id>/bundle", methods=["GET", "PUT"])
+def api_product_bundle(product_id):
+    from app.services.product_bundles import ProductBundles
+    service = ProductBundles()
+    if ExcelProductCatalog(service.database).get_product(product_id) is None:
+        return api_error("PRODUCT_NOT_FOUND", "Товар не найден.", 404)
+    if request.method == "GET":
+        return api_success(service.get(product_id))
+    require_csrf_when_authenticated()
+    try:
+        payload = api_json_payload()
+        if not isinstance(payload.get("is_bundle"), bool):
+            raise ValueError("Укажите режим учёта.")
+        result = service.configure(product_id, payload.get("components", []), payload["is_bundle"])
+    except ValueError as error:
+        return api_error("BUNDLE_VALIDATION_FAILED", str(error), 422)
+    return api_success(result)
+
+
 @app.route("/api/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
 @app.route("/api/v1/products/<int:product_id>", methods=["GET", "PATCH", "DELETE"])
 def api_product_resource(product_id):
@@ -22527,9 +22588,12 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
         float(pricing["unit_price"])
         if pricing["unit_price"] is not None else None
     )
-    if product is not None and quantity > float(product["stock"]):
-        if not existing.get("inventory_managed"):
-            raise InsufficientStockError(product["stock"])
+    if product is not None and not existing.get("inventory_managed"):
+        from app.services.product_bundles import ProductBundles
+        bundle = ProductBundles().get(product["id"])
+        available = bundle["available_to_assemble"] if bundle["is_bundle"] else float(product["stock"])
+        if quantity > available:
+            raise InsufficientStockError(available)
     source = normalize_manual_sale_source(
         payload.get("source")
         if "source" in payload
@@ -22669,12 +22733,14 @@ def api_sales_catalog():
         category_id=request.args.get("category_id"),
         limit=limit,
         in_stock=True,
+        include_assemblable=True,
     )
     total = SharedCatalog().count_products(
         query=request.args.get("q") or "",
         brand_id=request.args.get("brand_id"),
         category_id=request.args.get("category_id"),
         in_stock=True,
+        include_assemblable=True,
     )
     return api_success(items, total=total, limit=limit)
 

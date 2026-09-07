@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Состав — {{ product.display_name }}</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='css/erp-components.css') }}">
+<style>body{font-family:system-ui;margin:0;background:#f6f7f9;color:#172033}main{max-width:850px;margin:auto;padding:24px}section{background:white;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin:20px 0}input,select,button{font:inherit;padding:10px;max-width:100%;box-sizing:border-box}label{display:block;margin:12px 0}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px}td input{width:85px}.error{color:#b42318}.row{display:flex;gap:8px;flex-wrap:wrap}a{color:#174887}@media(max-width:500px){main{padding:12px}td,th{padding:4px}}</style>
+</head><body><main>
+<a href="{{ url_for('warehouse_page') }}">← Товары</a><h1>{{ product.display_name }}</h1>
+<p>{{ product.excel_article or '' }}</p>
+{% if error %}<p role="alert" class="error">{{ error }}</p>{% endif %}
+{% if notice %}<p role="status">{{ notice }}</p>{% endif %}
+<section><h2>Складской учёт</h2>
+<p>{% if bundle.is_bundle %}Доступно к сборке: <strong>{{ bundle.available_to_assemble }}</strong>{% else %}Физический остаток: <strong>{{ '%g'|format(product.stock) }}</strong>{% endif %}</p>
+<form method="post" id="bundleForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label>Режим <select name="mode"><option value="ordinary" {% if not bundle.is_bundle %}selected{% endif %}>Обычный</option><option value="bundle" {% if bundle.is_bundle %}selected{% endif %}>Сборный</option></select></label>
+<p>Состав хранится в ERP. Изменения применяются к будущим продажам.</p>
+<table><thead><tr><th>Компонент</th><th>На единицу</th><th></th></tr></thead><tbody id="parts">
+{% for part in bundle.components %}<tr><td>{{ part.name }}<input type="hidden" name="component_id" value="{{ part.component_id }}"></td><td><input name="quantity" type="number" min="1" step="1" required value="{{ part.quantity }}" aria-label="Количество {{ part.name }}"></td><td><button type="button" class="remove">Удалить</button></td></tr>{% endfor %}
+</tbody></table>
+<label>Найти компонент <input id="search" type="search" placeholder="Название или артикул" autocomplete="off"></label>
+<div id="searchStatus" role="status"></div><div id="results" class="row"></div>
+<p><button type="submit">Сохранить состав</button></p></form></section>
+<section><h2>Создать локальный компонент</h2><p>Начальный остаток — 0. После создания оформите приход компонента в ERP.</p>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="create_component">
+<label>Название <input name="name" required></label><label>Артикул <input name="article"></label><label>Бренд <input name="brand"></label>
+<button type="submit">Создать компонент</button></form></section>
+</main><script>
+const parts=document.getElementById('parts');
+parts.addEventListener('click',event=>{if(event.target.classList.contains('remove'))event.target.closest('tr').remove();});
+let sequence=0,timer;
+document.getElementById('search').addEventListener('input',event=>{
+ clearTimeout(timer);const q=event.target.value.trim(),current=++sequence;
+ const results=document.getElementById('results'),status=document.getElementById('searchStatus');results.replaceChildren();status.textContent='';
+ if(q.length<2)return;
+ timer=setTimeout(async()=>{try{
+ const response=await fetch('/api/v1/products?q='+encodeURIComponent(q)+'&page_size=20');const payload=await response.json();
+ if(!response.ok)throw new Error('Не удалось найти компоненты');if(current!==sequence)return;
+ const items=payload.data||[];status.textContent=items.length?'Выберите компонент':'Не найдено';
+ items.forEach(item=>{if(String(item.id)==={{ product.id|string|tojson }})return;
+ const button=document.createElement('button');button.type='button';button.textContent=(item.name||item.display_name)+' · '+(item.article||'');
+ button.addEventListener('click',()=>{
+ if([...parts.querySelectorAll('[name=component_id]')].some(input=>input.value===String(item.id))){status.textContent='Компонент уже добавлен';return;}
+ const row=document.createElement('tr'),name=document.createElement('td'),count=document.createElement('td'),action=document.createElement('td');
+ name.textContent=item.name||item.display_name;const id=document.createElement('input');id.type='hidden';id.name='component_id';id.value=item.id;name.append(id);
+ const quantity=document.createElement('input');Object.assign(quantity,{name:'quantity',type:'number',min:'1',step:'1',value:'1',required:true});quantity.setAttribute('aria-label','Количество '+name.textContent);count.append(quantity);
+ const remove=document.createElement('button');Object.assign(remove,{type:'button',className:'remove',textContent:'Удалить'});action.append(remove);row.append(name,count,action);parts.append(row);status.textContent='Компонент добавлен';
+ });results.append(button);});
+ }catch(error){if(current===sequence)status.textContent=error.message;}},250);
+});
+</script></body></html>

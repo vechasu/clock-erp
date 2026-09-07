@@ -340,6 +340,7 @@ class CatalogApplication:
                 query=query,
                 limit=limit,
                 in_stock=in_stock or available_for_sale,
+                include_assemblable=available_for_sale,
                 product_kind=product_kind,
             )
         else:
@@ -355,6 +356,7 @@ class CatalogApplication:
                 brand_id=brand_id,
                 category_id=category_id,
                 in_stock=in_stock or available_for_sale,
+                include_assemblable=available_for_sale,
                 product_kind=product_kind,
             )
             if kind == "product"

@@ -1,0 +1,203 @@
+{
+  "indexes": [
+    [
+      "erp_bundle_components",
+      "idx_erp_bundle_component",
+      0,
+      [
+        "component_id"
+      ]
+    ],
+    [
+      "erp_bundle_components",
+      "sqlite_autoindex_erp_bundle_components_1",
+      1,
+      [
+        "product_id",
+        "component_id"
+      ]
+    ],
+    [
+      "erp_sale_component_snapshots",
+      "sqlite_autoindex_erp_sale_component_snapshots_1",
+      1,
+      [
+        "sale_item_id",
+        "component_id"
+      ]
+    ]
+  ],
+  "tables": {
+    "erp_bundle_components": {
+      "checks": [
+        "product_id<>component_id",
+        "quantity>0andquantity=cast(quantityasinteger)"
+      ],
+      "columns": [
+        [
+          "component_id",
+          "INTEGER",
+          1,
+          null,
+          2
+        ],
+        [
+          "product_id",
+          "INTEGER",
+          1,
+          null,
+          1
+        ],
+        [
+          "quantity",
+          "INTEGER",
+          1,
+          null,
+          0
+        ]
+      ],
+      "foreign_keys": [
+        [
+          "catalog_excel_products",
+          "component_id",
+          "id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ],
+        [
+          "erp_product_bundles",
+          "product_id",
+          "product_id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ]
+      ]
+    },
+    "erp_local_components": {
+      "checks": [],
+      "columns": [
+        [
+          "product_id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ]
+      ],
+      "foreign_keys": [
+        [
+          "catalog_excel_products",
+          "product_id",
+          "id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ]
+      ]
+    },
+    "erp_product_bundles": {
+      "checks": [],
+      "columns": [
+        [
+          "product_id",
+          "INTEGER",
+          0,
+          null,
+          1
+        ],
+        [
+          "updated_at",
+          "TEXT",
+          1,
+          null,
+          0
+        ]
+      ],
+      "foreign_keys": [
+        [
+          "catalog_excel_products",
+          "product_id",
+          "id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ]
+      ]
+    },
+    "erp_sale_component_snapshots": {
+      "checks": [
+        "quantity_per_unit>0"
+      ],
+      "columns": [
+        [
+          "article",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          "component_id",
+          "INTEGER",
+          1,
+          null,
+          2
+        ],
+        [
+          "name",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          "quantity_per_unit",
+          "INTEGER",
+          1,
+          null,
+          0
+        ],
+        [
+          "sale_item_id",
+          "INTEGER",
+          1,
+          null,
+          1
+        ]
+      ],
+      "foreign_keys": [
+        [
+          "catalog_excel_products",
+          "component_id",
+          "id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ],
+        [
+          "erp_sale_items",
+          "sale_item_id",
+          "id",
+          "NO ACTION",
+          "RESTRICT",
+          "NONE"
+        ]
+      ]
+    }
+  },
+  "triggers": [
+    [
+      "trg_bundle_physical_stock",
+      "catalog_excel_products",
+      "CREATE TRIGGER trg_bundle_physical_stock BEFORE UPDATE OF stock ON catalog_excel_products WHEN NEW.stock<>0 AND EXISTS(SELECT 1 FROM erp_product_bundles WHERE product_id=NEW.id) BEGIN SELECT RAISE(ABORT,'Bundle SKU has no physical stock; receive or count components'); END"
+    ],
+    [
+      "trg_local_component_bitrix",
+      "catalog_excel_products",
+      "CREATE TRIGGER trg_local_component_bitrix BEFORE UPDATE OF bitrix_catalog_product_id,bitrix_external_product_id ON catalog_excel_products WHEN (NEW.bitrix_catalog_product_id IS NOT NULL OR NEW.bitrix_external_product_id IS NOT NULL) AND EXISTS(SELECT 1 FROM erp_local_components WHERE product_id=NEW.id) BEGIN SELECT RAISE(ABORT,'Local components cannot be linked to Bitrix'); END"
+    ]
+  ],
+  "views": []
+}

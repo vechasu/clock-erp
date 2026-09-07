@@ -5651,6 +5651,8 @@
             <div class="product-detail-card">
                 <div class="product-detail-label">Остаток</div>
                 <div id="detailStock" class="product-detail-value">—</div>
+                <a id="bundleSettings" href="#">Настроить состав</a>
+                <div id="bundleAvailability" role="status"></div>
                 <input id="editStock" class="product-detail-input" type="number" min="0" step="1" name="stock" aria-label="Остаток товара" required>
             </div>
 
@@ -6556,6 +6558,19 @@
             const publicProductUrl = button.dataset.publicProductUrl || "";
             const thumbnailUrl = button.dataset.thumbnailUrl || "";
             const productId = button.dataset.id || button.dataset.productId || "";
+            document.getElementById("bundleSettings").href = "/app/products/" + encodeURIComponent(productId) + "/bundle";
+            const bundleStatus = document.getElementById("bundleAvailability");
+            bundleStatus.dataset.productId = productId;
+            bundleStatus.textContent = "";
+            fetch("/api/v1/products/" + encodeURIComponent(productId) + "/bundle")
+                .then(response => { if (!response.ok) throw new Error(); return response.json(); })
+                .then(payload => {
+                    if (bundleStatus.dataset.productId !== productId) return;
+                    bundleStatus.textContent = payload.data.is_bundle
+                        ? "Доступно к сборке: " + payload.data.available_to_assemble : "";
+                }).catch(() => {
+                    if (bundleStatus.dataset.productId === productId) bundleStatus.textContent = "Не удалось загрузить состав";
+                });
             const entityTasks = document.getElementById("productEntityTasks");
             entityTasks.dataset.entityId = productId;
             delete entityTasks.dataset.entityTasksReady;

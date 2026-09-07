@@ -1275,6 +1275,7 @@
     }
 
     function sharedCatalogStockValue(item) {
+        if (item.is_bundle) return "Доступно к сборке: " + String(item.available_to_assemble ?? 0);
         const value = item.stock_display ?? item.stock ?? 0;
         const normalized = String(value).trim().replace(/\s+/g, " ");
         const numeric = Number(normalized.replaceAll(" ", ""));
@@ -1390,8 +1391,8 @@
                 : "",
             count: product
                 ? [
-                    "Остаток: " + sharedCatalogStockValue(item)
-                        + (Number(item.stock || 0) <= 0
+                    (item.is_bundle ? "" : "Остаток: ") + sharedCatalogStockValue(item)
+                        + (!item.is_bundle && Number(item.stock || 0) <= 0
                             ? " · Нет в наличии"
                             : ""),
                     sharedCatalogOrderCountDisplay(item),
@@ -1660,7 +1661,7 @@
                 ? items.filter((item) => {
                     if (kind === "product") {
                         return item?.active !== false
-                            && Number(item?.stock) > 0;
+                            && Number(item?.is_bundle ? item.available_to_assemble : item?.stock) > 0;
                     }
                     if (kind === "category") {
                         return Number(item?.count) > 0;
@@ -1687,7 +1688,7 @@
                     || kind !== "product"
                     || (
                         selectedItem.active !== false
-                        && Number(selectedItem.stock) > 0
+                        && Number(selectedItem.is_bundle ? selectedItem.available_to_assemble : selectedItem.stock) > 0
                     ))
                 && !availableItems.some(
                     (item) => sharedCatalogIdValue(item.id) === selectedId

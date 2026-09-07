@@ -11,6 +11,14 @@ from app.services.audit_journal import AuditJournal
 from app.services.inventory_lock import unlocked_product_sql
 
 
+ASSEMBLABLE_STOCK_SQL = (
+    "(p.stock>0 OR (EXISTS(SELECT 1 FROM erp_bundle_components bc WHERE bc.product_id=p.id) "
+    "AND NOT EXISTS(SELECT 1 FROM erp_bundle_components bc "
+    "JOIN catalog_excel_products component ON component.id=bc.component_id "
+    "WHERE bc.product_id=p.id AND (component.active=0 OR component.stock<bc.quantity))))"
+)
+
+
 class DuplicateCatalogValueError(ValueError):
     def __init__(self, message, existing):
         self.existing = dict(existing)
@@ -374,7 +382,7 @@ class SharedCatalog:
         product_availability_sql = ""
         if available_for_sale:
             product_availability_sql += (
-                " AND p.stock > 0 AND p.deleted_at IS NULL AND "
+                " AND " + ASSEMBLABLE_STOCK_SQL + " AND p.deleted_at IS NULL AND "
                 + unlocked_product_sql("p")
             )
         available_having_sql = (
@@ -1373,7 +1381,7 @@ class SharedCatalog:
         product_availability_sql = ""
         if available_for_sale:
             product_availability_sql += (
-                " AND p.stock > 0 AND p.deleted_at IS NULL AND "
+                " AND " + ASSEMBLABLE_STOCK_SQL + " AND p.deleted_at IS NULL AND "
                 + unlocked_product_sql("p")
             )
         brand_category_mapping_sql = (
@@ -1587,6 +1595,7 @@ class SharedCatalog:
         in_stock=False,
         include_inventory_locked=False,
         product_kind="",
+        include_assemblable=False,
     ):
         where = []
         parameters = []
@@ -1608,7 +1617,10 @@ class SharedCatalog:
                 where.append("p.category_id = ?")
                 parameters.append(int(category_id))
         if in_stock:
-            where.append("p.stock > 0")
+            if include_assemblable:
+                where.append(ASSEMBLABLE_STOCK_SQL)
+            else:
+                where.append("p.stock > 0")
         if product_kind:
             where.append(product_kind_sql("c", product_kind))
         query = catalog_search_key(query)
@@ -1632,6 +1644,7 @@ class SharedCatalog:
         in_stock=False,
         include_inventory_locked=False,
         product_kind="",
+        include_assemblable=False,
     ):
         self.database.initialize()
         where_sql, parameters = self._product_filter_sql(
@@ -1642,6 +1655,7 @@ class SharedCatalog:
             in_stock=in_stock,
             include_inventory_locked=include_inventory_locked,
             product_kind=product_kind,
+            include_assemblable=include_assemblable,
         )
         with self.database.connect() as connection:
             if catalog_search_key(query):
@@ -1665,6 +1679,7 @@ class SharedCatalog:
         in_stock=False,
         include_inventory_locked=False,
         product_kind="",
+        include_assemblable=False,
     ):
         self.database.initialize()
         where_sql, parameters = self._product_filter_sql(
@@ -1675,6 +1690,7 @@ class SharedCatalog:
             in_stock=in_stock,
             include_inventory_locked=include_inventory_locked,
             product_kind=product_kind,
+            include_assemblable=include_assemblable,
         )
         parameters.append(max(1, min(int(limit), 200)))
         with self.database.connect() as connection:
@@ -1706,7 +1722,12 @@ class SharedCatalog:
                 + " ORDER BY p.excel_name_raw COLLATE NOCASE, p.id LIMIT ?",
                 parameters,
             ).fetchall()
-        return [self._product(row) for row in rows]
+        items = [self._product(row) for row in rows]
+        if include_assemblable:
+            from app.services.product_bundles import ProductBundles
+            bundles = ProductBundles(self.database).get_many([item["id"] for item in items])
+            items = [{**item, **bundles.get(int(item["id"]), {})} for item in items]
+        return items
 
     def legacy_links(self, entity_type, entity_ids):
         if entity_type not in {"sale", "receipt"}:

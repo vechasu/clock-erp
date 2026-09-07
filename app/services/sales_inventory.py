@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from app.catalog_db import CatalogDatabase
+from app.services.product_bundles import BundleError, compositions, physical_lines
 from app.services.audit_journal import AuditJournal
 from app.services.brand_values import is_numeric_brand, normalize_brand
 from app.services.excel_product_catalog import (
@@ -452,6 +453,8 @@ class SalesInventory:
             product_ids.update([base_id, installed_id])
             if removed_id is not None:
                 product_ids.add(removed_id)
+            if compositions(connection, product_ids):
+                raise SalesInventoryError("Сборный SKU проводится обычной продажей; замена ремешка для него недоступна.")
             products = {
                 product_id: self._product_snapshot(connection, product_id)
                 for product_id in product_ids
@@ -673,6 +676,48 @@ class SalesInventory:
 
         return self.get_sale(sale_id)
 
+    def _write_sale_stock(self, connection, product_id, quantity, sale_id,
+                          item_id, key, source, user_name, timestamp, sale_number=None):
+        try:
+            lines = physical_lines(connection, product_id, quantity)
+        except BundleError as error:
+            raise SalesInventoryError(str(error))
+        is_bundle = product_id in compositions(connection, [product_id])
+        assert_products_unlocked(connection, [line[0] for line in lines], SalesInventoryError)
+        for index, (physical_id, required) in enumerate(lines):
+            product = connection.execute(
+                "SELECT stock,excel_name_raw,excel_article FROM catalog_excel_products "
+                "WHERE id=? AND active=1", (physical_id,),
+            ).fetchone()
+            if product is None:
+                raise SalesInventoryError("Компонент или товар не найден.")
+            cursor = connection.execute(
+                "UPDATE catalog_excel_products SET stock=stock-?,stock_source='sale',"
+                "updated_at=? WHERE id=? AND active=1 AND stock>=?",
+                (required, timestamp, physical_id, required),
+            )
+            if cursor.rowcount != 1:
+                raise InsufficientStockError(product["stock"])
+            if is_bundle:
+                connection.execute(
+                    "INSERT INTO erp_sale_component_snapshots "
+                    "(sale_item_id,component_id,quantity_per_unit,name,article) VALUES (?,?,?,?,?)",
+                    (item_id, physical_id, required // quantity,
+                     product["excel_name_raw"], product["excel_article"]),
+                )
+            movement_key = "{}:component:{}".format(key, index) if key and is_bundle else key
+            connection.execute(
+                "INSERT INTO catalog_stock_movements "
+                "(id,product_id,movement_type,quantity_delta,stock_before,stock_after,"
+                "sale_id,sale_item_id,idempotency_key,source,user_name,comment,created_at) "
+                "VALUES (?,?,'sale',?,?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), physical_id, -required, product["stock"],
+                 float(product["stock"]) - required, sale_id, item_id, movement_key,
+                 source, user_name or None,
+                 ("Продажа №{}".format(sale_number or sale_id) +
+                  ("; SKU {}".format(product_id) if is_bundle else "")), timestamp),
+            )
+
     def create_sale(
         self,
         payload,
@@ -762,22 +807,6 @@ class SalesInventory:
                 connection, [product_id], SalesInventoryError
             )
 
-            available = float(product["stock"] or 0)
-            cursor = connection.execute(
-                "UPDATE catalog_excel_products "
-                "SET stock = stock - ?, stock_source = 'sale', updated_at = ? "
-                "WHERE id = ? AND active = 1 AND stock >= ?",
-                (quantity, inserted_at, product_id, quantity),
-            )
-            if cursor.rowcount != 1:
-                latest = connection.execute(
-                    "SELECT stock FROM catalog_excel_products WHERE id = ?",
-                    (product_id,),
-                ).fetchone()
-                raise InsufficientStockError(
-                    latest["stock"] if latest else available
-                )
-
             connection.execute(
                 "INSERT INTO erp_sales ("
                 "id, source, external_order_id, idempotency_key, status, "
@@ -823,29 +852,9 @@ class SalesInventory:
             item_id = connection.execute(
                 "SELECT last_insert_rowid()"
             ).fetchone()[0]
-            stock_after = available - quantity
-            connection.execute(
-                "INSERT INTO catalog_stock_movements ("
-                "id, product_id, movement_type, quantity_delta, stock_after, "
-                "sale_id, sale_item_id, idempotency_key, source, user_name, "
-                "comment, created_at"
-                ") VALUES (?, ?, 'sale', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    str(uuid.uuid4()),
-                    product_id,
-                    -quantity,
-                    stock_after,
-                    sale_id,
-                    item_id,
-                    idempotency_key,
-                    source,
-                    str(user_name or "") or None,
-                    "Продажа №{}".format(
-                        stored_payload.get("order_number") or sale_id
-                    ),
-                    inserted_at,
-                ),
-            )
+            self._write_sale_stock(connection, product_id, quantity, sale_id,
+                                   item_id, idempotency_key, source, user_name, inserted_at,
+                                   stored_payload.get("order_number"))
             if failure_hook:
                 failure_hook(connection)
             AuditJournal(self.database).record(
@@ -980,24 +989,6 @@ class SalesInventory:
                 connection, required_by_product, SalesInventoryError
             )
 
-            for product_id, required in required_by_product.items():
-                product = products[product_id]
-                available = float(product["stock"] or 0)
-                cursor = connection.execute(
-                    "UPDATE catalog_excel_products SET stock = stock - ?, "
-                    "stock_source = 'sale', updated_at = ? WHERE id = ? "
-                    "AND active = 1 AND stock >= ?",
-                    (required, inserted_at, product_id, required),
-                )
-                if cursor.rowcount != 1:
-                    latest = connection.execute(
-                        "SELECT stock FROM catalog_excel_products WHERE id = ?",
-                        (product_id,),
-                    ).fetchone()
-                    raise InsufficientStockError(
-                        latest["stock"] if latest else available
-                    )
-
             connection.execute(
                 "INSERT INTO erp_sales ("
                 "id, source, external_order_id, idempotency_key, status, "
@@ -1015,10 +1006,6 @@ class SalesInventory:
                 ),
             )
 
-            remaining_stock = {
-                product_id: float(row["stock"] or 0)
-                for product_id, row in products.items()
-            }
             item_snapshots = []
             for item in prepared:
                 product = products[item["product_id"]]
@@ -1046,35 +1033,14 @@ class SalesInventory:
                 item_id = connection.execute(
                     "SELECT last_insert_rowid()"
                 ).fetchone()[0]
-                stock_after = (
-                    remaining_stock[item["product_id"]] - item["quantity"]
-                )
-                remaining_stock[item["product_id"]] = stock_after
                 movement_key = (
                     "{}:item:{}".format(idempotency_key, item["line_index"])
-                    if idempotency_key
-                    else None
+                    if idempotency_key else None
                 )
-                connection.execute(
-                    "INSERT INTO catalog_stock_movements ("
-                    "id, product_id, movement_type, quantity_delta, stock_after, "
-                    "sale_id, sale_item_id, idempotency_key, source, user_name, "
-                    "comment, created_at) VALUES (?, ?, 'sale', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        str(uuid.uuid4()),
-                        item["product_id"],
-                        -item["quantity"],
-                        stock_after,
-                        sale_id,
-                        item_id,
-                        movement_key,
-                        source,
-                        str(user_name or "") or None,
-                        "Продажа №{}".format(
-                            stored_payload.get("order_number") or sale_id
-                        ),
-                        inserted_at,
-                    ),
+                self._write_sale_stock(
+                    connection, item["product_id"], item["quantity"], sale_id,
+                    item_id, movement_key, source, user_name, inserted_at,
+                    stored_payload.get("order_number"),
                 )
                 item_snapshots.append({
                     **item,
@@ -1195,6 +1161,18 @@ class SalesInventory:
                 raise ReturnConflictError("Продажа удалена.")
             if sale["cancelled_at"]:
                 raise ReturnConflictError("Отменённую продажу нельзя вернуть.")
+
+            snapshots = connection.execute(
+                "SELECT * FROM erp_sale_component_snapshots WHERE sale_item_id=?",
+                (item["id"],),
+            ).fetchall()
+            if snapshots:
+                self._return_bundle(connection, sale, item, snapshots, quantity,
+                                    reason, user_name, idempotency_key,
+                                    movement_type, returned_at)
+                if failure_hook:
+                    failure_hook(connection)
+                return self._sale_from_connection(connection, sale_id)
 
             assert_products_unlocked(
                 connection, [item["product_id"]], ReturnConflictError
@@ -1376,6 +1354,54 @@ class SalesInventory:
             )
 
         return self.get_sale(sale_id)
+
+    def _return_bundle(self, connection, sale, item, snapshots, quantity,
+                       reason, user_name, key, movement_type, timestamp):
+        quantity = positive_integer(quantity, "Количество возврата")
+        remaining = float(item["quantity"]) - float(item["returned_quantity"] or 0)
+        if quantity > remaining or remaining <= 0:
+            raise ReturnConflictError("Превышено доступное количество возврата.")
+        assert_products_unlocked(connection, [part["component_id"] for part in snapshots], ReturnConflictError)
+        for index, part in enumerate(snapshots):
+            physical_id = part["component_id"]
+            required = quantity * part["quantity_per_unit"]
+            net = connection.execute(
+                "SELECT SUM(quantity_delta) FROM catalog_stock_movements "
+                "WHERE sale_item_id=? AND product_id=?",
+                (item["id"], physical_id),
+            ).fetchone()[0]
+            if net is None or -float(net) < required:
+                raise ReturnConflictError("Не удалось доказать исходное списание компонентов.")
+            product = connection.execute(
+                "SELECT stock FROM catalog_excel_products WHERE id=?", (physical_id,),
+            ).fetchone()
+            if product is None:
+                raise ReturnConflictError("Исторический компонент не найден.")
+            stock_after = float(product["stock"]) + required
+            connection.execute(
+                "UPDATE catalog_excel_products SET stock=?,stock_source='return',updated_at=? WHERE id=?",
+                (stock_after, timestamp, physical_id),
+            )
+            connection.execute(
+                "INSERT INTO catalog_stock_movements "
+                "(id,product_id,movement_type,quantity_delta,stock_before,stock_after,"
+                "sale_id,sale_item_id,idempotency_key,source,user_name,comment,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), physical_id, movement_type, required, product["stock"],
+                 stock_after, sale["id"], item["id"],
+                 key if index == 0 else None, sale["source"], user_name or None,
+                 "Возврат SKU {} по продаже {}: {}".format(item["product_id"], sale["id"], reason), timestamp),
+            )
+        returned = float(item["returned_quantity"] or 0) + quantity
+        status = "returned" if returned == float(item["quantity"]) else "partially_returned"
+        connection.execute(
+            "UPDATE erp_sale_items SET returned_quantity=?,status=?,returned_at=?,return_reason=? WHERE id=?",
+            (returned, status, timestamp, reason, item["id"]),
+        )
+        connection.execute(
+            "UPDATE erp_sales SET status=?,returned_at=?,return_reason=?,updated_at=? WHERE id=?",
+            (status, timestamp, reason, timestamp, sale["id"]),
+        )
 
     def update_sale(
         self,
@@ -1664,6 +1690,12 @@ class SalesInventory:
             item_by_product = {
                 int(item["product_id"]): item for item in items
             }
+            component_item_ids = {}
+            for snapshot in connection.execute(
+                "SELECT s.component_id,s.sale_item_id FROM erp_sale_component_snapshots s "
+                "JOIN erp_sale_items i ON i.id=s.sale_item_id WHERE i.sale_id=?", (sale_id,),
+            ):
+                component_item_ids.setdefault(int(snapshot["component_id"]), set()).add(snapshot["sale_item_id"])
             for index, reversal in enumerate(plan["reversals"]):
                 product_id = reversal["product_id"]
                 quantity_delta = reversal["quantity"]
@@ -1702,6 +1734,11 @@ class SalesInventory:
                     (stock_after, cancelled_at, product_id),
                 )
                 item = item_by_product.get(product_id) or items[0]
+                component_items = component_item_ids.get(product_id)
+                reversal_item_id = item["id"]
+                if component_items:
+                    reversal_item_id = next(iter(component_items)) if len(component_items) == 1 and product_id not in item_by_product else None
+
                 movement_key = "{}:{}".format(base_key, index)
                 connection.execute(
                     "INSERT INTO catalog_stock_movements ("
@@ -1711,7 +1748,7 @@ class SalesInventory:
                     ") VALUES (?, ?, 'cancellation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         str(uuid.uuid4()), product_id, quantity_delta, stock_before,
-                        stock_after, sale_id, item["id"], movement_key,
+                        stock_after, sale_id, reversal_item_id, movement_key,
                         sale["source"], user_name or None,
                         "Отмена продажи №{}: {}{}".format(
                             self._sale_number(sale),
