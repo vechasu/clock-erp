@@ -178,14 +178,14 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
         self.assertEqual(normalize_exact_order_number_query("№ 0020078"), "0020078")
         self.assertIsNone(normalize_exact_order_number_query("ORDER-20078"))
 
-    def test_exact_number_ignores_page_status_source_and_period(self):
+    def test_exact_number_ignores_page_status_period_but_respects_source(self):
         target = dict(self.orders[123])
         target.update(number="20078", status="D", created_at="2020-01-01 10:00:00")
         self.store.replace(self.orders[:123] + [target] + self.orders[124:], 1001)
 
         state = self.query(
             q=" № 20078 ", page=9, page_size=20, status="N",
-            source="wildberries", period="today",
+            source="tictactoy", period="today",
         )
 
         self.assertEqual(state["exact_number"], "20078")
@@ -201,7 +201,7 @@ class OrdersSnapshotStoreTest(unittest.TestCase):
             "created_at": "2026-08-20", "status": "new", "source": "wildberries",
         }])
 
-        state = self.query(q="#20078", status="D", source="tictactoy")
+        state = self.query(q="#20078", status="D", source="all")
 
         self.assertEqual(state["total"], 2)
         self.assertEqual(
@@ -358,8 +358,8 @@ class OrdersListIntegrationTest(unittest.TestCase):
         html = response.get_data(as_text=True)
         for expected in (
             'class="orders-command-bar"', 'id="orderSearch"',
-            'data-status-filter="all"', 'data-status-filter="N"',
-            'data-status-filter="A"', 'data-status-filter="D"',
+            'data-status-filter="all"', 'data-source-filter="all"',
+            'data-source-filter="tictactoy"', 'data-source-filter="wildberries"',
             "Обновить WB", "Список", "Разделение", "Карточка",
         ):
             self.assertIn(expected, html)
@@ -459,14 +459,14 @@ class OrdersListIntegrationTest(unittest.TestCase):
             mock.patch.dict(web.ORDERS_CACHE, {"items": self.orders, "loaded_at": 1000, "error": ""}, clear=True),
         ):
             response = self.client.get(
-                "/api/orders?q=%E2%84%96%2020078&status=N&period=today&source=wildberries"
+                "/api/orders?q=%E2%84%96%2020078&status=N&period=today&source=tictactoy"
             )
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["exact_search"]["status"], "external_found")
         self.assertIn("Заказ ещё не загружен в ERP", payload["html"])
-        self.assertIn("по всем статусам, источникам и периодам", payload["html"])
+        self.assertIn("по всем статусам и периодам в выбранном источнике", payload["html"])
         self.assertNotIn("Загрузить в ERP", payload["html"])
 
     def test_search_ui_preserves_list_state_and_cancels_stale_requests(self):
@@ -477,7 +477,6 @@ class OrdersListIntegrationTest(unittest.TestCase):
             "let listReturnUrl=",
             "loadOrdersResults(listReturnUrl,{push:true})",
             "displayUrl.searchParams.set('q',normalizedNumber)",
-            "displayUrl.searchParams.delete('q')",
             "Ищем заказ №${normalizedNumber} в ERP и подключённых источниках",
         ):
             self.assertIn(expected, template)
@@ -502,7 +501,7 @@ class OrdersListIntegrationTest(unittest.TestCase):
         for expected in (
             row["number"], row["customer"], row["phone"],
             'data-amount="10001"', 'data-date="2026-08-02 13:30:00"',
-            "×2", "×3", "Подтверждён", "Продажа проведена",
+            "2 шт.", "3 шт.", "5 шт.", "Подтверждён", "Продажа проведена",
         ):
             self.assertIn(expected, html)
 
@@ -537,23 +536,22 @@ class OrdersListIntegrationTest(unittest.TestCase):
                 sync_error="",
             )
 
-        list_table = html.split('class="orders-table orders-list-table"', 1)[1].split(
-            'class="orders-table orders-split-table"', 1
+        list_table = html.split('class="orders-table orders-list-table order-work-table"', 1)[1].split(
+            'class="orders-table orders-split-table order-work-table"', 1
         )[0]
         expected_headers = (
-            "Заказ", "Создан", "Статус", "Сумма", "Покупатель", "Товары",
-            "Доставка", "Оплата", "Комментарий сотрудника", "Действия",
+            "Заказ / товар", "Создан", "Количество", "Сумма", "Состояние",
         )
         header_positions = [list_table.index(">{}<".format(label)) for label in expected_headers]
         self.assertEqual(header_positions, sorted(header_positions))
         for expected in (
-            "WB FBS", "BLM Blue AUTOMATIC ×1", "арт. BLM-01", "+ ещё 2",
+            "Wildberries", "BLM Blue AUTOMATIC", "Артикул: BLM-01", "Ещё позиций: 2",
             "Уточнил цвет ремешка", "Максим У.",
-            'data-date="2026-09-01T18:35:00"', "Не оплачен", "Открыть",
+            "2026-09-01T18:35:00", "Открыть",
             'aria-current="true"',
         ):
             self.assertIn(expected, list_table)
-        self.assertNotIn("Bradley Black", list_table)
+        self.assertIn("Bradley Black", list_table)  # Available in progressive disclosure.
 
         css = Path(web.PROJECT_ROOT / "app/static/css/orders.css").read_text(
             encoding="utf-8"

@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-split-scroll-v4') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-progressive-v1') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
@@ -53,7 +53,7 @@
             <div class="orders-command-primary">
                 <div class="orders-title"><h1>Заказы</h1><span class="orders-title-count" data-orders-title-count>{{ orders_total }} заказов</span></div>
                 <div class="erp-search-wrap orders-live-search">
-                    <input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер, покупатель, товар, артикул…" aria-label="Поиск по всем полям заказов" autocomplete="off">
+                    <input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер заказа, покупатель, товар, артикул..." aria-label="Поиск по всем полям заказов" autocomplete="off">
                     <button class="search-clear" type="button" data-search-clear aria-label="Очистить поиск"{% if not request.args.get('q') %} hidden{% endif %}>×</button>
                 </div>
                 <div class="view-switch" id="ordersLayoutSwitch" role="radiogroup" aria-label="Режим отображения заказов">
@@ -61,27 +61,24 @@
                     <button class="view-option" type="button" data-layout-mode="split" role="radio">Разделение</button>
                     <button class="view-option" type="button" data-layout-mode="card" role="radio">Карточка</button>
                 </div>
-                <button class="button button-secondary wb-refresh" type="button" data-wb-sync>Обновить WB</button>
-                <input type="hidden" value="{{ csrf_token() }}" data-wb-sync-csrf>
             </div>
+            <nav class="order-source-tabs" aria-label="Источник заказов">
+                {% for key,label in [('all','Все заказы'),('tictactoy','TicTacToy'),('wildberries','Wildberries')] %}
+                <button type="button" class="status-filter{% if request.args.get('source','all') == key %} active{% endif %}" data-source-filter="{{ key }}" aria-pressed="{{ 'true' if request.args.get('source','all') == key else 'false' }}">{{ label }} <strong>{{ order_source_counts.get(key, 0) }}</strong></button>
+                {% endfor %}
+                <input type="hidden" name="source" value="{{ request.args.get('source','all') }}">
+            </nav>
             <div class="orders-command-secondary">
                 <div class="status-filter-tabs" role="group" aria-label="Фильтр по статусу">
                     {% set active_status = request.args.get('status','all')|upper %}
-                    <button class="status-filter{% if active_status == 'ALL' %} active{% endif %}" type="button" data-status-filter="all" aria-pressed="{{ 'true' if active_status == 'ALL' else 'false' }}">Все <strong data-status-count="total">{{ order_kpis.total }}</strong></button>
-                    <button class="status-filter{% if active_status == 'N' %} active{% endif %}" type="button" data-status-filter="N" aria-pressed="{{ 'true' if active_status == 'N' else 'false' }}">Не подтверждены <strong data-status-count="unconfirmed">{{ order_kpis.unconfirmed }}</strong></button>
-                    <button class="status-filter{% if active_status == 'A' %} active{% endif %}" type="button" data-status-filter="A" aria-pressed="{{ 'true' if active_status == 'A' else 'false' }}">Подтверждены <strong data-status-count="confirmed">{{ order_kpis.confirmed }}</strong></button>
-                    <button class="status-filter{% if active_status == 'D' %} active{% endif %}" type="button" data-status-filter="D" aria-pressed="{{ 'true' if active_status == 'D' else 'false' }}">Собраны <strong data-status-count="assembled">{{ order_kpis.assembled }}</strong></button>
-                    <button class="status-filter{% if active_status == 'C' %} active{% endif %}" type="button" data-status-filter="C" aria-pressed="{{ 'true' if active_status == 'C' else 'false' }}">Отказ <strong data-status-count="refused">{{ order_kpis.refused }}</strong></button>
+                    <button class="status-filter{% if active_status == 'ALL' %} active{% endif %}" type="button" data-status-filter="all" aria-pressed="{{ 'true' if active_status == 'ALL' else 'false' }}">Все состояния</button>
+                    {% for key,count in order_status_counts.items() %}
+                    <button class="status-filter{% if active_status == key %} active{% endif %}" type="button" data-status-filter="{{ key }}" aria-pressed="{{ 'true' if active_status == key else 'false' }}">{% if request.args.get('source','all') == 'all' %}{{ 'WB · ' if key.startswith('WB_') else 'TTT · ' }}{% endif %}{{ order_status_label(key) }} <strong data-order-status-count="{{ key }}">{{ count }}</strong></button>
+                    {% endfor %}
                     <input type="hidden" name="status" value="{{ request.args.get('status','all') }}" data-status-input>
                 </div>
                 <div class="orders-compact-selects">
-                    <select class="field" name="source" aria-label="Источник заказа" data-auto-submit-filter>{% for value,label in [('all','Все источники'),('tictactoy','Сайт'),('wildberries','WB')] %}<option value="{{ value }}"{% if request.args.get('source','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
                     <select class="field" name="period" aria-label="Период" data-auto-submit-filter>{% for value,label in [('all','Всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-                </div>
-                <div class="sync-state {{ sync_class }}" aria-live="polite"{% if sync_error %} title="{{ sync_error }}"{% endif %}>
-                    <span class="sync-dot" aria-hidden="true"></span>
-                    <span>{% if sync_error or selected_sync == 'error' %}WB: ошибка{% elif selected_sync == 'partial' %}WB загружен частично{% elif selected_order %}WB обновлён{% else %}WB готов{% endif %}{% if last_sync_at %} · успешно в <time data-sync-time="{{ last_sync_at }}"></time>{% endif %}</span>
-                    {% if sync_error %}<details class="sync-error-details"><summary aria-label="Показать ошибку синхронизации">Подробнее</summary><span>{{ sync_error }}</span></details>{% endif %}
                 </div>
             </div>
         </form>
@@ -90,9 +87,7 @@
             <div class="notice notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') in ['error', 'danger'] else 'status' }}" data-erp-notification-source>{{ request.args.get('message') }}</div>
         {% endif %}
 
-        {% if request.args.get('source') == 'wildberries' or (selected_order and selected_order.get('source') == 'wildberries') %}
-            {% include "_wb_recovery.html" %}
-        {% endif %}
+        {% include "_wb_recovery.html" %}
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
             <section class="panel orders-list-panel" aria-label="Список заказов">
                 {# Included results provide erp-empty-state, erp-no-results-state and «Сбросить фильтры». #}
@@ -103,7 +98,7 @@
             {% if selected_order %}
                 {% set detail_id = selected_order.get('id') or selected_order.get('ID') %}
                 {% set detail_number = selected_order.get('number') or detail_id %}
-                {% set detail_status_code = (selected_order.get('status') or 'UNKNOWN')|string|upper %}
+                {% set detail_status_code = selected_order.get('ui_status','UNKNOWN') %}
                 {% set detail_status_name = selected_order.get('status_name') or 'Неизвестный статус' %}
                 {% set detail_products = selected_order.get('products') or [] %}
                 {% set detail_total = selected_order.get('order_total') %}
@@ -134,16 +129,14 @@
                         </div>
                         <div class="order-control-panel">
                             {% if is_wb %}
-                            <div class="order-status-control">
-                                <span class="order-control-label">Статус WB</span>
-                                <span class="button button-secondary" aria-label="Только чтение">Только чтение</span>
-                            </div>
+                            <span class="badge order-status-{{ selected_order.ui_status_tone }}">{{ selected_order.ui_status_label }}</span>
                             {% else %}
                             <form class="status-form order-status-control" method="post" action="/order/{{ detail_id }}/status" data-status-autosave>
                                 <label class="order-control-label" for="orderStatusSelect">Статус заказа</label>
                                 <div class="order-status-field">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <select class="field" id="orderStatusSelect" name="status" data-saved-status="{{ detail_status_code }}">
+                                        <option value="UNKNOWN" disabled{% if detail_status_code == 'UNKNOWN' %} selected{% endif %}>Статус не определён</option>
                                         <option value="N"{% if detail_status_code == 'N' %} selected{% endif %}>Не подтверждён</option>
                                         <option value="A"{% if detail_status_code == 'A' %} selected{% endif %}>Подтверждён</option>
                                         <option value="D"{% if detail_status_code == 'D' %} selected{% endif %}>Собран</option>
@@ -154,9 +147,10 @@
                             </form>
                             {% endif %}
                             <div class="order-control-actions">
+                                <a class="button button-secondary" href="{{ url_for('tasks_page', entity_type='order', entity_id=detail_id, title='Заказ №' ~ detail_number) }}">+ Создать задачу</a>
                                 {% if not is_wb %}<button class="button button-secondary" type="button" aria-expanded="false" aria-controls="orderLifecyclePanel" data-open-order-history>История</button>{% endif %}
                                 <div class="order-actions-menu" data-order-actions-menu>
-                                <button class="button button-secondary order-actions-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="orderActionsMenu" data-order-actions-trigger>Действия <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></button>
+                                <button class="button button-secondary order-actions-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="orderActionsMenu" data-order-actions-trigger>⋯ Ещё <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></button>
                                 <div class="order-actions-dropdown" id="orderActionsMenu" role="menu" hidden data-order-actions-dropdown>
                                     <a role="menuitem" href="{{ url_for('tasks_page', entity_type='order', entity_id=detail_id, title='Заказ №' ~ detail_number) }}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Создать задачу</a>
                                     <span class="order-actions-separator" role="separator"></span>
@@ -182,22 +176,22 @@
                         {% endif %}
                     </header>
                     <div class="detail-body">
-                        <section class="entity-tasks" data-entity-tasks data-entity-type="order" data-entity-id="{{ detail_id }}" data-entity-label="Заказ №{{ detail_number }}" data-csrf="{{ csrf_token() }}" aria-label="Задачи заказа">Загружаем задачи…</section>
+                        <section class="entity-tasks" data-entity-tasks data-hide-empty="true" data-entity-type="order" data-entity-id="{{ detail_id }}" data-entity-label="Заказ №{{ detail_number }}" data-csrf="{{ csrf_token() }}" aria-label="Задачи заказа">Загружаем задачи…</section>
                         {% if selected_order.get('status_sync_state') == 'pending' %}<div class="warning">Статус сохранён в ERP и ожидает синхронизации с Bitrix. Повторные попытки выполняются автоматически.</div>{% elif selected_order.get('status_sync_state') == 'unknown' %}<div class="warning">Bitrix передал неизвестный статус. Текущий статус ERP сохранён, событие записано в журнал.</div>{% endif %}
                         {% if selected_order.get('sync_state') == 'partial' %}<div class="warning">Карточка загружена частично. Недоступны: {{ selected_order.get('sync_missing')|join(', ') }}. Небезопасные действия заблокированы.</div>{% elif selected_order.get('sync_state') == 'error' %}<div class="warning">Не удалось загрузить полную карточку. <a href="{{ request.path }}?retry=1">Повторить загрузку</a>.</div>{% endif %}
-                        <div class="order-detail-grid">
+                        <div class="order-detail-grid{% if is_wb %} order-wb-grid{% endif %}">
                         <div class="order-detail-main">
                         {% if is_wb %}
-                        <section class="section order-information">
-                            <div class="section-head"><h3>Wildberries FBS</h3></div>
-                            <div class="customer-grid">
-                                <div class="fact"><span class="fact-label">Номер WB</span><span class="fact-value">{{ selected_order.get('wb_order_id') }}</span></div>
-                                <div class="fact"><span class="fact-label">Статус</span><span class="fact-value">{{ selected_order.get('status_name') or selected_order.get('supplier_status') }}</span></div>
-                                {% if selected_order.get('warehouse_id') is not none %}<div class="fact"><span class="fact-label">Склад</span><span class="fact-value">{{ selected_order.get('warehouse_id') }}</span></div>{% endif %}
-                                {% if selected_order.get('delivery_type') %}<div class="fact"><span class="fact-label">Доставка</span><span class="fact-value">{{ selected_order.get('delivery_type')|upper }}</span></div>{% endif %}
-                            </div>
+                        <details class="section order-information order-technical">
+                            <summary>Техническая информация Wildberries</summary>
+                            <dl class="order-technical-fields">{% for key,value in selected_order.items() if key not in ['products','ui_status','ui_status_label','ui_status_tone'] %}<div><dt>{{ key }}</dt><dd>{{ value|tojson if value is mapping or (value is sequence and value is not string) else value }}</dd></div>{% endfor %}</dl>
+                        </details>
+                        <section class="section order-wb-history"><h3>История</h3>
+                            <p><time class="date-value" data-date="{{ selected_order.get('created_at') }}"></time> · Заказ получен</p>
+                            {% if selected_order.get('recovered_from_wb') %}<p><time class="date-value" data-date="{{ selected_order.get('recovered_at') }}"></time> · Заказ восстановлен из Wildberries</p>{% endif %}
+                            {% if sale_state.sale_completed %}<p>Продажа проведена · <a href="/sales?source=wildberries&sale_id={{ sale_state.sale_id }}">Открыть продажу</a></p>{% endif %}
                         </section>
-                        {% else %}<section class="section order-information">
+                        {% else %}<details class="section order-technical"><summary>Техническая информация TicTacToy</summary><p>Bitrix: {{ selected_order.get('bitrix_status') or selected_order.get('source_status') or selected_order.get('status') }} · ERP: {{ selected_order.get('erp_status') or 'не сохранён' }}</p></details><section class="section order-information">
                             <div class="section-head"><h3>Информация о клиенте</h3></div>
                             <div class="customer-grid">
                                 <div class="fact"><span class="fact-label">Клиент</span><span class="fact-value">{% if selected_customer_id %}<a href="{{ url_for('customer_detail_page', customer_id=selected_customer_id) }}">{{ selected_order.get('customer') or 'Открыть клиента' }}</a>{% else %}{{ selected_order.get('customer') or 'Не указан' }}{% endif %}</span></div>
@@ -224,9 +218,9 @@
                         </section>
                         {% endif %}
 
-                        {% if selected_order.get('recovered_from_wb') %}<p class="notice notice-success">{{ selected_order.get('recovery_notice') }}</p>{% endif %}
+
                         <section class="section order-products">
-                            <div class="section-head"><h3>Товары в заказе · {{ detail_products|length }}</h3></div>
+                            <div class="section-head"><h3>Товары · {{ detail_products|length }} {{ 'позиция' if detail_products|length == 1 else 'позиции' if detail_products|length in [2,3,4] else 'позиций' }}</h3></div>
                             {% if detail_products %}<div class="product-list">
                             {% for product in detail_products %}
                                 {% set pid = product.get('product_id') or product.get('PRODUCT_ID') or product.get('id') or product.get('ID') or '' %}
@@ -241,9 +235,9 @@
                                         {% set photo = (mapped.image_url if mapped else '') or product.get('image_url') %}
                                         {% if photo %}<img class="product-photo" src="{{ photo }}" alt="Фото товара">{% else %}<div class="product-photo" role="img" aria-label="Нет фото">Нет фото</div>{% endif %}
                                         <div class="product-copy">
-                                            <div class="product-name">{{ product.get('name') or product.get('NAME') or 'Товар без названия' }}</div>
+                                            <div class="product-name">{{ (mapped.name if mapped else '') or product.get('name') or product.get('NAME') or 'Товар без названия' }}</div>
                                             <div class="product-note">{% if is_wb %}{{ qty }} шт.{% else %}{{ product.get('brand') or (mapped.brand if mapped else 'Бренд не указан') }} · {{ product.get('category') or (mapped.category if mapped else 'Категория не указана') }} · {{ qty }} шт.{% endif %}</div>
-                                            <div class="product-note">Артикул: {{ product.get('sku') or product.get('SKU') or product.get('article') or product.get('ARTICLE') or (mapped.article if mapped else '') or '—' }}{% if is_wb and product.get('barcode') %} · Barcode: {{ product.get('barcode') }}{% endif %}{% if is_wb and product.get('nm_id') is not none %} · nmId: {{ product.get('nm_id') }}{% endif %}</div>
+                                            <div class="product-note">Артикул: {{ product.get('sku') or product.get('SKU') or product.get('article') or product.get('ARTICLE') or (mapped.article if mapped else '') or '—' }}</div>
                                             <div class="mapping" data-order-mapping{% if mapped and mapping.state == 'mapped' and mapping.mapping_method != 'manual' %} hidden{% endif %}>
                                                 <span class="map-state bad" data-order-mapping-state{% if mapped and mapping.state == 'mapped' %} hidden{% endif %}>{{ mapping.state_label if mapping and mapping.state not in ['unmapped', 'missing_external_id'] else 'Не удалось определить товар ERP' }}</span>
                                                 <div data-order-mapping-summary hidden><div class="mapping-card"><div class="mapping-copy"><strong data-mapping-product-name></strong><span data-mapping-product-meta></span></div></div></div>
@@ -285,6 +279,7 @@
                             {% if not legacy_calc_ok and not selected_order.get('calculation_complete') %}<div class="warning">Bitrix не передал отдельную стоимость доставки. Итог не записан в доставку; проведение продажи заблокировано до получения полного расчёта.</div>{% elif not legacy_calc_ok and not selected_order.get('calculation_consistent') %}<div class="warning">Расчёт не сходится: товары − скидка + доставка ≠ итог. Проведение заблокировано.</div>{% endif %}
                         </section>{% endif %}
                         </div>
+                        {% if is_wb %}<details class="order-comments-disclosure"><summary>Комментарии сотрудников · {{ order_comments|length }} записей</summary>{% endif %}
                         <section class="section order-comments" aria-labelledby="internalCommentsTitle">
                             <div class="section-head order-comments-head"><div><h3 id="internalCommentsTitle">Внутренние комментарии</h3><span>Видны только сотрудникам</span></div><span data-comment-count>{{ order_comments|length }} записей</span></div>
                             <div class="employee-comment-feed" data-comment-feed>
@@ -302,9 +297,10 @@
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <label class="sr-only" for="employeeOrderComment">Внутренний комментарий</label>
                                 <textarea class="field" id="employeeOrderComment" name="text" maxlength="2000" rows="3" required placeholder="Добавить внутренний комментарий…"></textarea>
-                                <div class="employee-comment-compose-actions"><p class="comment-form-error" role="alert" data-comment-error hidden></p><button class="button button-primary" type="submit">Добавить</button></div>
+                                <div class="employee-comment-compose-actions"><p class="comment-form-error" role="alert" data-comment-error hidden></p><button class="button button-secondary" type="submit">Добавить</button></div>
                             </form>
                         </section>
+                        {% if is_wb %}</details>{% endif %}
                         </div>
                     </div>
                 </div>
@@ -427,7 +423,7 @@
     },true);
     workspace.addEventListener('keydown',event=>{
         const row=event.target.closest('.orders-split-table [data-order-href]');
-        if(row&&['Enter',' '].includes(event.key)&&!event.target.closest('a,button,input,select,textarea'))rememberSplitScroll(row.dataset.orderHref);
+        if(row&&['Enter',' '].includes(event.key)&&!event.target.closest('a,button,input,select,textarea,details'))rememberSplitScroll(row.dataset.orderHref);
     },true);
     try{
         const saved=JSON.parse(sessionStorage.getItem(splitScrollKey)||'null');
@@ -437,6 +433,17 @@
         }
     }catch(error){}
 
+    const scrollStateKey=()=>{const url=new URL(window.location.href);url.searchParams.delete('selected_id');return 'vechasu:orders:scroll:'+url.searchParams.toString();};
+    function saveListScroll(){try{const viewport=workspace.querySelector(workspace.dataset.layoutMode==='list'?'.orders-list-table-scroll':'.orders-split-table-scroll');if(viewport)sessionStorage.setItem(scrollStateKey(),String(viewport.scrollTop));}catch(error){}}
+    workspace.addEventListener('scroll',event=>{if(event.target.matches('.orders-table-scroll'))saveListScroll();},true);
+    window.addEventListener('pagehide',saveListScroll);
+    requestAnimationFrame(()=>{try{const top=Number(sessionStorage.getItem(scrollStateKey()))||0;workspace.querySelectorAll('.orders-table-scroll').forEach(node=>node.scrollTop=top);}catch(error){}});
+    document.addEventListener('error',event=>{
+        const photo=event.target;
+        if(!(photo instanceof HTMLImageElement)||!photo.matches('.order-row-photo,.product-photo'))return;
+        const placeholder=document.createElement('span');placeholder.className=photo.className+' order-photo-placeholder';
+        placeholder.setAttribute('role','img');placeholder.setAttribute('aria-label','Нет фото');placeholder.textContent='◇';photo.replaceWith(placeholder);
+    },true);
     function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?new Intl.NumberFormat('ru-RU',{minimumFractionDigits:Number.isInteger(number)?0:2,maximumFractionDigits:2}).format(number):'—';}
     function parseDate(value){if(!value||value==='None')return null;const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?null:date;}
     function formatDate(value){const date=parseDate(value);return date?new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(date):(value&&value!=='None'?String(value):'—');}
@@ -475,7 +482,7 @@
             const target=new URL(requestUrl);target.pathname='/api/orders';
             const displayUrl=new URL(requestUrl);
             const normalizedNumber=exactOrderNumber(target.searchParams.get('q'));
-            if(normalizedNumber!==null)displayUrl.searchParams.set('q',normalizedNumber);else displayUrl.searchParams.delete('q');
+            if(normalizedNumber!==null)displayUrl.searchParams.set('q',normalizedNumber);
             if(selectedOrderId)target.searchParams.set('selected_id',selectedOrderId);else target.searchParams.delete('selected_id');
             if(normalizedNumber!==null){const current=document.querySelector('[data-orders-results]');current.innerHTML=`<div class="orders-search-loading" role="status">Ищем заказ №${normalizedNumber} в ERP и подключённых источниках…</div>`;}
         try{
@@ -498,13 +505,19 @@
     searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());}});
     function clearOrderSearch(){searchInput.value='';searchClear.hidden=true;window.clearTimeout(ordersSearchTimer);applyMode(searchReturnMode,false);loadOrdersResults(listReturnUrl,{push:true});searchInput.focus();}
         searchClear?.addEventListener('click',clearOrderSearch);
-    document.querySelectorAll('[data-status-filter]').forEach(button=>button.addEventListener('click',()=>{statusInput.value=button.dataset.statusFilter;document.querySelectorAll('[data-status-filter]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});loadOrdersResults(ordersFilterUrl());}));
+    document.querySelectorAll('[data-source-filter]').forEach(button=>button.addEventListener('click',()=>{
+        filtersForm.elements.source.value=button.dataset.sourceFilter;
+        statusInput.value='all';
+        const url=ordersFilterUrl();url.pathname='/app/orders';url.searchParams.delete('selected_id');
+        window.location.assign(url.pathname+url.search);
+    }));
+    document.querySelectorAll('[data-status-filter]').forEach(button=>button.addEventListener('click',()=>{statusInput.value=button.dataset.statusFilter;document.querySelectorAll('[data-status-filter]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});loadOrdersResults(ordersFilterUrl(),{push:true});}));
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>loadOrdersResults(ordersFilterUrl())));
     document.querySelector('.orders-list-panel')?.addEventListener('change',event=>{if(!event.target.matches('[data-orders-page-size]'))return;loadOrdersResults(ordersFilterUrl());});
         document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const showAll=event.target.closest('[data-show-all-orders]');if(showAll){event.preventDefault();clearOrderSearch();return;}const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
-    document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea'))return;window.location.assign(row.dataset.orderHref);});
-    document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea')||!['Enter',' '].includes(event.key))return;event.preventDefault();window.location.assign(row.dataset.orderHref);});
-        window.addEventListener('popstate',()=>{const url=new URL(window.location.href);searchInput.value=url.searchParams.get('q')||'';searchClear.hidden=!searchInput.value;loadOrdersResults(url);});
+    document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea,details'))return;window.location.assign(row.dataset.orderHref);});
+    document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea,details')||!['Enter',' '].includes(event.key))return;event.preventDefault();window.location.assign(row.dataset.orderHref);});
+        window.addEventListener('popstate',()=>window.location.reload());
     function setPending(form,label){
         if(form.dataset.submitting==='1')return false;
         const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';
@@ -704,7 +717,11 @@
             close();try{sessionStorage.removeItem(strapStorageKey);}catch(error){}
             const link=document.createElement('a');link.className='button button-primary order-primary-action';
             link.href='/sales?source=wildberries&sale_id='+encodeURIComponent(payload.sale_id);
-            link.textContent='Проведён · '+payload.sale_id;saleAction.replaceWith(link);
+            link.textContent='Открыть продажу';saleAction.replaceWith(link);
+            const postedOrderId='wb:'+new URL(saleForm.action).pathname.split('/')[3];
+            document.querySelectorAll('[data-order-id]').forEach(row=>{if(row.dataset.orderId===postedOrderId){const state=row.querySelector('.sale-state');if(state){state.textContent='Продажа проведена';state.classList.add('is-done');}}});
+            const badge=document.createElement('span');badge.className='sale-completed-badge';badge.textContent='Продажа проведена';document.querySelector('.card-title')?.append(badge);
+            const event=document.createElement('p');event.textContent='Продажа проведена';document.querySelector('.order-wb-history')?.append(event);
             document.querySelector('[data-order-readiness-warning]')?.remove();
             document.getElementById('saleBlockReason')?.remove();
             window.VechasuNotify?.success(payload.message);

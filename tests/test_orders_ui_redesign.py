@@ -109,7 +109,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn(
             'class="order-table-row active is-selected" data-order-id="7"', first
         )
-        self.assertIn('data-order-id="7" data-order-href=', first)
+        self.assertIn('data-list-order-id="7" data-order-href=', first)
         self.assertIn('aria-current="true"', first)
         self.assertIn("Заказ №7007", first)
         self.assertNotIn(
@@ -205,8 +205,8 @@ class OrdersUiRedesignTest(unittest.TestCase):
         )[1].split("</form>", 1)[0]
         self.assertIn('class="field field-search erp-search-input"', filters)
         self.assertIn('class="status-filter-tabs"', filters)
-        self.assertEqual(filters.count("data-auto-submit-filter"), 2)
-        self.assertEqual(filters.count('<select class="field"'), 2)
+        self.assertEqual(filters.count("data-auto-submit-filter"), 1)
+        self.assertEqual(filters.count('<select class="field"'), 1)
         self.assertIn('name="source"', filters)
         self.assertIn('name="status"', filters)
         self.assertIn('name="period"', filters)
@@ -233,7 +233,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertIn("css/erp-components.css", html)
         self.assertIn("css/orders.css", html)
         self.assertIn('class="orders-command-bar"', html)
-        for label in ("Не подтверждены", "Подтверждены", "Собраны"):
+        for label in ("Не подтверждён", "Все состояния", "TicTacToy"):
             self.assertIn(label, html)
         self.assertNotIn('class="orders-kpis erp-workspace-metrics"', html)
         self.assertNotIn("Всего заказов", html)
