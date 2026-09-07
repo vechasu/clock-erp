@@ -1876,6 +1876,16 @@ class ExcelProductCatalog:
             ).fetchone()
             if product is None:
                 raise ValueError("Товар не найден.")
+            composite_reference = connection.execute(
+                "SELECT 1 FROM composite_products cp "
+                "LEFT JOIN composite_product_components cc ON cc.composite_product_id=cp.id "
+                "WHERE cp.active=1 AND (cp.storefront_product_id=? OR cc.component_product_id=?) LIMIT 1",
+                (int(product_id), int(product_id)),
+            ).fetchone()
+            if composite_reference is not None:
+                raise ProductDeleteBlockedError(
+                    "Товар используется в активном правиле сборного товара. Сначала отключите правило."
+                )
             self._validate_products_for_delete([product], force)
             result = self._delete_product_in_transaction(
                 connection, product, force=force, actor_id=actor_id,

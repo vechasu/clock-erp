@@ -14,6 +14,7 @@ from app.services.protected_catalog_brands import (
     protected_product_brand,
     protected_state_digest,
 )
+from app.services.composite_products import CompositeProducts
 
 
 SOURCE_FIELD = "CCatalogProduct.QUANTITY"
@@ -109,6 +110,22 @@ class BitrixStockSync:
                     report["not_synchronized"].append(
                         self._item(product, "erp_card_not_found")
                     )
+                    continue
+                composite = CompositeProducts.resolve_in_connection(
+                    connection, existing["id"], True
+                )
+                if composite is not None:
+                    derived = float(composite["available_quantity"])
+                    report["matched"] += 1
+                    report["unchanged"] += 1
+                    report["items"].append(self._item(
+                        product, "composite_derived_quantity", [existing["id"]],
+                        stock_before=derived, bitrix_stock=quantity,
+                        match_method="composite_components",
+                    ))
+                    report.setdefault("derived_site_quantities", {})[
+                        source_id
+                    ] = derived
                     continue
                 if (
                     existing["brand_id"] in protected_brand_ids

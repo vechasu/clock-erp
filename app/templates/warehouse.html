@@ -5107,7 +5107,7 @@
                                     <td data-column-key="name">
                                         <div class="warehouse-product-name-cell">
                                             <input type="checkbox" data-product-collection-select data-collection-mode-control value="{{ item.id }}" aria-label="Выбрать {{ item.name }}">
-                                            <div class="name warehouse-ellipsis" title="{{ item.name|e }}">{{ item.name }}</div>
+                                            <div class="name warehouse-ellipsis" title="{{ item.name|e }}">{{ item.name }}{% if item.is_composite %} <span class="badge badge-default">СБОРНЫЙ ТОВАР</span>{% endif %}</div>
                                         </div>
                                     </td>
 
