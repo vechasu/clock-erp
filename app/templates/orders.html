@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-list-compact-strap-picker-v3') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-split-scroll-v4') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
@@ -402,6 +402,35 @@
     options.forEach(option=>option.addEventListener('click',()=>applyMode(option.dataset.layoutMode)));
     switcher?.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;event.preventDefault();const current=modes.indexOf(workspace.dataset.layoutMode);const next=Math.max(0,Math.min(2,current+(event.key==='ArrowRight'?1:-1)));applyMode(modes[next]);options[next]?.focus();});
     document.querySelector('[data-show-list]')?.addEventListener('click',()=>applyMode('list'));
+
+    // Row selection navigates to a new document; restore only that navigation.
+    const splitScrollKey='vechasu:orders:split-scroll:v1';
+    const splitViewport=()=>workspace.querySelector('.orders-split-table-scroll');
+    function rememberSplitScroll(href){
+        if(workspace.dataset.layoutMode!=='split')return;
+        const viewport=splitViewport();if(!viewport)return;
+        const target=new URL(href,window.location.href);
+        if(target.origin!==window.location.origin||!/^\/order\/(?:wildberries\/)?[^/]+$/.test(target.pathname))return;
+        try{sessionStorage.setItem(splitScrollKey,JSON.stringify({url:target.pathname+target.search,top:viewport.scrollTop,left:viewport.scrollLeft}));}catch(error){}
+    }
+    workspace.addEventListener('click',event=>{
+        if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+        const row=event.target.closest('.orders-split-table [data-order-href]');
+        if(!row||event.target.closest('button,input,select,textarea'))return;
+        const link=event.target.closest('a');
+        rememberSplitScroll(link?.href||row.dataset.orderHref);
+    },true);
+    workspace.addEventListener('keydown',event=>{
+        const row=event.target.closest('.orders-split-table [data-order-href]');
+        if(row&&['Enter',' '].includes(event.key)&&!event.target.closest('a,button,input,select,textarea'))rememberSplitScroll(row.dataset.orderHref);
+    },true);
+    try{
+        const saved=JSON.parse(sessionStorage.getItem(splitScrollKey)||'null');
+        sessionStorage.removeItem(splitScrollKey);
+        if(saved?.url===window.location.pathname+window.location.search&&initial==='split'){
+            requestAnimationFrame(()=>{const viewport=splitViewport();if(viewport){viewport.scrollTop=Number(saved.top)||0;viewport.scrollLeft=Number(saved.left)||0;}});
+        }
+    }catch(error){}
 
     function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?new Intl.NumberFormat('ru-RU',{minimumFractionDigits:Number.isInteger(number)?0:2,maximumFractionDigits:2}).format(number):'—';}
     function parseDate(value){if(!value||value==='None')return null;const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?null:date;}
