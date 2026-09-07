@@ -42,6 +42,9 @@ test('guided repair persists through refresh and history, free repair and pickup
 }) => {
   await page.goto('/app/repairs?repair_id=ux-0');
   const submit = page.locator('[data-repair-action-form] button[type="submit"]');
+  await expect(submit).toHaveText('Передать мастеру');
+  await page.locator('[data-repair-action-form] summary').click();
+  await page.locator('[name="action"]').selectOption('receive');
   await submit.click();
   await expect(submit).toHaveText('Передать мастеру');
   await page.reload();
@@ -80,13 +83,19 @@ test('create without order and edit preserve the customer and product', async ({
   await page.goto('/app/repairs');
   await page.locator('#repairAdd').click();
   const form = page.locator('#repairEditor');
+  await expect(form.locator('[name="waiting_for"]')).toBeHidden();
+  await expect(form.locator('[name="next_action"]')).toBeHidden();
+  await expect(form.locator('[name="control_date"]')).toBeHidden();
+  await expect(form.locator('[name="external_condition"]')).toBeHidden();
   await form.locator('[name="client_name"]').fill('Новый тестовый клиент');
   await form.locator('[name="contact"]').fill('@repair_test');
   await form.locator('[name="model"]').fill('Тестовые часы');
   await form.locator('[name="problem"]').fill('Не идут');
   await form.locator('[name="location"]').selectOption('at_us');
   await page.locator('#repairDrawerFooter button[type="submit"]').click();
-  await expect(page.locator('.repair-next-step button[type="submit"]')).toHaveText('Принять товар');
+  await expect(page.locator('.repair-next-step button[type="submit"]')).toHaveText(
+    'Передать мастеру',
+  );
   const id = new URL(page.url()).searchParams.get('repair_id');
   expect(id).toBeTruthy();
   await page.locator('.repair-footer-more > summary').click();
@@ -101,4 +110,77 @@ test('create without order and edit preserve the customer and product', async ({
   expect(data.contact).toBe('@repair_test');
   expect(data.product_name).toBe('Тестовые часы');
   expect(data.order_source).toBe('none');
+});
+
+test('default presentation and short create at desktop and narrow widths', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'vechasu:repair-columns-v2',
+      JSON.stringify({ channel: true, control: true, event: true }),
+    ),
+  );
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 768 });
+    await page.goto('/app/repairs');
+    if (width === 1440) {
+      await expect(page.locator('.repair-table th:visible')).toHaveText([
+        'Статус',
+        'Клиент / заказ',
+        'Товар',
+        'Проблема',
+        'Сейчас',
+        'Что делать',
+      ]);
+    }
+    await expect(page.locator('.repair-queue')).toContainText('Нужно действие');
+    await expect(page.locator('.repair-table [data-ux="review"]')).toBeVisible();
+    await page.locator('#repairAdd').click();
+    await expect(page.locator('#repairEditor [name="location"]')).toBeVisible();
+    await expect(page.locator('#repairDrawerFooter button[type="submit"]')).toHaveText(
+      'Создать ремонт',
+    );
+    expect(
+      await page.locator('#repairDrawer').evaluate((el) => el.scrollWidth - el.clientWidth),
+    ).toBeLessThanOrEqual(1);
+    if (width === 1440) {
+      expect(
+        await page.locator('#repairDrawerBody').evaluate((el) => el.scrollHeight - el.clientHeight),
+      ).toBeLessThanOrEqual(1);
+    }
+    await expect(page.locator('.repair-create-extra')).not.toHaveAttribute('open', '');
+    await page.locator('#repairDrawerClose').click();
+  }
+});
+
+test('legacy item at us hands over in one click and retains both history transitions', async ({
+  page,
+  request,
+}) => {
+  const response = await request.post('/api/v1/repairs', {
+    data: {
+      client_name: 'Legacy fixture',
+      contact: '@fixture',
+      product_name: 'Legacy watch',
+      problem: 'Stopped',
+      location: 'at_us',
+      next_action: 'Передать мастеру',
+      waiting_for: 'us',
+      control_date: '2026-10-01',
+    },
+  });
+  expect(response.status()).toBe(201);
+  const id = (await response.json()).data.id;
+  await page.goto(`/app/repairs?repair_id=${id}`);
+  await page.locator('.repair-next-step button[type="submit"]').click();
+  await expect(page.locator('.repair-next-step button[type="submit"]')).toHaveText(
+    'Получить результат диагностики',
+  );
+  await page.reload();
+  await expect(page.locator('.repair-next-step')).toContainText('Ждём мастера');
+  const saved = (await (await request.get(`/api/v1/repairs/${id}`)).json()).data;
+  expect(saved.status).toBe('diagnostics');
+  expect(saved.location).toBe('with_master');
+  expect(saved.history.filter((event: { field: string }) => event.field === 'status')).toHaveLength(
+    2,
+  );
 });

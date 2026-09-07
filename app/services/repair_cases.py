@@ -98,6 +98,7 @@ COMPLETION_RESULT_LABELS = {
 }
 
 REPAIR_ACTION_LABELS = {
+    "receive_and_start_diagnostics": "Передать мастеру",
     "add_incoming_waybill": "Добавить входящую накладную",
     "request_shipment": "Ожидать отправку клиентом",
     "mark_customer_sent": "Отметить отправку клиентом",
@@ -117,6 +118,7 @@ REPAIR_ACTION_LABELS = {
 }
 
 REPAIR_TRANSITIONS = {
+    "receive_and_start_diagnostics": ({"new"}, "diagnostics"),
     "add_incoming_waybill": (
         set(REPAIR_STATUS_LABELS) - {"completed", "cancelled"},
         None,
@@ -320,6 +322,7 @@ def available_repair_actions(case):
         action
         for action, (allowed, _target) in REPAIR_TRANSITIONS.items()
         if status in allowed
+        and (action != "receive_and_start_diagnostics" or case.get("location") == "at_us")
     ]
 
 
@@ -371,6 +374,18 @@ def apply_repair_action(case, action, payload, actor="Система"):
         raise ValueError("Действие недоступно на текущем этапе")
     if repair_workflow(case)["needs_review"]:
         raise ValueError("Сначала уточните статус и местонахождение ремонта")
+    if action == "receive_and_start_diagnostics":
+        if case.get("location") != "at_us":
+            raise ValueError("Передать мастеру можно только товар, который находится у нас")
+        # Apply the existing transitions to a copy; publish only if both succeed.
+        candidate = copy.deepcopy(case)
+        receive_payload = dict(payload)
+        receive_payload["idempotency_key"] = idempotency_key + ":receive" if idempotency_key else ""
+        apply_repair_action(candidate, "receive", receive_payload, actor)
+        apply_repair_action(candidate, "start_diagnostics", payload, actor)
+        case.clear()
+        case.update(candidate)
+        return True
     target = target or status
 
     if payload.get("guided") is True:

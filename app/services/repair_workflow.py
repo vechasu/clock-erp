@@ -23,6 +23,7 @@ STATE_RULES = {
     'cancelled': (set(), 'cancelled', 'Отменён', ''),
 }
 ACTION_LABELS = {
+    'receive_and_start_diagnostics': 'Передать мастеру',
     'request_shipment': 'Согласовать отправку клиента',
     'mark_customer_sent': 'Клиент отправил товар',
     'receive': 'Принять товар', 'start_diagnostics': 'Передать мастеру',
@@ -65,8 +66,8 @@ def repair_workflow(case, today=None):
         _, state, label, action = rule
         hint = HINTS[status]
         if status == 'new' and location == 'at_us':
-            state, label, action = 'attention', 'Нужно принять товар', 'receive'
-            hint = 'Товар у нас. Зафиксируйте приём, чтобы передать его на диагностику.'
+            state, label, action = 'attention', 'Нужно действие', 'receive_and_start_diagnostics'
+            hint = 'Передайте товар мастеру. Кнопка подтвердит приём и передачу на диагностику.'
         if status == 'ready_return' and case.get('return_method') in {'pickup', 'other'}:
             action = 'complete'
     if archived:
