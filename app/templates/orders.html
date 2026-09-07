@@ -596,6 +596,7 @@
     function initializeOrderSaleLocations(){
         const locationData={{ order_location_data|tojson }};
         const countryBox=document.getElementById('orderSaleCountry'); const regionBox=document.getElementById('orderSaleRegion'); const cityBox=document.getElementById('orderSaleCity');
+        if(!countryBox||!regionBox||!cityBox)return;
         const locationValue=(box)=>box?.querySelector('.brand-combobox-hidden')?.value||'';
         const locationOptions=(values)=>(values||[]).map(value=>({value,label:value,searchText:value}));
         function resetLocationBox(box,values,selected,placeholder){window.replaceCatalogComboboxOptions(box,locationOptions(values),placeholder+' не найден');window.setCatalogComboboxDisabled(box,!values.length,'Выберите '+placeholder.toLowerCase());window.setBrandComboboxValue(box,values.includes(selected)?selected:'',values.includes(selected)?selected:'');}

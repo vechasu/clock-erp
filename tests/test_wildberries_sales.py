@@ -262,6 +262,16 @@ class WildberriesSalesTest(unittest.TestCase):
                     path.write_text(script)
                     check = subprocess.run([node, '--check', str(path)], capture_output=True, text=True)
                     self.assertEqual(check.returncode, 0, check.stderr)
+                location_function = re.search(
+                    r"    function initializeOrderSaleLocations\(\)\{.*?\n    \}", html, re.S
+                ).group(0)
+                path = Path(self.temp.name) / 'wb-location.js'
+                path.write_text(
+                    'const document={getElementById:()=>null}; const window={};\n'
+                    + location_function + '\ninitializeOrderSaleLocations();'
+                )
+                check = subprocess.run([node, str(path)], capture_output=True, text=True)
+                self.assertEqual(check.returncode, 0, check.stderr)
             sale = self.service.conduct(self.order)
             posted = client.get('/order/wildberries/123').get_data(as_text=True)
             self.assertIn('Продажа проведена', posted)
