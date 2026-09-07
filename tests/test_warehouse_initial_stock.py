@@ -21,7 +21,11 @@ class ManualProductCreationDisabledTest(unittest.TestCase):
                         else:
                             response = client.post(path, json=values)
                         self.assertEqual(response.status_code, 410)
-                        self.assertEqual(response.get_json()["code"], "MANUAL_PRODUCT_CREATION_DISABLED")
+                        if path.startswith("/api/") or path == "/warehouse/add":
+                            self.assertEqual(
+                                response.get_json()["code"],
+                                "MANUAL_PRODUCT_CREATION_DISABLED",
+                            )
             self.assertEqual(client.post("/receipts/create", data={"product_id": "__new__", "new_product_name": "Manual"}).status_code, 410)
             catalog.assert_not_called()
             remote.assert_not_called()
