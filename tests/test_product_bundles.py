@@ -1,6 +1,7 @@
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 import test_sales_inventory as sales_tests
+from app.services.component_inventory import ComponentInventory, balance
 from app.services.product_bundles import ProductBundles, BundleError
 from app.services.sales_inventory import InsufficientStockError
 
@@ -9,7 +10,9 @@ class ProductBundlesTest(unittest.TestCase):
     setUp = sales_tests.SalesInventoryTest.setUp
     tearDown = sales_tests.SalesInventoryTest.tearDown
     create_product = sales_tests.SalesInventoryTest.create_product
-    stock = sales_tests.SalesInventoryTest.stock
+    def stock(self, product_id):
+        with self.database.connect() as connection:
+            return balance(connection, product_id)
     payload = staticmethod(sales_tests.SalesInventoryTest.payload)
 
     def setup_bundle(self, head_stock=5, strap_stock=8, head_quantity=1):
@@ -20,6 +23,8 @@ class ProductBundlesTest(unittest.TestCase):
         parts = [{'component_id': head['id'], 'quantity': head_quantity},
                  {'component_id': strap['id'], 'quantity': 1}]
         service.configure(sku['id'], parts)
+        ComponentInventory(self.database).confirm(head['id'], head_stock)
+        ComponentInventory(self.database).confirm(strap['id'], strap_stock)
         return service, sku, head, strap, parts
 
     def test_unconfigured_is_ordinary_and_local(self):
@@ -135,6 +140,8 @@ class ProductBundlesTest(unittest.TestCase):
         parts = [{'component_id': local['id'], 'quantity': 1},
                  {'component_id': strap['id'], 'quantity': 1}]
         service.configure(sku_id, parts)
+        ComponentInventory(self.database).confirm(local['id'], 5)
+        ComponentInventory(self.database).confirm(strap['id'], 8)
         self.inventory.create_sale({'id': 'sync-sale'}, sku_id, 1, 100)
         changed = dict(incoming, name='Commercial Updated', stock=99)
         importer.import_products([changed], mode="full_sync")
@@ -182,8 +189,9 @@ class ProductBundlesTest(unittest.TestCase):
         self.inventory.cancel_sale('sale-1')
         with self.database.connect() as connection:
             self.assertEqual(connection.execute('SELECT stock FROM catalog_excel_products WHERE id=?', (head['id'],)).fetchone()[0], 5)
-        with self.assertRaises(sqlite3.IntegrityError), self.database.transaction() as connection:
+        with self.database.transaction() as connection:
             connection.execute('UPDATE catalog_excel_products SET stock=5 WHERE id=?', (sku['id'],))
+        self.assertEqual(self.stock(sku['id']), 5)
 
     def test_configuration_and_local_component_forms(self):
         import os
@@ -306,11 +314,13 @@ class ProductBundlesTest(unittest.TestCase):
 
     def test_additive_upgrade_of_existing_catalog_keeps_entire_product_row(self):
         import sqlite3
-        from app.schema_migrations import apply_migrations, BUNDLE_MIGRATION_ID
+        from app.schema_migrations import apply_migrations, BUNDLE_MIGRATION_ID, COMPONENT_MIGRATION_ID
         product = self.create_product(17)
         with sqlite3.connect(str(self.database.path)) as connection:
             before = connection.execute('SELECT * FROM catalog_excel_products WHERE id=?', (product['id'],)).fetchone()
-            connection.execute('DROP TRIGGER trg_bundle_physical_stock')
+            for table in ('erp_physical_documents','erp_component_inventory_events','erp_bundle_transitions','erp_component_inventory'):
+                connection.execute('DROP TABLE '+table)
+            connection.execute('DELETE FROM erp_migration_ledger WHERE migration_id=?', (COMPONENT_MIGRATION_ID,))
             connection.execute('DROP TRIGGER trg_local_component_bitrix')
             for table in ('erp_sale_component_snapshots','erp_bundle_components','erp_product_bundles','erp_local_components'):
                 connection.execute('DROP TABLE '+table)

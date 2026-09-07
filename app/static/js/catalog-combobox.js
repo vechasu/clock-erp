@@ -1275,6 +1275,7 @@
     }
 
     function sharedCatalogStockValue(item) {
+        if (item.is_physical_component) return item.physical_inventory_initialized ? "Физический остаток ERP: " + item.physical_stock : "Физический остаток не подтверждён";
         if (item.is_bundle) return "Доступно к сборке: " + String(item.available_to_assemble ?? 0);
         const value = item.stock_display ?? item.stock ?? 0;
         const normalized = String(value).trim().replace(/\s+/g, " ");
@@ -1661,7 +1662,7 @@
                 ? items.filter((item) => {
                     if (kind === "product") {
                         return item?.active !== false
-                            && Number(item?.is_bundle ? item.available_to_assemble : item?.stock) > 0;
+                            && Number(item?.is_bundle ? item.available_to_assemble : item?.is_physical_component ? item.physical_stock : item?.stock) > 0;
                     }
                     if (kind === "category") {
                         return Number(item?.count) > 0;
@@ -1688,7 +1689,7 @@
                     || kind !== "product"
                     || (
                         selectedItem.active !== false
-                        && Number(selectedItem.is_bundle ? selectedItem.available_to_assemble : selectedItem.stock) > 0
+                        && Number(selectedItem.is_bundle ? selectedItem.available_to_assemble : selectedItem.is_physical_component ? selectedItem.physical_stock : selectedItem.stock) > 0
                     ))
                 && !availableItems.some(
                     (item) => sharedCatalogIdValue(item.id) === selectedId

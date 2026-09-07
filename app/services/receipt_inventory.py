@@ -1,4 +1,5 @@
 """Atomic local receipt stock ledger with idempotent create/update/cancel."""
+from app.services.component_inventory import overlay, write_balance, remember
 
 import json
 import math
@@ -385,7 +386,7 @@ class ReceiptInventory:
                     {"product_id": product_id}
                     for product_id in set(old_totals) | set(new_totals)
                 ],
-                include_archived=True,
+                include_archived=True, document=("receipt", receipt_id),
             )
             deltas = {
                 product_id: new_totals[product_id] - old_totals[product_id]
@@ -438,11 +439,7 @@ class ReceiptInventory:
                     continue
                 stock_before = float(products[product_id]["stock"] or 0)
                 stock_after = stock_before + delta
-                connection.execute(
-                    "UPDATE catalog_excel_products SET stock = ?, "
-                    "stock_source = 'receipt', updated_at = ? WHERE id = ?",
-                    (stock_after, now, product_id),
-                )
+                write_balance(connection, product_id, stock_after, "receipt", now, ("receipt", receipt_id))
                 connection.execute(
                     "INSERT INTO catalog_stock_movements "
                     "(id, product_id, movement_type, quantity_delta, stock_before, "
@@ -573,6 +570,7 @@ class ReceiptInventory:
                 ReceiptInventoryError,
             )
             for row in rows:
+                row = overlay(connection, row, row["product_id"], ("receipt", receipt_id))
                 if float(row["stock"] or 0) < float(row["quantity"] or 0):
                     raise ReceiptInventoryError(
                         "Приход нельзя отменить: товар ID {} уже частично списан.".format(
@@ -613,6 +611,7 @@ class ReceiptInventory:
             totals = defaultdict(float)
             products = {}
             for row in rows:
+                row = overlay(connection, row, row["product_id"], ("receipt", receipt_id))
                 totals[int(row["product_id"])] += float(row["quantity"])
                 products[int(row["product_id"])] = row
             for product_id, quantity in totals.items():
@@ -628,11 +627,7 @@ class ReceiptInventory:
             for index, (product_id, quantity) in enumerate(sorted(totals.items())):
                 stock_before = float(products[product_id]["stock"] or 0)
                 stock_after = stock_before - quantity
-                connection.execute(
-                    "UPDATE catalog_excel_products SET stock = ?, "
-                    "stock_source = 'receipt_cancel', updated_at = ? WHERE id = ?",
-                    (stock_after, now, product_id),
-                )
+                write_balance(connection, product_id, stock_after, "receipt_cancel", now, ("receipt", receipt_id))
                 connection.execute(
                     "INSERT INTO catalog_stock_movements "
                     "(id, product_id, movement_type, quantity_delta, stock_before, "
@@ -873,12 +868,9 @@ class ReceiptInventory:
             stock_before = float(product["stock"] or 0)
             quantity = float(item["quantity"])
             stock_after = stock_before + quantity
-            connection.execute(
-                "UPDATE catalog_excel_products SET stock = ?, "
-                "stock_source = 'receipt', updated_at = ? "
-                "WHERE id = ? AND active = 1",
-                (stock_after, now, product_id),
-            )
+            remember(connection, product_id, ("receipt", receipt_id))
+            write_balance(connection, product_id, stock_after, "receipt", now, ("receipt", receipt_id))
+            products[product_id]["stock"] = stock_after
             connection.execute(
                 "INSERT INTO catalog_stock_movements "
                 "(id, product_id, movement_type, quantity_delta, stock_before, "
@@ -956,7 +948,7 @@ class ReceiptInventory:
         return prepared
 
     @staticmethod
-    def _load_products(connection, positions, include_archived=False):
+    def _load_products(connection, positions, include_archived=False, document=None):
         product_ids = sorted({
             int(position["product_id"])
             for position in positions
@@ -971,7 +963,10 @@ class ReceiptInventory:
             ),
             product_ids,
         ).fetchall()
-        products = {int(row["id"]): row for row in rows}
+        try:
+            products = {int(row["id"]): overlay(connection, row, document=document) for row in rows}
+        except ValueError as error:
+            raise ReceiptInventoryError(str(error))
         missing = [product_id for product_id in product_ids if product_id not in products]
         if missing:
             raise ReceiptInventoryError(

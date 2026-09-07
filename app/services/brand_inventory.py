@@ -1,4 +1,5 @@
 """Transactional brand inventory documents built on the canonical stock ledger."""
+from app.services.component_inventory import write_balance, physical, overlay, remember, PHYSICAL_STOCK_SQL
 
 import re
 import uuid
@@ -154,7 +155,11 @@ class BrandInventory:
 
     @staticmethod
     def _snapshot_products(connection, scope):
-        where = ["p.active = 1", "p.brand_id = ?", "p.stock > 0"]
+        where = [
+            "p.active = 1", "p.brand_id = ?",
+            "(" + PHYSICAL_STOCK_SQL + " > 0 OR EXISTS(SELECT 1 FROM erp_component_inventory ci WHERE ci.product_id=p.id))",
+            "NOT EXISTS(SELECT 1 FROM erp_product_bundles b WHERE b.product_id=p.id)",
+        ]
         parameters = [int(scope["brand"]["id"])]
         if scope["category"]:
             category_sql, category_parameters = BrandInventory._category_predicate(
@@ -166,7 +171,7 @@ class BrandInventory:
             where.append("p.model_id = ?")
             parameters.append(int(scope["model"]["id"]))
         return connection.execute(
-            "SELECT p.id, CAST(p.stock AS INTEGER) AS stock, p.stock AS raw_stock, "
+            'SELECT p.id, CAST(' + PHYSICAL_STOCK_SQL + ' AS INTEGER) AS stock, ' + PHYSICAL_STOCK_SQL + ' AS raw_stock, '
             "p.excel_name_raw, "
             "p.excel_article, p.brand_id, p.category_id, p.model_id, "
             "p.excel_brand, p.excel_category, p.model, p.bitrix_thumbnail_url, "
@@ -302,6 +307,7 @@ class BrandInventory:
                  user_name or None, now, len(products), now),
             )
             for product in products:
+                remember(connection, product["id"], ("inventory", session_id))
                 connection.execute(
                     "INSERT INTO erp_inventory_items (id, session_id, product_id, "
                     "snapshot_stock, status, appearance, snapshot_at, snapshot_movement_rowid, "
@@ -581,9 +587,11 @@ class BrandInventory:
             limit = max(1, min(int(limit or 250), 500))
             offset = max(0, int(offset or 0))
             rows = connection.execute(
-                "SELECT i.*, COALESCE(i.snapshot_name, p.excel_name_raw) AS name, "
+                "SELECT i.*, EXISTS(SELECT 1 FROM erp_component_inventory ci WHERE ci.product_id=p.id) AS is_physical_component, "
+                "EXISTS(SELECT 1 FROM erp_component_inventory ci WHERE ci.product_id=p.id AND ci.initialized_at IS NOT NULL) AS physical_inventory_initialized, "
+                "COALESCE(i.snapshot_name, p.excel_name_raw) AS name, "
                 "COALESCE(i.snapshot_article, p.excel_article) AS article, "
-                "p.stock AS current_stock, "
+                '' + PHYSICAL_STOCK_SQL + ' AS current_stock, '
                 "COALESCE(i.snapshot_photo_url, p.bitrix_thumbnail_url) AS photo_url, "
                 "COALESCE(i.snapshot_category_id, p.category_id) AS category_id, "
                 "COALESCE(i.snapshot_category_name, p.excel_category, c.name) AS category_name, "
@@ -677,7 +685,7 @@ class BrandInventory:
             term = "%{}%".format(query)
             rows = connection.execute(
                 "SELECT p.id, p.excel_name_raw AS name, p.excel_article AS article, "
-                "p.stock, p.active, p.brand_id, b.name AS brand_name "
+                '' + PHYSICAL_STOCK_SQL + ' AS stock, p.active, p.brand_id, b.name AS brand_name '
                 "FROM catalog_excel_products p LEFT JOIN erp_brands b ON b.id = p.brand_id "
                 "WHERE (p.excel_name_raw LIKE ? OR COALESCE(p.excel_article, '') LIKE ? "
                 "OR p.normalized_name LIKE ?) ORDER BY (p.brand_id = ?) DESC, p.active DESC, "
@@ -704,8 +712,12 @@ class BrandInventory:
             product = connection.execute(
                 "SELECT * FROM catalog_excel_products WHERE id = ?", (int(product_id),)
             ).fetchone()
+            if product is not None:
+                product = overlay(connection, product, require_initialized=False)
             if product is None:
                 raise InventoryError("Товар не найден.")
+            if connection.execute("SELECT 1 FROM erp_product_bundles WHERE product_id=?", (product["id"],)).fetchone():
+                raise InventoryError("Пересчитывайте физические компоненты, а не сборный SKU.")
             if int(product["brand_id"] or 0) != int(session["brand_id"]):
                 raise InventoryError("Товар относится к другому бренду.")
             existing = connection.execute(
@@ -878,7 +890,7 @@ class BrandInventory:
             if session["status"] != "active":
                 raise InventoryConflict("Инвентаризация уже завершена или отменена.")
             pending = connection.execute(
-                "SELECT i.*, p.stock, "
+                'SELECT i.*, ' + PHYSICAL_STOCK_SQL + ' AS stock, '
                 "p.id AS inventory_product_id, "
                 "COALESCE((SELECT MAX(m.rowid) FROM catalog_stock_movements m "
                 "WHERE m.product_id = p.id), 0) AS current_movement_rowid "
@@ -968,15 +980,17 @@ class BrandInventory:
                             key, status, failure_hook=None, refresh_totals=True):
         current = int(product["stock"])
         delta = actual - current
+        remember(connection, product["id"], ("inventory", item["session_id"]))
+        if physical(connection, product["id"]):
+            timestamp = utc_now()
+            old = connection.execute("SELECT physical_stock FROM erp_component_inventory WHERE product_id=?", (product["id"],)).fetchone()[0]
+            connection.execute("INSERT INTO erp_component_inventory_events(product_id,stock_before,stock_after,actor,reason,created_at) VALUES (?,?,?,?,?,?)", (product["id"],old,actual,user_name,"Инвентаризация " + str(item["session_id"]),timestamp))
+            connection.execute("UPDATE erp_component_inventory SET physical_stock=COALESCE(physical_stock,0),initialized_at=COALESCE(initialized_at,?),updated_at=? WHERE product_id=?", (timestamp,timestamp,product["id"]))
         movement_id = None
         now = utc_now()
         if delta:
             movement_id = str(uuid.uuid4())
-            cursor = connection.execute(
-                "UPDATE catalog_excel_products SET stock = ?, stock_source = 'inventory', "
-                "updated_at = ? WHERE id = ? AND stock = ?",
-                (actual, now, product["id"], product["stock"]),
-            )
+            cursor = write_balance(connection, product["id"], actual, "inventory", now)
             if cursor.rowcount != 1:
                 raise InventoryConflict("Остаток изменился во время проведения — перепроверьте")
             connection.execute(
@@ -1032,7 +1046,7 @@ class BrandInventory:
         ).fetchone()
         if product is None:
             raise InventoryError("Товар не найден.")
-        return item, product
+        return item, overlay(connection, product, require_initialized=False)
 
     def _detail(self, connection, session_id):
         row = self._session(connection, session_id)

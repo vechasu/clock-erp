@@ -10357,7 +10357,7 @@ def manual_sale_add():
 
     from app.services.product_bundles import ProductBundles
     bundle = ProductBundles().get(catalog_product["id"])
-    sale_available = bundle["available_to_assemble"] if bundle["is_bundle"] else catalog_product["stock"]
+    sale_available = bundle["available_to_assemble"] if bundle["is_bundle"] else (bundle.get("physical_stock") or 0) if bundle.get("is_physical_component") else catalog_product["stock"]
     if quantity > sale_available:
         return redirect_to_sales(
             "Недостаточно товара. Сейчас доступно: {} шт.".format(
@@ -19576,8 +19576,13 @@ def api_products_collection():
         stock_state=(request.args.get("stock_state") or "all").strip(),
         check_state=(request.args.get("check_state") or "all").strip(),
     )
+    items = [serialize_api_product(item) for item in listing.get("items", [])]
+    if request.args.get("include_component_inventory") == "1":
+        from app.services.product_bundles import ProductBundles
+        inventory = ProductBundles(catalog_service.database).get_many([item["id"] for item in items])
+        items = [{**item, **inventory.get(int(item["id"]), {})} for item in items]
     return api_success(
-        [serialize_api_product(item) for item in listing.get("items", [])],
+        items,
         page=listing.get("page", page),
         page_size=listing.get("per_page", page_size),
         total=listing.get("total", 0),
@@ -19791,7 +19796,14 @@ def product_bundle_page(product_id):
     if request.method == "POST":
         require_csrf_when_authenticated()
         try:
-            if request.form.get("action") == "create_component":
+            if request.form.get("action") == "confirm_physical":
+                from app.services.component_inventory import ComponentInventory
+                component_id = int(request.form.get("physical_product_id") or 0)
+                if component_id not in {part["component_id"] for part in service.get(product_id)["components"]}:
+                    raise ValueError("Компонент не входит в сохранённый состав.")
+                ComponentInventory(catalog.database).confirm(component_id, request.form.get("physical_stock"), actor=current_audit_actor().get("actor_name", ""))
+                notice = "Физический остаток подтверждён. Legacy-значение сохранено."
+            elif request.form.get("action") == "create_component":
                 component = catalog.create_product(
                     name=request.form.get("name"), article=request.form.get("article"),
                     brand=request.form.get("brand"), category="Комплектующие",
@@ -22194,7 +22206,7 @@ def normalize_api_sale_payload(payload, existing=None, require_catalog=False):
     if product is not None and not existing.get("inventory_managed"):
         from app.services.product_bundles import ProductBundles
         bundle = ProductBundles().get(product["id"])
-        available = bundle["available_to_assemble"] if bundle["is_bundle"] else float(product["stock"])
+        available = bundle["available_to_assemble"] if bundle["is_bundle"] else (bundle.get("physical_stock") or 0) if bundle.get("is_physical_component") else float(product["stock"])
         if quantity > available:
             raise InsufficientStockError(available)
     source = normalize_manual_sale_source(

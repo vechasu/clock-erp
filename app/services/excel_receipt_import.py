@@ -590,8 +590,10 @@ class ExcelReceiptImportService:
                 state["excel_category"] = category_for_product_name(
                     state["excel_name_raw"], state["bitrix_category"]
                 ) or None
+                from app.services.component_inventory import physical, balance, write_balance, remember
+                physical_component = existing is not None and physical(connection, existing["id"])
                 quantity = float(result["stock"])
-                stock_before = float(existing["stock"]) if existing is not None else 0.0
+                stock_before = balance(connection, existing["id"]) if existing is not None else 0.0
                 state["stock"] = stock_before + quantity
                 state["stock_source"] = "receipt"
                 if existing is None:
@@ -615,6 +617,11 @@ class ExcelReceiptImportService:
                     product_id = existing["id"]
                     claimed_product_ids.add(product_id)
                     created_product = False
+                    if physical_component:
+                        write_balance(connection, product_id, stock_before + quantity, "excel_receipt", now)
+                        remember(connection, product_id, ("excel_receipt", receipt_id))
+                        state["stock"] = existing["stock"]
+                        state["stock_source"] = existing["stock_source"]
                     _restore_columns(connection, product_id, state, PRODUCT_MUTABLE_COLUMNS)
 
                 draft_row = draft_rows[int(result["excel_row"])]

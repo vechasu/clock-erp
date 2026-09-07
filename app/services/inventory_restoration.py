@@ -177,6 +177,9 @@ class InventorySnapshotRestoration:
                             change["product_id"]
                         )
                     )
+                from app.services.component_inventory import physical
+                if physical(connection, change["product_id"]):
+                    raise InventoryRestorationError("Для компонента выполните физическую инвентаризацию; восстановление старого stock запрещено.")
                 source_key = product["source_key"]
                 if product["deleted_at"] is not None:
                     source_key = product["deleted_source_key"] or source_key
