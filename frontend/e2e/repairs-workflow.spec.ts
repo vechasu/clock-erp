@@ -148,6 +148,16 @@ test('default presentation and short create at desktop and narrow widths', async
       ).toBeLessThanOrEqual(1);
     }
     await expect(page.locator('.repair-create-extra')).not.toHaveAttribute('open', '');
+    await page.locator('#repairEditor [name="has_order"][value="yes"]').check();
+    await expect(page.locator('#repairEditor [name="client_name"]')).toBeHidden();
+    await expect(page.locator('#repairEditor [name="contact"]')).toBeHidden();
+    await expect(page.locator('[data-order-search]')).toBeVisible();
+    if (width === 1440) {
+      expect(
+        await page.locator('#repairDrawerBody').evaluate((el) => el.scrollHeight - el.clientHeight),
+      ).toBeLessThanOrEqual(1);
+    }
+
     await page.locator('#repairDrawerClose').click();
   }
 });
@@ -183,4 +193,29 @@ test('legacy item at us hands over in one click and retains both history transit
   expect(saved.history.filter((event: { field: string }) => event.field === 'status')).toHaveLength(
     2,
   );
+});
+
+test('create from our order uses its customer and exact product without duplicate inputs', async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 768 });
+  await page.goto('/app/repairs');
+  await page.locator('#repairAdd').click();
+  await page.locator('#repairEditor [name="has_order"][value="yes"]').check();
+  await page.locator('[data-order-search]').fill('7002');
+  await page.locator('[data-order-results] button').first().click();
+  await expect(page.locator('#repairEditor [name="model"]')).toBeHidden();
+  await expect(page.locator('#repairEditor [name="contact"]')).toBeHidden();
+  await page.locator('#repairEditor [name="problem"]').fill('Отстают');
+  await page.locator('#repairDrawerFooter button[type="submit"]').click();
+  await expect(page.locator('.repair-next-step button[type="submit"]')).toHaveText(
+    'Передать мастеру',
+  );
+  const id = new URL(page.url()).searchParams.get('repair_id');
+  const saved = (await (await request.get(`/api/v1/repairs/${id}`)).json()).data;
+  expect(saved.order_id).toBe('7002');
+  expect(saved.order_item_id).toBeTruthy();
+  expect(saved.product_name).toContain('GA-2100');
+  expect(saved.contact).toContain('444');
 });
