@@ -44,7 +44,7 @@ document.getElementById('search').addEventListener('input',event=>{
  const results=document.getElementById('results'),status=document.getElementById('searchStatus');results.replaceChildren();status.textContent='';
  if(q.length<2)return;
  timer=setTimeout(async()=>{try{
- const response=await fetch('/api/v1/products?q='+encodeURIComponent(q)+'&page_size=20');const payload=await response.json();
+ const response=await fetch('/api/v1/products?q='+encodeURIComponent(q)+'&page_size=20&include_component_inventory=1');const payload=await response.json();
  if(!response.ok)throw new Error('Не удалось найти компоненты');if(current!==sequence)return;
  const items=payload.data||[];status.textContent=items.length?'Выберите компонент':'Не найдено';
  items.forEach(item=>{if(item.is_bundle)return;if(String(item.id)==={{ product.id|string|tojson }})return;

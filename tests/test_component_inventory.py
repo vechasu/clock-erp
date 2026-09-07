@@ -175,11 +175,16 @@ class ComponentInventoryTest(unittest.TestCase):
             self.assertIn('Физический остаток не подтверждён'.encode(),page.data)
             self.assertIn('<details><summary>Не нашли компонент?'.encode(),page.data)
             for query in ('Head','HEAD'):
-                result=client.get('/api/v1/products?q='+query).get_json()['data']
+                result=client.get('/api/v1/products?include_component_inventory=1&q='+query).get_json()['data']
                 self.assertIn(int(h['id']),[int(r['id']) for r in result])
             response=client.post(url,data={'action':'confirm_physical','physical_product_id':h['id'],'physical_stock':'3'})
             self.assertEqual(response.status_code,200)
             self.assertEqual(self.physical(h),3);self.assertEqual(self.stock(h['id']),998)
+            found=client.get('/api/v1/products?include_component_inventory=1&q=HEAD').get_json()['data']
+            component=next(row for row in found if int(row['id'])==int(h['id']))
+            self.assertTrue(component['physical_inventory_initialized'])
+            self.assertEqual(component['physical_stock'],3)
+            self.assertEqual(component['stock'],998)
             self.assertIn('Физический остаток ERP: 3'.encode(),client.get(url).data)
 
     def test_legacy_bundle_sale_preserves_original_inventory_domain(self):

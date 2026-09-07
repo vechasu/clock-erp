@@ -19510,8 +19510,13 @@ def api_products_collection():
         stock_state=(request.args.get("stock_state") or "all").strip(),
         check_state=(request.args.get("check_state") or "all").strip(),
     )
+    items = [serialize_api_product(item) for item in listing.get("items", [])]
+    if request.args.get("include_component_inventory") == "1":
+        from app.services.product_bundles import ProductBundles
+        inventory = ProductBundles(catalog_service.database).get_many([item["id"] for item in items])
+        items = [{**item, **inventory.get(int(item["id"]), {})} for item in items]
     return api_success(
-        [serialize_api_product(item) for item in listing.get("items", [])],
+        items,
         page=listing.get("page", page),
         page_size=listing.get("per_page", page_size),
         total=listing.get("total", 0),
