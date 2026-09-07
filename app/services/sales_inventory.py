@@ -1398,9 +1398,14 @@ class SalesInventory:
             "UPDATE erp_sale_items SET returned_quantity=?,status=?,returned_at=?,return_reason=? WHERE id=?",
             (returned, status, timestamp, reason, item["id"]),
         )
+        has_remaining_items = connection.execute(
+            "SELECT 1 FROM erp_sale_items WHERE sale_id=? AND returned_quantity<quantity LIMIT 1",
+            (sale["id"],),
+        ).fetchone() is not None
+        sale_status = "partially_returned" if has_remaining_items else "returned"
         connection.execute(
             "UPDATE erp_sales SET status=?,returned_at=?,return_reason=?,updated_at=? WHERE id=?",
-            (status, timestamp, reason, timestamp, sale["id"]),
+            (sale_status, timestamp, reason, timestamp, sale["id"]),
         )
 
     def update_sale(

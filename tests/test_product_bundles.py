@@ -247,6 +247,8 @@ class ProductBundlesTest(unittest.TestCase):
         ])
         self.assertEqual(self.stock(head['id']), 2)
         self.assertEqual(self.stock(strap['id']), 6)
+        self.inventory.return_sale('batch', 2)
+        self.assertEqual(self.inventory.get_sale('batch')['status'], 'partially_returned')
         self.inventory.cancel_sale('batch')
         self.assertEqual(self.stock(head['id']), 5)
         self.assertEqual(self.stock(strap['id']), 8)
