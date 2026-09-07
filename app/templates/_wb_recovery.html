@@ -1,0 +1,16 @@
+<details class="panel" data-wb-recovery>
+    <summary>Синхронизация WB · <span data-wb-health>Загрузка диагностики…</span></summary>
+    <p data-wb-diagnostic role="status"></p>
+    <p class="warning" data-wb-missing hidden></p>
+    <button class="button button-secondary" type="button" data-wb-restore hidden>Восстановить</button>
+    <h3>Импортировать поставку WB</h3>
+    <form data-wb-preview-form>
+        <label>WB supply ID <input class="field" name="supply_id" placeholder="WB-GI-275015200" required maxlength="200"></label>
+        <button class="button button-secondary" type="submit">Проверить поставку</button>
+    </form>
+    <p role="status" data-wb-recovery-message></p>
+    <div style="overflow-x:auto"><table hidden data-wb-recovery-table><thead><tr><th>WB order ID</th><th>Артикул</th><th>Barcode</th><th>ERP товар / ID</th><th>Остаток</th><th>Результат</th></tr></thead><tbody></tbody></table></div>
+    <button class="button button-primary" type="button" data-wb-import hidden>Импортировать недостающие заказы</button>
+    <input type="hidden" data-wb-recovery-csrf value="{{ csrf_token() }}">
+</details>
+<script src="{{ url_for('static', filename='js/wb-recovery.js') }}" defer></script>

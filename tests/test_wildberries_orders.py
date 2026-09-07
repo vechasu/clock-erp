@@ -218,7 +218,7 @@ class WildberriesStorageTest(unittest.TestCase):
         self.assertEqual(str(mapped["product"]["id"]), str(product["id"]))
         self.assertEqual(mapped["mapping_method"], "vendor_code")
 
-    def test_normalized_payload_contains_required_identifiers_and_no_sale_permission(self):
+    def test_normalized_payload_contains_required_identifiers_and_erp_sale_permission(self):
         order = normalize_wildberries_order(raw_order(200))
         for key in (
             "wb_order_id", "order_uid", "rid", "nm_id", "chrt_id",
@@ -227,7 +227,7 @@ class WildberriesStorageTest(unittest.TestCase):
         ):
             self.assertIn(key, order)
         state = web.build_order_sale_state(order, {})
-        self.assertFalse(state["can_create_sale"])
+        self.assertTrue(state["can_create_sale"])
 
 
 class WildberriesRoutesTest(unittest.TestCase):
@@ -281,7 +281,7 @@ class WildberriesRoutesTest(unittest.TestCase):
         html = card_response.get_data(as_text=True)
         for value in ("Wildberries FBS", "Только чтение", "WB-ARTICLE", "4600000000001", "nmId: 123456"):
             self.assertIn(value, html)
-        self.assertNotIn("Провести продажу", html)
+        self.assertIn("Провести продажу", html)
         self.assertNotIn("Открыть в Bitrix", html)
 
     def test_sales_assembly_workspace_lists_wb_order_and_opens_card(self):
@@ -340,6 +340,9 @@ class WildberriesRoutesTest(unittest.TestCase):
         CatalogDatabase(catalog_path).initialize()
         fake_client = mock.Mock()
         fake_client.get_new_orders.return_value = [raw_order(202, article="UNKNOWN-WB")]
+        fake_client.get_orders.return_value = []
+        fake_client.get_supplies.return_value = {"next": 0, "supplies": []}
+        fake_client.get_order_statuses.return_value = {}
         with (
             mock.patch.dict("os.environ", {
                 "ORDERS_DATABASE_PATH": str(self.path),

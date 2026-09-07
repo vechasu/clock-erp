@@ -136,3 +136,30 @@ def build_matching_report(prices, statistics_stocks, fbs_orders, erp_index):
         item.update({"erp_product_id": erp_id, "status": status})
         report.append(item)
     return report
+
+
+def order_product_candidates(connection, product, saved_id=None):
+    """Exact WB identities shared by the order card and read-only recovery."""
+    attempts = []
+    if saved_id:
+        attempts.append(("p.id = ?", [saved_id], "manual"))
+    else:
+        article = _text(product.get("article") or product.get("supplierArticle") or product.get("vendorCode"))
+        if article:
+            attempts.append(("lower(trim(COALESCE(p.excel_article,'')))=lower(?)", [article], "vendor_code"))
+        for barcode in dict.fromkeys([product.get("barcode"), product.get("sku")] + list(product.get("skus") or [])):
+            if _text(barcode):
+                attempts.append(("lower(trim(COALESCE(cp.barcode,'')))=lower(?)", [_text(barcode)], "barcode"))
+        nm_id = product.get("nm_id") or product.get("nmId") or product.get("nmID")
+        if nm_id:
+            attempts.append(("lower(trim(COALESCE(cp.external_source,'')))='wildberries' AND trim(COALESCE(cp.external_product_id,''))=?", [_text(nm_id)], "nm_id"))
+    found, match_method = {}, ""
+    for clause, params, method in attempts:
+        rows = connection.execute(
+            "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active "
+            "FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id "
+            "WHERE p.deleted_at IS NULL AND (" + clause + ") ORDER BY p.id LIMIT 2", params).fetchall()
+        if rows and not match_method:
+            match_method = method
+        found.update({row["id"]: dict(row) for row in rows})
+    return list(found.values()), match_method

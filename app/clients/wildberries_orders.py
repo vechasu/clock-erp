@@ -1,15 +1,17 @@
-"""Strictly GET-only Wildberries API client.
+"""Read-only Wildberries API client.
 
 The module keeps the historical ``WildberriesOrdersReadOnlyClient`` name so the
 existing FBS integration continues to work, while all WB reads share one safe
-transport.  Response bodies and authorization values are never logged.
+transport. The named get_order_statuses reader additionally permits only the
+documented read-only POST /api/v3/orders/status. Public request_json stays GET-only.
+Response bodies and authorization values are never logged.
 """
 
 from __future__ import print_function
 
 import logging
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote
 
 import requests
 
@@ -50,7 +52,7 @@ def _retry_after(response, fallback):
 
 
 class WildberriesReadOnlyClient:
-    """Allowlisted WB transport which is structurally unable to make writes."""
+    """Allowlisted WB reads; state-changing endpoints are not exposed."""
 
     def __init__(
         self,
@@ -118,23 +120,28 @@ class WildberriesReadOnlyClient:
             raise WildberriesReadOnlyError(
                 "Некорректный путь Wildberries API", "WB_INVALID_PATH"
             )
+        return self._read_json("GET", service, path, params=params)
+
+    def _read_json(self, method, service, path, params=None, body=None):
+        if method != "GET" and (method, service, path) != (
+            "POST", "marketplace", "/api/v3/orders/status"
+        ):
+            raise WildberriesReadOnlyError("Запрос запрещён", "WB_READ_ONLY_GUARANTEE")
         url = self.origins[service] + path
         headers = self._headers()
         for attempt in range(self.max_retries + 1):
             self.request_audit.append({
-                "method": READ_ONLY_METHOD,
+                "method": method,
                 "service": service,
                 "path": path,
                 "attempt": attempt + 1,
             })
             try:
-                response = self.session.get(
-                    url,
-                    headers=headers,
-                    params=params,
-                    timeout=self.timeout,
-                    allow_redirects=False,
-                )
+                options = dict(headers=headers, timeout=self.timeout, allow_redirects=False)
+                if method == "GET":
+                    response = self.session.get(url, params=params, **options)
+                else:
+                    response = self.session.post(url, json=body, **options)
             except requests.Timeout:
                 if attempt < self.max_retries:
                     self.sleep(min(0.5 * (2 ** attempt), 4.0))
@@ -240,6 +247,60 @@ class WildberriesReadOnlyClient:
                 "Wildberries вернул некорректный ответ", "WB_INVALID_RESPONSE"
             )
         return payload
+
+    def get_supply(self, supply_id):
+        value = str(supply_id or "").strip()
+        if not value or len(value) > 200:
+            raise WildberriesReadOnlyError("Укажите ID поставки", "WB_INVALID_SUPPLY")
+        result = self.request_json("GET", "marketplace", "/api/v3/supplies/" + quote(value, safe=""))
+        if not isinstance(result, dict) or result.get("id") != value:
+            raise WildberriesReadOnlyError("Некорректная поставка WB", "WB_INVALID_RESPONSE")
+        return result
+
+    def get_supply_order_ids(self, supply_id):
+        result = self.request_json("GET", "marketplace",
+            "/api/marketplace/v3/supplies/" + quote(str(supply_id), safe="") + "/order-ids")
+        ids = result.get("orderIds") if isinstance(result, dict) else None
+        if not isinstance(ids, list) or any(type(value) is not int or value <= 0 for value in ids):
+            raise WildberriesReadOnlyError("Некорректные ID заказов поставки", "WB_INVALID_RESPONSE")
+        if len(ids) != len(set(ids)):
+            raise WildberriesReadOnlyError("WB вернул повторные ID поставки", "WB_INVALID_RESPONSE")
+        return ids
+
+    def get_orders(self, date_from, date_to):
+        if not 0 < int(date_to) - int(date_from) <= 30 * 86400:
+            raise WildberriesReadOnlyError("Период должен быть от 1 до 30 дней", "WB_INVALID_PERIOD")
+        result, seen, cursor = {}, set(), 0
+        for _ in range(100):
+            page = self.request_json("GET", "marketplace", "/api/v3/orders", params={
+                "limit": 1000, "next": cursor, "dateFrom": int(date_from), "dateTo": int(date_to)})
+            rows = page.get("orders") if isinstance(page, dict) else None
+            if not isinstance(rows, list) or any(not isinstance(row, dict) or not row.get("id") for row in rows):
+                raise WildberriesReadOnlyError("Некорректный список заказов WB", "WB_INVALID_RESPONSE")
+            result.update({str(row["id"]): row for row in rows})
+            next_value = page.get("next")
+            if not rows or next_value == 0:
+                return list(result.values())
+            if type(next_value) is not int or next_value in seen or next_value == cursor:
+                raise WildberriesReadOnlyError("Нарушена пагинация WB", "WB_INVALID_RESPONSE")
+            seen.add(cursor)
+            cursor = next_value
+        raise WildberriesReadOnlyError("Превышен безопасный лимит страниц WB", "WB_PAGE_LIMIT")
+
+    def get_order_statuses(self, order_ids):
+        ids = list(dict.fromkeys(int(value) for value in order_ids))
+        result = {}
+        for offset in range(0, len(ids), 100):
+            chunk = ids[offset:offset + 100]
+            payload = self._read_json("POST", "marketplace", "/api/v3/orders/status", body={"orders": chunk})
+            rows = payload.get("orders") if isinstance(payload, dict) else None
+            if not isinstance(rows, list):
+                raise WildberriesReadOnlyError("Некорректные статусы WB", "WB_INVALID_RESPONSE")
+            for row in rows:
+                if not isinstance(row, dict) or not row.get("id") or not row.get("supplierStatus"):
+                    raise WildberriesReadOnlyError("Некорректный статус WB", "WB_INVALID_RESPONSE")
+                result[str(row["id"])] = row
+        return result
 
     def get_warehouses(self):
         payload = self.request_json("GET", "marketplace", "/api/v3/warehouses")
