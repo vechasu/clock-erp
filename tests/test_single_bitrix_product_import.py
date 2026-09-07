@@ -209,6 +209,12 @@ class SingleBitrixProductImportTest(unittest.TestCase):
         header = Path("app/templates/_products_workspace.html").read_text(encoding="utf-8")
         self.assertIn("Добавить товар ▾", header)
         self.assertIn("Добавить из Bitrix", header)
+        self.assertNotIn("openManualProductCreate", header + template)
+        self.assertNotIn("warehouseCreateNewProduct", template)
+        self.assertNotIn('action_kind="product"', template)
+        self.assertNotIn('fetch("/api/v1/products",', template)
+        self.assertNotIn("Создать вручную", header)
+
         self.assertIn("bitrixProductSearch", template)
         self.assertIn("setTimeout(function(){searchBitrixProducts", template)
         self.assertIn("Изменятся поля:", template)

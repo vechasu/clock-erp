@@ -10,7 +10,7 @@ from app import auth, web
 from app.catalog_db import CatalogDatabase
 from app.domain_schema_migrations import apply_domain_migrations
 from app.services.audit_journal import AuditJournal
-from app.services.excel_product_catalog import ExcelProductBatchService
+from app.services.excel_product_catalog import ExcelProductBatchService, ExcelProductCatalog
 
 
 PNG = base64.b64decode(
@@ -125,20 +125,10 @@ class Stage2ProductsApiTest(unittest.TestCase):
             aliases["meta"]["facets"]["cells"][0],
         )
 
-    def test_create_patch_get_and_delete_product(self):
-        created = self.client.post(
-            "/api/v1/products",
-            json={
-                "name": "Gamma Case",
-                "article": "G-1",
-                "brand": "Gamma",
-                "category": "Аксессуары",
-                "cell": "C-1",
-                "stock": 0,
-            },
-        )
-        self.assertEqual(created.status_code, 201)
-        product_id = created.get_json()["data"]["id"]
+    def test_patch_get_and_delete_existing_product(self):
+        product_id = ExcelProductCatalog(CatalogDatabase(self.database_path)).create_product(
+            name="Gamma Case", article="G-1", brand="Gamma", category="Аксессуары", stock=0,
+        )["id"]
 
         updated = self.client.patch(
             "/api/products/{}".format(product_id),
@@ -174,12 +164,11 @@ class Stage2ProductsApiTest(unittest.TestCase):
         ).group(0)
         self.assertNotIn("required", create_price)
         self.assertNotIn("required", edit_price)
-        missing = self.client.post(
-            "/api/products",
-            json={"name": "No Price", "brand": "Alpha", "category": "Часы"},
+        product = ExcelProductCatalog(CatalogDatabase(self.database_path)).create_product(
+            name="No Price", brand="Alpha", category="Часы",
         )
-        self.assertEqual(missing.status_code, 201)
-        product_id = missing.get_json()["data"]["id"]
+        product_id = product["id"]
+        missing = self.client.get("/api/products/{}".format(product_id))
         self.assertIsNone(missing.get_json()["data"]["price"])
         self.assertEqual(missing.get_json()["data"]["price_display"], "")
 
@@ -199,84 +188,27 @@ class Stage2ProductsApiTest(unittest.TestCase):
         ).get_json()["data"]
         self.assertIsNone(sorted_items[-1]["price"])
 
-    def test_create_product_with_photo_uses_local_erp_storage(self):
-        with mock.patch.object(web, "MoySkladClient") as client_class:
-            response = self.client.post(
-                "/api/v1/products",
-                data={
-                    "name": "Gamma Photo Watch",
-                    "article": "PHOTO-1",
-                    "brand": "Gamma",
-                    "category": "Часы",
-                    "cell": "P-1",
-                    "stock": "6",
-                    "product_image": (
-                        BytesIO(PNG),
-                        "watch.png",
-                        "image/png",
-                    ),
-                },
-                content_type="multipart/form-data",
-            )
-
-        self.assertEqual(response.status_code, 201)
-        product = response.get_json()["data"]
-        self.assertEqual(product["stock"], 6)
-        self.assertEqual(product["moysklad_product_id"], "")
-        self.assertRegex(
-            product["thumbnail_url"],
-            r"^/product-images/product-[a-f0-9]{64}\.png\?v=[a-f0-9]{16}$",
-        )
-        self.assertTrue(
-            (
-                self.root
-                / "product_images"
-                / Path(product["thumbnail_url"].split("?", 1)[0]).name
-            )
-            .is_file()
-        )
-        self.assertIn(
-            "Синхронизация с Bitrix недоступна",
-            response.get_json()["meta"]["image_message"],
-        )
-        client_class.assert_not_called()
-
-    def test_create_product_without_photo_keeps_local_creation_path(self):
-        with mock.patch.object(web, "MoySkladClient") as client_class:
-            response = self.client.post(
-                "/api/v1/products",
-                data={
-                    "name": "Local Product",
-                    "article": "LOCAL-1",
-                    "stock": "0",
-                },
-                content_type="multipart/form-data",
-            )
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.get_json()["data"]["thumbnail_url"], "")
-        client_class.assert_not_called()
-
-    def test_create_product_accepts_jpeg_and_webp(self):
+    def test_existing_product_accepts_jpeg_and_webp(self):
         fixtures = (
             ("JPEG Photo Product", JPEG, "watch.jpeg", "image/jpeg", ".jpg"),
             ("WebP Photo Product", WEBP, "watch.webp", "image/webp", ".webp"),
         )
         for name, content, filename, mimetype, extension in fixtures:
             with self.subTest(filename=filename):
-                response = self.client.post(
-                    "/api/v1/products",
+                response = self.client.patch(
+                    "/api/v1/products/1",
                     data={
                         "name": name,
-                        "stock": "0",
+                        "product_image_action": "replace",
                         "product_image": (
                             BytesIO(content), filename, mimetype,
                         ),
                     },
                     content_type="multipart/form-data",
                 )
-                self.assertEqual(response.status_code, 201)
+                self.assertEqual(response.status_code, 200)
                 self.assertIn(extension + "?v=", response.get_json()["data"]["thumbnail_url"])
+
 
     def test_heic_and_truncated_image_are_rejected(self):
         for filename, content, mimetype, status, code, message in (
@@ -295,11 +227,11 @@ class Stage2ProductsApiTest(unittest.TestCase):
             ),
         ):
             with self.subTest(filename=filename):
-                response = self.client.post(
-                    "/api/v1/products",
+                response = self.client.patch(
+                    "/api/v1/products/1",
                     data={
                         "name": "Rejected " + filename,
-                        "stock": "0",
+                        "product_image_action": "replace",
                         "product_image": (
                             BytesIO(content), filename, mimetype,
                         ),
@@ -310,14 +242,15 @@ class Stage2ProductsApiTest(unittest.TestCase):
                 self.assertEqual(response.get_json()["code"], code)
                 self.assertIn(message, response.get_json()["message"])
 
+
     def test_invalid_product_photo_does_not_create_product(self):
         before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
         with mock.patch.object(web, "MoySkladClient") as client_class:
-            response = self.client.post(
-                "/api/v1/products",
+            response = self.client.patch(
+                "/api/v1/products/1",
                 data={
                     "name": "Invalid Photo Product",
-                    "stock": "0",
+                    "product_image_action": "replace",
                     "product_image": (
                         BytesIO(b"not-an-image"),
                         "spoof.jpg",
@@ -333,43 +266,12 @@ class Stage2ProductsApiTest(unittest.TestCase):
         after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
         self.assertEqual(after, before)
 
-    def test_local_photo_storage_failure_does_not_leave_product(self):
-        before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
-        with mock.patch.object(web, "ProductImageStore") as store_class:
-            store_class.return_value.prepare_image.side_effect = OSError(
-                "storage unavailable"
-            )
-            response = self.client.post(
-                "/api/v1/products",
-                data={
-                    "name": "Remote Failure Product",
-                    "stock": "0",
-                    "product_image": (
-                        BytesIO(PNG),
-                        "watch.png",
-                        "image/png",
-                    ),
-                },
-                content_type="multipart/form-data",
-            )
-
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.get_json()["code"], "PRODUCT_IMAGE_UPLOAD_FAILED")
-        after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
-        self.assertEqual(after, before)
-        self.assertEqual(
-            AuditJournal(CatalogDatabase(self.database_path)).list_events(
-                query="Remote Failure Product", limit=10,
-            )["events"],
-            [],
-        )
-
-    def test_create_product_rejects_oversized_photo(self):
-        response = self.client.post(
-            "/api/v1/products",
+    def test_existing_product_rejects_oversized_photo(self):
+        response = self.client.patch(
+            "/api/v1/products/1",
             data={
                 "name": "Oversized Photo Product",
-                "stock": "0",
+                "product_image_action": "replace",
                 "product_image": (
                     BytesIO(
                         b"\x89PNG\r\n\x1a\n"
@@ -386,12 +288,13 @@ class Stage2ProductsApiTest(unittest.TestCase):
         self.assertEqual(response.get_json()["code"], "PRODUCT_IMAGE_TOO_LARGE")
         self.assertIn("3 МБ", response.get_json()["message"])
 
+
     def test_heic_photo_has_specific_safe_error(self):
-        response = self.client.post(
-            "/api/v1/products",
+        response = self.client.patch(
+            "/api/v1/products/1",
             data={
                 "name": "HEIC Product",
-                "stock": "0",
+                "product_image_action": "replace",
                 "product_image": (
                     BytesIO(b"not-heic"),
                     "phone.heic",
@@ -407,6 +310,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
             "PRODUCT_IMAGE_FORMAT_UNSUPPORTED",
         )
         self.assertIn("HEIC не поддерживается", response.get_json()["message"])
+
 
     def test_replace_existing_product_photo_and_fields_together(self):
         product = self.client.get(
@@ -646,63 +550,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
         )
         client_class.assert_not_called()
 
-    def test_duplicate_create_discards_prepared_local_photo(self):
-        duplicate_name = "Duplicate Photo Product"
-        initial = self.client.post(
-            "/api/v1/products",
-            json={"name": duplicate_name, "article": "DUP-1", "stock": 0},
-        )
-        self.assertEqual(initial.status_code, 201)
-        before = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
-
-        with mock.patch.object(web, "MoySkladClient") as client_class:
-            response = self.client.post(
-                "/api/v1/products",
-                data={
-                    "name": duplicate_name,
-                    "article": "DUP-1",
-                    "stock": "0",
-                    "product_image": (
-                        BytesIO(PNG),
-                        "duplicate.png",
-                        "image/png",
-                    ),
-                },
-                content_type="multipart/form-data",
-            )
-
-        self.assertEqual(response.status_code, 409)
-        client_class.assert_not_called()
-        image_root = self.root / "product_images"
-        self.assertEqual(list(image_root.iterdir()) if image_root.exists() else [], [])
-        after = self.client.get("/api/v1/products?page_size=50").get_json()["meta"]["total"]
-        self.assertEqual(after, before)
-
-    def test_initial_stock_requires_a_nonnegative_integer(self):
-        created = self.client.post(
-            "/api/v1/products",
-            json={"name": "Initial Stock Product", "stock": 7},
-        )
-        self.assertEqual(created.status_code, 201)
-        self.assertEqual(created.get_json()["data"]["stock"], 7)
-
-        invalid = self.client.post(
-            "/api/v1/products",
-            json={"name": "Fractional Stock Product", "stock": 1.5},
-        )
-        self.assertEqual(invalid.status_code, 422)
-
     def test_validation_and_taxonomy_endpoints(self):
-        invalid = self.client.post(
-            "/api/products",
-            json={"name": "", "stock": "wrong"},
-        )
-        self.assertEqual(invalid.status_code, 422)
-        self.assertEqual(
-            invalid.get_json()["code"],
-            "PRODUCT_VALIDATION_FAILED",
-        )
-
         brand = self.client.post("/api/brands", json={"name": "Casio"})
         self.assertEqual(brand.status_code, 201)
         duplicate = self.client.post("/api/brands", json={"name": "casio"})
@@ -752,17 +600,11 @@ class Stage2ProductsApiTest(unittest.TestCase):
             json={"brand_id": brand_id, "name": "Barcelona Watches"},
         )
         self.assertEqual(category.status_code, 201)
-        product = self.client.post(
-            "/api/v1/products",
-            json={
-                "name": "Barcelona Test Watch",
-                "brand_id": brand_id,
-                "category_id": category.get_json()["data"]["id"],
-                "stock": 0,
-            },
+        product = ExcelProductCatalog(CatalogDatabase(self.database_path)).create_product(
+            name="Barcelona Test Watch", brand_id=brand_id,
+            category_id=category.get_json()["data"]["id"], stock=0,
         )
-        self.assertEqual(product.status_code, 201)
-        self.assertEqual(product.get_json()["data"]["brand_id"], brand_id)
+        self.assertEqual(product["brand_id"], brand_id)
 
         with CatalogDatabase(self.database_path).connect() as connection:
             count = connection.execute(
@@ -813,7 +655,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
             json={"name": "Accepted"},
             headers={"X-CSRF-Token": "stage-2-csrf"},
         )
-        self.assertEqual(accepted.status_code, 201)
+        self.assertEqual(accepted.status_code, 410)
 
         anonymous = web.app.test_client().get("/api/products")
         self.assertEqual(anonymous.status_code, 401)
