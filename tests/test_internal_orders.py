@@ -97,7 +97,7 @@ class InternalOrdersTest(unittest.TestCase):
         self.assertIn("№18593", html)
         self.assertIn("Иван Иванов", html)
         self.assertIn('id="orderSearch"', html)
-        for status in ("all", "N", "A", "D", "C"):
+        for status in ("all", "N", "A"):
             self.assertIn('data-status-filter="{}"'.format(status), html)
         for removed_status in ("T",):
             self.assertNotIn(
@@ -136,8 +136,8 @@ class InternalOrdersTest(unittest.TestCase):
         self.assertIn('aria-label="Страница 3">3</a>', html)
         self.assertIn('aria-label="Заказов на странице"', html)
         self.assertNotIn("Всего заказов", html)
-        for key in ("unconfirmed", "confirmed", "assembled"):
-            self.assertIn('data-status-count="{}">15</strong>'.format(key), html)
+        for key in ("N", "A", "D"):
+            self.assertIn('data-order-status-count="{}">15</strong>'.format(key), html)
 
     def test_order_without_bitrix_id_does_not_break_the_list(self):
         response = self.get_orders_page(orders=[{

@@ -279,7 +279,7 @@ class WildberriesRoutesTest(unittest.TestCase):
         self.assertEqual(list_response.status_code, 200)
         self.assertEqual(card_response.status_code, 200)
         html = card_response.get_data(as_text=True)
-        for value in ("Wildberries FBS", "Только чтение", "WB-ARTICLE", "4600000000001", "nmId: 123456"):
+        for value in ("Диагностика Wildberries", "Новое задание", "WB-ARTICLE", "4600000000001", "nm_id"):
             self.assertIn(value, html)
         self.assertIn("Провести продажу", html)
         self.assertNotIn("Открыть в Bitrix", html)

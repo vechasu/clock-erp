@@ -327,10 +327,10 @@ class OrderStatusFrontendContractTests(unittest.TestCase):
             Path(__file__).resolve().parents[1]
             / "app/static/css/orders.css"
         ).read_text(encoding="utf-8")
-        self.assertIn('data-status-filter="N"', template)
-        self.assertIn('data-status-filter="A"', template)
-        self.assertIn('data-status-filter="D"', template)
-        self.assertIn('data-status-filter="C"', template)
+        self.assertIn('data-status-filter="{{ key }}"', template)
+        self.assertIn('order_status_counts.items()', template)
+        self.assertIn('order_status_label(key)', template)
+        self.assertIn('data-source-filter="{{ key }}"', template)
         self.assertIn('<option value="C"', template)
         self.assertIn('name="status"', template)
         self.assertNotIn(">Сохранить статус</button>", template)

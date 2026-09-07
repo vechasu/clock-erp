@@ -13,6 +13,7 @@ from pathlib import Path
 
 from app.domain_schema_migrations import validate_orders_database
 from app.services.customer_identity import link_order_safely
+from app.services.order_presentation import sqlite_status
 
 
 PAGE_SIZES = (20, 50, 100, 200)
@@ -589,7 +590,7 @@ class OrdersSnapshotStore:
             ).fetchall()
         return [row["order_id"] for row in rows]
 
-    def query(self, args, now=None, allowed_order_ids=None):
+    def query(self, args, now=None, allowed_order_ids=None, status_overrides=None):
         self.initialize()
         query = _text(args.get("q"))
         exact_candidate = normalize_exact_order_number_query(query)
@@ -657,9 +658,9 @@ class OrdersSnapshotStore:
             clauses.append("(" + " OR ".join(search_clauses) + ")")
             parameters.extend(search_parameters)
         if exact_number is None and status != "ALL":
-            clauses.append("status = ?")
+            clauses.append("order_work_status(payload_json) = ?")
             parameters.append(status)
-        if exact_number is None and source in {"tictactoy", "wildberries"}:
+        if source in {"tictactoy", "wildberries"}:
             clauses.append("source = ?")
             parameters.append(source)
         if exact_number is None and period in {"today", "7d", "30d"}:
@@ -671,6 +672,7 @@ class OrdersSnapshotStore:
         where_sql = " WHERE " + " AND ".join(clauses) if clauses else ""
 
         with self.connection() as connection:
+            connection.create_function("order_work_status", 1, lambda value: sqlite_status(value, status_overrides), deterministic=True)
             if allowed_order_ids is not None:
                 connection.execute(
                     "CREATE TEMP TABLE IF NOT EXISTS allowed_order_ids "
@@ -699,8 +701,9 @@ class OrdersSnapshotStore:
                 parameters + [effective_page_size, (page - 1) * effective_page_size],
             ).fetchall()
             status_rows = connection.execute(
-                "SELECT status, COUNT(*) AS count FROM orders_snapshot "
-                "GROUP BY status"
+                "SELECT source, order_work_status(payload_json) AS status, COUNT(*) AS count FROM orders_snapshot "
+                + ("WHERE order_id IN (SELECT order_id FROM temp.allowed_order_ids) " if allowed_order_ids is not None else "")
+                + "GROUP BY source, order_work_status(payload_json)"
             ).fetchall()
             physical_total = int(connection.execute(
                 "SELECT COUNT(*) FROM orders_snapshot"
@@ -711,11 +714,20 @@ class OrdersSnapshotStore:
             payload["item_units"] = row["item_units"]
             payload["customer_id"] = row["customer_id"]
             result_rows.append(payload)
-        counts = {row["status"]: int(row["count"]) for row in status_rows}
+        counts = {}
+        source_counts = {"all": 0, "tictactoy": 0, "wildberries": 0}
+        for row in status_rows:
+            origin = "wildberries" if row["source"] == "wildberries" else "tictactoy"
+            source_counts[origin] += int(row["count"])
+            source_counts["all"] += int(row["count"])
+            if source not in {"tictactoy", "wildberries"} or source == origin:
+                counts[row["status"]] = counts.get(row["status"], 0) + int(row["count"])
         return {
             "rows": result_rows,
             "total": total,
             "physical_total": physical_total,
+            "source_counts": source_counts,
+            "status_counts": counts,
             "page": page,
             "page_size": page_size,
             "page_count": page_count,

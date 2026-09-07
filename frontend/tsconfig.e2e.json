@@ -9,6 +9,7 @@
     "playwright*.config.ts",
     "e2e/**/*.ts",
     "e2e-products/**/*.ts",
+    "e2e-orders/**/*.ts",
     "e2e-supplies/**/*.ts"
   ]
 }
