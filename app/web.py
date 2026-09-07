@@ -103,6 +103,7 @@ from app.services.purchases import (
     PurchaseStore,
     PurchaseValidationError,
 )
+from app.services.wildberries_sales import WildberriesSales
 from app.services.wildberries_orders import synchronize_wildberries_orders
 from app.services.user_notifications import UserNotificationStore
 from app.services.brand_values import normalize_brand
@@ -2063,7 +2064,10 @@ def render_orders_page(
                 )
             )
         )
-    conducted_sale = None if is_wildberries else get_order_conducted_sale(order_id)
+    conducted_sale = (
+        WildberriesSales(SalesInventory(), None).find_sale(selected_order.get("wb_order_id"))
+        if is_wildberries else get_order_conducted_sale(order_id)
+    )
     sale_state = build_order_sale_state(
         selected_order or {}, order_mappings, conducted_sale,
         has_legacy_order_stock_writeoff(order_id),
@@ -2395,7 +2399,7 @@ def build_order_product_mapping_context(
     automatic_methods = []
     catalog.database.initialize()
     with catalog.database.connect() as connection:
-        for identity, saved in zip(identities, saved_rows):
+        for product, identity, saved in zip(products, identities, saved_rows):
             if isinstance(saved, dict) and saved.get("product_id"):
                 automatic_ids.append(None)
                 automatic_methods.append("")
@@ -2408,10 +2412,13 @@ def build_order_product_mapping_context(
                         [identity["article"]],
                         "vendor_code",
                     ))
-                if identity["barcode"]:
+                barcodes = [identity["barcode"]] + list(product.get("skus") or [])
+                for barcode in dict.fromkeys(barcodes):
+                    if not barcode:
+                        continue
                     attempts.append((
                         ["lower(trim(COALESCE(cp.barcode, ''))) = lower(?)"],
-                        [identity["barcode"]],
+                        [barcode],
                         "barcode",
                     ))
                 if identity["nm_id"]:
@@ -2448,6 +2455,7 @@ def build_order_product_mapping_context(
                 continue
             rows = []
             automatic_method = ""
+            wb_matches = {}
             for clauses, parameters, method in attempts:
                 rows = connection.execute(
                     "SELECT DISTINCT p.id FROM catalog_excel_products p "
@@ -2456,9 +2464,15 @@ def build_order_product_mapping_context(
                     "ORDER BY p.id LIMIT 2",
                     parameters,
                 ).fetchall()
-                if rows:
+                if identity["source"] == "wildberries":
+                    wb_matches.update({row["id"]: row for row in rows})
+                    if rows and not automatic_method:
+                        automatic_method = method
+                elif rows:
                     automatic_method = method
                     break
+            if identity["source"] == "wildberries":
+                rows = list(wb_matches.values())
             automatic_id = rows[0]["id"] if len(rows) == 1 else None
             automatic_ids.append(automatic_id)
             automatic_methods.append(
@@ -2731,15 +2745,15 @@ def build_order_sale_state(
         order, mapping_context, sale_completed or legacy_writeoff
     )
 
-    if is_wildberries:
-        block_reason = "Заказы Wildberries подключены только для чтения."
-    elif sale_completed:
+    if sale_completed:
         block_reason = "Продажа по этому заказу уже проведена."
     elif legacy_writeoff:
         block_reason = (
             "Найдена операция списания без связанной продажи. "
             "Повторное проведение заблокировано до проверки данных."
         )
+    elif is_wildberries:
+        block_reason = ""
     elif status == "N":
         block_reason = "Чтобы провести продажу, сначала подтвердите заказ."
     elif status not in {"A", "D"}:
@@ -2749,11 +2763,9 @@ def build_order_sale_state(
 
     return {
         "can_create_sale": (
-            not is_wildberries
-            and
             not sale_completed
             and not legacy_writeoff
-            and status in {"A", "D"}
+            and (is_wildberries or status in {"A", "D"})
         ),
         "sale_block_reason": block_reason,
         "sale_id": sale_id,
@@ -2838,6 +2850,88 @@ def wildberries_order_page(wb_order_id):
     )
 
 
+
+
+def order_strap_replacement_form(form, line_index):
+    return {
+        "operation_id": str(
+            form.get("strap_operation_id") or uuid.uuid4().hex
+        ).strip(),
+        "line_index": line_index,
+        "base_product_id": form.get("strap_base_product_id"),
+        "removed_strap_mode": form.get("removed_strap_mode"),
+        "removed_strap_product_id": form.get(
+            "removed_strap_product_id"
+        ),
+        "installed_strap_product_id": form.get(
+            "installed_strap_product_id"
+        ),
+        "confirm_duplicate": form.get(
+            "confirm_removed_strap_duplicate"
+        ) == "1",
+        "comment": form.get("strap_replacement_comment"),
+        "new_removed_strap": {
+            "brand": form.get("new_removed_strap_brand"),
+            "name": form.get("new_removed_strap_name"),
+            "model": form.get("new_removed_strap_model"),
+            "color": form.get("new_removed_strap_color"),
+            "article": form.get("new_removed_strap_article"),
+            "condition": form.get("new_removed_strap_condition"),
+            "comment": form.get("new_removed_strap_comment"),
+        },
+    }
+
+
+def resolve_wildberries_sale_products(order):
+    products = order.get("products") or []
+    context = build_order_product_mapping_context(
+        products, mappings=load_order_product_mappings(order["id"])
+    )
+    return [get_order_product_mapping(context, product) for product in products]
+
+
+@app.post("/order/wildberries/<wb_order_id>/conduct-sale")
+def wildberries_conduct_sale(wb_order_id):
+    if auth_is_enabled() and (
+        (current_auth_user() or {}).get("role") not in {"employee", "admin"}
+    ):
+        abort(403)
+    wants_json = request.accept_mimetypes.best == "application/json"
+    try:
+        order = OrdersSnapshotStore().get("wb:" + str(wb_order_id))
+        service = WildberriesSales(SalesInventory(), resolve_wildberries_sale_products)
+        existing = service.find_sale(wb_order_id)
+        replacement = None
+        if request.form.get("operation_mode") == "strap_replacement":
+            replacement = order_strap_replacement_form(request.form, request.form.get("strap_line_index"))
+        sale = existing or service.conduct(
+            order, current_sales_user_name(), current_audit_actor(), replacement
+        )
+        WAREHOUSE_CACHE["items"] = []
+        WAREHOUSE_CACHE["loaded_at"] = 0
+        _cached_api_sales_records.cache_clear()
+        message = "Заказ Wildberries уже проведён" if existing else "Заказ Wildberries проведён в продажу"
+        if wants_json:
+            return jsonify(ok=True, message=message, sale_id=sale["id"])
+        return redirect(url_for("wildberries_order_page", wb_order_id=wb_order_id,
+                                notice="success", message=message))
+    except PotentialStrapDuplicateError as error:
+        if wants_json:
+            return jsonify(ok=False, message=str(error), duplicate_matches=error.matches), 400
+        return redirect(url_for(
+            "wildberries_order_page", wb_order_id=wb_order_id, notice="error",
+            message=str(error), open_sale="1", open_strap="1",
+            duplicate_matches=json.dumps(error.matches, ensure_ascii=False),
+        ))
+    except (SalesInventoryError, InsufficientStockError) as error:
+        message = str(error)
+    except Exception:
+        app.logger.exception("Wildberries sale failed order_id=%s", wb_order_id)
+        message = "Не удалось подтвердить проведение продажи. Обновите заказ или повторите попытку."
+    if wants_json:
+        return jsonify(ok=False, message=message), 400
+    return redirect(url_for("wildberries_order_page", wb_order_id=wb_order_id,
+                            notice="error", message=message, open_sale="1"))
 
 
 @app.route("/order/<int:order_id>/stock-writeoff", methods=["POST"])
@@ -3183,33 +3277,7 @@ def _conduct_order_sale(order_id):
             "audit_actor": current_audit_actor(),
         }
         if strap_replacement_requested:
-            replacement = {
-                "operation_id": str(
-                    request.form.get("strap_operation_id") or uuid.uuid4().hex
-                ).strip(),
-                "line_index": strap_line_index,
-                "base_product_id": request.form.get("strap_base_product_id"),
-                "removed_strap_mode": request.form.get("removed_strap_mode"),
-                "removed_strap_product_id": request.form.get(
-                    "removed_strap_product_id"
-                ),
-                "installed_strap_product_id": request.form.get(
-                    "installed_strap_product_id"
-                ),
-                "confirm_duplicate": request.form.get(
-                    "confirm_removed_strap_duplicate"
-                ) == "1",
-                "comment": request.form.get("strap_replacement_comment"),
-                "new_removed_strap": {
-                    "brand": request.form.get("new_removed_strap_brand"),
-                    "name": request.form.get("new_removed_strap_name"),
-                    "model": request.form.get("new_removed_strap_model"),
-                    "color": request.form.get("new_removed_strap_color"),
-                    "article": request.form.get("new_removed_strap_article"),
-                    "condition": request.form.get("new_removed_strap_condition"),
-                    "comment": request.form.get("new_removed_strap_comment"),
-                },
-            }
+            replacement = order_strap_replacement_form(request.form, strap_line_index)
             sale = inventory.create_order_strap_replacement_sale(
                 payload, prepared_items, replacement, **create_arguments
             )
@@ -13232,6 +13300,9 @@ def build_wb_fbs_assembly_rows(store=None, catalog=None):
                 ),
                 "mapping_method": mapping.get("mapping_method") or "",
             })
+        conducted_sale = WildberriesSales(SalesInventory(catalog.database), None).find_sale(
+            order.get("wb_order_id")
+        )
         matching_status = (
             "matched"
             if prepared_products
@@ -13247,6 +13318,7 @@ def build_wb_fbs_assembly_rows(store=None, catalog=None):
             "office_id": order.get("office_id"),
             "status": order.get("status_name") or order.get("supplier_status") or "new",
             "matching_status": matching_status,
+            "sale_id": (conducted_sale or {}).get("id"),
             "products": prepared_products,
             "href": url_for(
                 "wildberries_order_page",

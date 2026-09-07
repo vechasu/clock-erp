@@ -82,3 +82,10 @@
 
 Незакоммиченная дизайн-система, `PageHeader`, CSS и `.save` из старого worktree
 не исследовались, не копировались и не использовались как источник истины.
+
+## Проведение WB — 2026-09-07
+
+`docs/wildberries-sale-posting.md` — `current`, контракт реализации проведения
+WB через общий сервис продаж; код `app/services/wildberries_sales.py`,
+маршрут и шаблоны проверяются `tests/test_wildberries_sales.py`. Статус
+документа описывает код ветки и не означает выполненный production deploy.

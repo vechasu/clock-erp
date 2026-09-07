@@ -132,7 +132,7 @@
                         <div class="order-control-panel">
                             {% if is_wb %}
                             <div class="order-status-control">
-                                <span class="order-control-label">Статус заказа</span>
+                                <span class="order-control-label">Статус WB</span>
                                 <span class="button button-secondary" aria-label="Только чтение">Только чтение</span>
                             </div>
                             {% else %}
@@ -164,13 +164,11 @@
                                     {% if not is_wb and detail_id and selected_order.get('sync_state') != 'error' %}<a role="menuitem" href="{{ url_for('order_print_page', order_id=detail_id) }}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 7V3h8v4M5 15H3V8h14v7h-2M6 12h8v5H6z"/></svg>Печать заказа</a>{% endif %}
                                 </div>
                                 </div>
-                                {% if not is_wb %}
                                     {% if sale_state.sale_completed %}
-                                        <a class="button button-primary order-primary-action" href="/sales?source=tictactoy&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
+                                        <a class="button button-primary order-primary-action" href="/sales?source={{ selected_order.get('source') or 'tictactoy' }}&sale_id={{ sale_state.sale_id }}">Открыть продажу</a>
                                     {% else %}
                                         <button class="button button-primary order-primary-action" type="button" data-order-sale-action{% if sale_state.can_create_sale %} data-open-sale-dialog{% else %} data-show-sale-block{% endif %}>Провести продажу</button>
                                     {% endif %}
-                                {% endif %}
                             </div>
                             {% if request.args.get('notice') and request.args.get('message') %}<div class="action-feedback notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') == 'error' else 'status' }}">{{ request.args.get('message') }}</div>{% endif %}
                         </div>
@@ -315,8 +313,8 @@
 {% if selected_order and sale_state.can_create_sale %}
 <div class="order-sale-modal" id="orderSaleModal" role="dialog" aria-modal="true" aria-labelledby="orderSaleTitle" aria-hidden="true" data-auto-open="{{ '1' if request.args.get('open_sale') == '1' else '0' }}">
     <div class="sale-dialog">
-        <div class="sale-dialog-head"><div><h2 id="orderSaleTitle">Провести продажу</h2><p class="card-subtitle">Заказ №{{ detail_number }} · Tictactoy</p></div><button class="button button-secondary" type="button" data-close-sale-dialog aria-label="Закрыть">×</button></div>
-        <form method="post" action="/order/{{ detail_id }}/stock-writeoff" data-order-sale-form data-erp-pending data-pending-label="Проводим продажу…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="sale-dialog-head"><div><h2 id="orderSaleTitle">Провести продажу</h2><p class="card-subtitle">Заказ №{{ detail_number }} · {{ 'Wildberries' if selected_order.get('source') == 'wildberries' else 'Tictactoy' }}</p></div><button class="button button-secondary" type="button" data-close-sale-dialog aria-label="Закрыть">×</button></div>
+        <form method="post" action="{% if selected_order.get('source') == 'wildberries' %}/order/wildberries/{{ selected_order.get('wb_order_id') }}/conduct-sale{% else %}/order/{{ detail_id }}/stock-writeoff{% endif %}"{% if selected_order.get('source') == 'wildberries' %} data-wb-sale-form{% endif %} data-order-sale-form data-erp-pending data-pending-label="Проводим продажу…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="sale-dialog-body">
                 {% if request.args.get('notice') == 'error' and request.args.get('message') %}<div class="notice notice-error" role="alert">{{ request.args.get('message') }}</div>{% endif %}
                 <section class="sale-dialog-section" aria-labelledby="orderSaleLinesTitle">
@@ -359,6 +357,7 @@
                     <label class="strap-operation-comment"><span>Комментарий к операции</span><textarea class="field" name="strap_replacement_comment" rows="3"></textarea></label>
                     <div class="strap-preview" data-strap-preview><strong>После проведения</strong><ul data-strap-preview-list></ul></div>
                 </section>
+                {% if selected_order.get('source') != 'wildberries' %}
                 <section class="sale-dialog-section" aria-labelledby="orderSaleLocationTitle">
                     <h3 id="orderSaleLocationTitle">География</h3>
                     <div class="sale-location-grid"><div class="order-sale-location-field"><label for="orderSaleCountryTrigger">Страна</label>{{ render_catalog_combobox('orderSaleCountry','country',order_country_options,selected_value=order_geography.country or '',item_label='страну',prefix_search=true,empty_label='Страна не найдена',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleRegionTrigger">Регион</label>{{ render_catalog_combobox('orderSaleRegion','region',[],selected_value=order_geography.region or '',item_label='регион',disabled=not order_geography.country,prefix_search=true,empty_label='Регион не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div><div class="order-sale-location-field"><label for="orderSaleCityTrigger">Город</label>{{ render_catalog_combobox('orderSaleCity','city',[],selected_value=order_geography.city or '',item_label='город',disabled=not order_geography.region,prefix_search=true,empty_label='Город не найден',component_class='filter-combobox',clear_selection_on_search_clear=true) }}</div></div>
@@ -375,6 +374,8 @@
                         clear_selection_on_search_clear=true
                     ) }}
                 </div>
+                {% else %}<p>Комиссия Wildberries пока неизвестна и остаётся незаполненной.</p>{% endif %}
+                <p data-wb-sale-error class="notice notice-error" role="alert" hidden></p>
                 <div class="sale-dialog-info">После проведения продажа появится в разделе «Продажи», а остатки товаров спишутся.</div>
             </div>
             <div class="sale-dialog-actions"><div class="sale-dialog-total">К списанию: <strong>{{ order_sale_dialog_summary.quantity_display }} шт.</strong> · Итого: <strong><span class="money-value" data-amount="{{ order_sale_dialog_summary.total_amount }}"></span> ₽</strong></div><div class="sale-dialog-buttons"><button class="button button-secondary" type="button" data-close-sale-dialog>Отмена</button><button class="button button-primary" type="submit" data-sale-submit>Провести продажу</button></div></div>
@@ -595,6 +596,7 @@
     function initializeOrderSaleLocations(){
         const locationData={{ order_location_data|tojson }};
         const countryBox=document.getElementById('orderSaleCountry'); const regionBox=document.getElementById('orderSaleRegion'); const cityBox=document.getElementById('orderSaleCity');
+        if(!countryBox||!regionBox||!cityBox)return;
         const locationValue=(box)=>box?.querySelector('.brand-combobox-hidden')?.value||'';
         const locationOptions=(values)=>(values||[]).map(value=>({value,label:value,searchText:value}));
         function resetLocationBox(box,values,selected,placeholder){window.replaceCatalogComboboxOptions(box,locationOptions(values),placeholder+' не найден');window.setCatalogComboboxDisabled(box,!values.length,'Выберите '+placeholder.toLowerCase());window.setBrandComboboxValue(box,values.includes(selected)?selected:'',values.includes(selected)?selected:'');}
@@ -652,7 +654,30 @@
     function restoreStrapDraft(){try{const draft=JSON.parse(sessionStorage.getItem(strapStorageKey)||'null');if(!draft)return;for(const [key,value] of Object.entries(draft.values||{})){const fields=saleForm.elements.namedItem(key);if(!fields)continue;if(fields instanceof RadioNodeList){for(const field of fields)field.checked=field.value===value;}else if(fields.type==='checkbox')fields.checked=fields.value===value;else fields.value=value;}for(const [key,item] of Object.entries(draft.pickers||{})){const picker=modal.querySelector(`[data-strap-picker="${CSS.escape(key)}"]`);if(picker&&item)selectPickerItem(picker,item);}if(draft.values?.operation_mode==='strap_replacement')openStrap();}catch(error){sessionStorage.removeItem(strapStorageKey);}}
     const duplicateRaw=new URLSearchParams(location.search).get('duplicate_matches');if(duplicateRaw){try{const matches=JSON.parse(duplicateRaw);const host=modal.querySelector('[data-duplicate-matches]');host.textContent=`Возможные дубли: ${matches.map(productLabel).join('; ')}`;host.hidden=false;modal.querySelector('[data-duplicate-confirm]').hidden=false;}catch(error){}}
     restoreStrapDraft();if(new URLSearchParams(location.search).get('open_strap')==='1')openStrap();
-    function handleOrderSaleSubmit(event){if(operationMode.value==='strap_replacement'){const base=saleForm.elements.namedItem('strap_base_product_id').value;const installed=saleForm.elements.namedItem('installed_strap_product_id').value;const removedMode=saleForm.elements.namedItem('removed_strap_mode').value;const removed=saleForm.elements.namedItem('removed_strap_product_id').value;if(!base||!installed||(removedMode==='existing'&&!removed)||(removedMode==='created'&&(!saleForm.elements.namedItem('new_removed_strap_brand').value.trim()||!saleForm.elements.namedItem('new_removed_strap_name').value.trim()))){event.preventDefault();window.VechasuNotify?.error('Заполните обязательные поля замены ремешка');return;}saveStrapDraft();if(!setPending(event.currentTarget,'Заменяем и проводим…'))event.preventDefault();}else{try{sessionStorage.removeItem(strapStorageKey);}catch(error){}if(!setPending(event.currentTarget,'Проводим…'))event.preventDefault();}}
+    let wbSalePending=false;
+    async function conductWildberriesSale(){
+        if(wbSalePending)return;
+        wbSalePending=true;strapSubmit.disabled=true;
+        const errorBox=modal.querySelector('[data-wb-sale-error]');errorBox.hidden=true;
+        try{
+            const response=await fetch(saleForm.action,{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'},body:new FormData(saleForm)});
+            const payload=await response.json().catch(()=>null);
+            if(payload?.duplicate_matches){
+                const host=modal.querySelector('[data-duplicate-matches]');
+                host.textContent=`Возможные дубли: ${payload.duplicate_matches.map(productLabel).join('; ')}`;host.hidden=false;
+                modal.querySelector('[data-duplicate-confirm]').hidden=false;
+            }
+            if(!response.ok||!payload?.ok)throw new Error(payload?.message||'Не удалось провести продажу. Повторите попытку.');
+            close();try{sessionStorage.removeItem(strapStorageKey);}catch(error){}
+            const link=document.createElement('a');link.className='button button-primary order-primary-action';
+            link.href='/sales?source=wildberries&sale_id='+encodeURIComponent(payload.sale_id);
+            link.textContent='Проведён · '+payload.sale_id;saleAction.replaceWith(link);
+            document.querySelector('[data-order-readiness-warning]')?.remove();
+            document.getElementById('saleBlockReason')?.remove();
+            window.VechasuNotify?.success(payload.message);
+        }catch(error){errorBox.textContent=error.message;errorBox.hidden=false;window.VechasuNotify?.error(error.message);wbSalePending=false;strapSubmit.disabled=false;}
+    }
+    function handleOrderSaleSubmit(event){if(saleForm.hasAttribute('data-wb-sale-form')){event.preventDefault();conductWildberriesSale();return;}if(operationMode.value==='strap_replacement'){const base=saleForm.elements.namedItem('strap_base_product_id').value;const installed=saleForm.elements.namedItem('installed_strap_product_id').value;const removedMode=saleForm.elements.namedItem('removed_strap_mode').value;const removed=saleForm.elements.namedItem('removed_strap_product_id').value;if(!base||!installed||(removedMode==='existing'&&!removed)||(removedMode==='created'&&(!saleForm.elements.namedItem('new_removed_strap_brand').value.trim()||!saleForm.elements.namedItem('new_removed_strap_name').value.trim()))){event.preventDefault();window.VechasuNotify?.error('Заполните обязательные поля замены ремешка');return;}saveStrapDraft();if(!setPending(event.currentTarget,'Заменяем и проводим…'))event.preventDefault();}else{try{sessionStorage.removeItem(strapStorageKey);}catch(error){}if(!setPending(event.currentTarget,'Проводим…'))event.preventDefault();}}
     modal.querySelector('[data-order-sale-form]')?.addEventListener('submit',handleOrderSaleSubmit);
     if(modal.dataset.autoOpen==='1')open();
 })();
