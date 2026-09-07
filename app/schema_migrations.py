@@ -18,6 +18,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.bundle_migration import BUNDLE_SQL, apply_bundle_migration
+
 from app.catalog_migration_steps import (
     ORDER_STRAP_SCHEMA_SQL,
     apply_audit_identity_constraints,
@@ -233,6 +235,8 @@ ORDER_REFUSAL_MIGRATION_CHECKSUM = hashlib.sha256(
      "erp-order-status:refused;bitrix:C;preserve-sale-link;sqlite-3.7.17").encode("utf-8")
 ).hexdigest()
 
+BUNDLE_MIGRATION_ID = "2026-09-07-local-product-bundles-v1"
+
 MIGRATIONS = (
     {
         "id": BASELINE_ID,
@@ -302,6 +306,13 @@ MIGRATIONS = (
         "name": ORDER_REFUSAL_MIGRATION_NAME,
         "checksum": ORDER_REFUSAL_MIGRATION_CHECKSUM,
         "transactional": False,
+        "recovery": "restore verified catalog database backup while service is stopped",
+    },
+    {
+        "id": BUNDLE_MIGRATION_ID,
+        "name": "Local product compositions and historical sale components",
+        "checksum": hashlib.sha256("\n".join(BUNDLE_SQL).encode("utf-8")).hexdigest(),
+        "transactional": True,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
 )
@@ -695,8 +706,14 @@ def _json_structure(connection):
     ))
 
 
-def verify_complete_catalog_contract(connection):
+def verify_complete_catalog_contract(connection, include_bundles=True):
     expected = expected_catalog_manifest()
+    if include_bundles:
+        extra = json.loads(Path(__file__).resolve().with_name(
+            "catalog_bundle_schema_manifest.json").read_text(encoding="utf-8"))
+        expected["tables"].update(extra["tables"])
+        for kind in ("indexes", "triggers", "views"):
+            expected[kind] = sorted(expected[kind] + extra[kind])
     actual = _json_structure(connection)
     if actual == expected:
         return True
@@ -1210,7 +1227,7 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                 elif migration["id"] == CATALOG_RUNTIME_BASELINE_ID:
                     connection = sqlite3.connect(str(path))
                     try:
-                        verify_complete_catalog_contract(connection)
+                        verify_complete_catalog_contract(connection, include_bundles=False)
                         require_integrity(connection, migration["id"])
                     finally:
                         connection.close()
@@ -1264,6 +1281,18 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                         raise
                     finally:
                         connection.close()
+                elif migration["id"] == BUNDLE_MIGRATION_ID:
+                    connection = sqlite3.connect(str(path))
+                    try:
+                        connection.execute("PRAGMA foreign_keys = ON")
+                        connection.execute("BEGIN IMMEDIATE")
+                        apply_bundle_migration(connection, ddl_observer)
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
+                    finally:
+                        connection.close()
                 elif migration["id"] == ORDER_REFUSAL_MIGRATION_ID:
                     connection = sqlite3.connect(str(path))
                     try:
@@ -1281,7 +1310,7 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                 connection = sqlite3.connect(str(path))
                 try:
                     if migration["id"] == CATALOG_RUNTIME_BASELINE_ID:
-                        verify_complete_catalog_contract(connection)
+                        verify_complete_catalog_contract(connection, include_bundles=False)
                     else:
                         verify_schema_contract(
                             connection,
@@ -1501,6 +1530,9 @@ def validate_known_sql_compatibility(source_root):
     catalog_steps = source_root / "app" / "catalog_migration_steps.py"
     legacy_catalog = source_root / "app" / "catalog_db.py"
     paths = [catalog_steps if catalog_steps.exists() else legacy_catalog]
+    bundle_migration = source_root / "app" / "bundle_migration.py"
+    if bundle_migration.exists():
+        paths.append(bundle_migration)
     domain_migrations = source_root / "app" / "domain_schema_migrations.py"
     if domain_migrations.exists():
         paths.append(domain_migrations)

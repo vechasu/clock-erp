@@ -977,4 +977,7 @@ class ReceiptInventory:
             raise ReceiptInventoryError(
                 "Товар не найден: ID {}.".format(", ".join(map(str, missing)))
             )
+        from app.services.product_bundles import compositions
+        if compositions(connection, product_ids):
+            raise ReceiptInventoryError("Приход оформляется на физические компоненты, а не на сборный SKU.")
         return products

@@ -569,7 +569,7 @@ class BitrixERPProductSync:
                 product_id,
                 connection.execute(
                     "SELECT * FROM catalog_excel_products "
-                    "WHERE active = 1 AND bitrix_external_product_id = ? ORDER BY id",
+                    "WHERE active = 1 AND id NOT IN (SELECT product_id FROM erp_local_components) AND bitrix_external_product_id = ? ORDER BY id",
                     (product_id,),
                 ).fetchall(),
             ),
@@ -578,7 +578,7 @@ class BitrixERPProductSync:
                 xml_id,
                 connection.execute(
                     "SELECT * FROM catalog_excel_products "
-                    "WHERE active = 1 "
+                    "WHERE active = 1 AND id NOT IN (SELECT product_id FROM erp_local_components) "
                     "AND lower(trim(COALESCE(bitrix_xml_id, ''))) = ? ORDER BY id",
                     (xml_id,),
                 ).fetchall() if xml_id else [],
@@ -589,7 +589,7 @@ class BitrixERPProductSync:
                 [
                     row for row in connection.execute(
                         "SELECT * FROM catalog_excel_products "
-                        "WHERE active = 1 "
+                        "WHERE active = 1 AND id NOT IN (SELECT product_id FROM erp_local_components) "
                         "AND lower(trim(COALESCE(excel_article, ''))) = ? ORDER BY id",
                         (sku.casefold(),),
                     ).fetchall()
@@ -602,7 +602,7 @@ class BitrixERPProductSync:
                 [
                     row for row in connection.execute(
                         "SELECT * FROM catalog_excel_products "
-                        "WHERE active = 1 AND normalized_name = ? ORDER BY id",
+                        "WHERE active = 1 AND id NOT IN (SELECT product_id FROM erp_local_components) AND normalized_name = ? ORDER BY id",
                         (name,),
                     ).fetchall()
                     if brand and name
