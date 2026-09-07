@@ -340,6 +340,9 @@ class WildberriesRoutesTest(unittest.TestCase):
         CatalogDatabase(catalog_path).initialize()
         fake_client = mock.Mock()
         fake_client.get_new_orders.return_value = [raw_order(202, article="UNKNOWN-WB")]
+        fake_client.get_orders.return_value = []
+        fake_client.get_supplies.return_value = {"next": 0, "supplies": []}
+        fake_client.get_order_statuses.return_value = {}
         with (
             mock.patch.dict("os.environ", {
                 "ORDERS_DATABASE_PATH": str(self.path),

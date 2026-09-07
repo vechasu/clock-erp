@@ -1764,6 +1764,7 @@
                     <input type="hidden" value="{{ csrf_token() }}" data-sales-wb-sync-csrf>
                 </div>
             </header>
+            {% include "_wb_recovery.html" %}
             {% if wb_assembly_error %}
                 <div class="notice notice-error" role="alert">{{ wb_assembly_error }}</div>
             {% endif %}

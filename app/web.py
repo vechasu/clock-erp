@@ -103,6 +103,9 @@ from app.services.purchases import (
     PurchaseStore,
     PurchaseValidationError,
 )
+from app.services.wildberries_recovery import WildberriesRecovery, diagnostics as wb_diagnostics, save_diagnostics as save_wb_diagnostics
+from itsdangerous import URLSafeTimedSerializer, BadSignature
+from app.services.wildberries_matching import order_product_candidates
 from app.services.wildberries_sales import WildberriesSales
 from app.services.wildberries_orders import synchronize_wildberries_orders
 from app.services.user_notifications import UserNotificationStore
@@ -1727,6 +1730,79 @@ def customer_unmerge(audit_id):
     return redirect(url_for("customers_page", segment="duplicates"))
 
 
+def wb_recovery_service():
+    return WildberriesRecovery(
+        WildberriesOrdersReadOnlyClient(token=os.getenv("WB_API_TOKEN")),
+        OrdersSnapshotStore().path, CatalogDatabase().path,
+    )
+
+
+def wb_recovery_signer():
+    return URLSafeTimedSerializer(app.secret_key, salt="wb-supply-recovery")
+
+
+@app.get("/api/orders/wildberries/recovery")
+def wildberries_recovery_diagnostics():
+    if not can_view_orders():
+        abort(403)
+    return jsonify(ok=True, diagnostics=wb_diagnostics(OrdersSnapshotStore().path))
+
+
+@app.post("/api/orders/wildberries/recovery/preview")
+def wildberries_recovery_preview():
+    require_csrf_when_authenticated()
+    if not can_view_orders():
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    supply_id = str(payload.get("supply_id") or "").strip()
+    try:
+        report = wb_recovery_service().preview_supply(supply_id)
+        # Preview never writes a DB row. The signed receipt authorizes exactly this result.
+        report['confirmation'] = wb_recovery_signer().dumps({
+            'supply_id': supply_id, 'digest': report['digest'], 'days': report['days'],
+            'expected_count': report['wb_count'],
+        }) if report['can_import'] else None
+        return jsonify(ok=True, report=report)
+    except (WildberriesReadOnlyError, ValueError) as error:
+        return jsonify(ok=False, message=str(error)), 400
+    except Exception:
+        app.logger.exception("WB recovery preview failed")
+        return jsonify(ok=False, message="Не удалось проверить поставку. Данные ERP не изменены."), 503
+
+
+@app.post("/api/orders/wildberries/recovery/import")
+def wildberries_recovery_import():
+    require_csrf_when_authenticated()
+    if auth_is_enabled() and (current_auth_user() or {}).get('role') not in {'admin', 'employee'}:
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    if not WB_SYNC_LOCK.acquire(blocking=False):
+        return jsonify(ok=False, message="Синхронизация WB уже выполняется"), 409
+    try:
+        confirmed = wb_recovery_signer().loads(payload.get('confirmation') or '', max_age=1800)
+        service = wb_recovery_service()
+        report = service.preview_supply(confirmed['supply_id'], confirmed['expected_count'], confirmed['days'])
+        if report['digest'] != confirmed['digest'] or report['errors']:
+            return jsonify(ok=False, message="Данные изменились. Повторите проверку поставки."), 409
+        store = OrdersSnapshotStore()
+        outcome = service.import_report(report, store, current_sales_user_name())
+        info = wb_diagnostics(store.path)
+        info.update(recovered=outcome['imported'], attention=report['attention'] + len(outcome['failed']),
+                    checked_at=sale_now_iso(), errors=outcome['failed'], supplies=[],
+                    pending=[row for row in report['rows'] if row['error'] and not row['already_imported'] and not row['sale_id']])
+        save_wb_diagnostics(store, info)
+        return jsonify(ok=True, result=outcome)
+    except BadSignature:
+        return jsonify(ok=False, message="Сначала проверьте поставку; подтверждение действует 30 минут."), 400
+    except (WildberriesReadOnlyError, ValueError) as error:
+        return jsonify(ok=False, message=str(error)), 400
+    except Exception:
+        app.logger.exception("WB recovery import failed")
+        return jsonify(ok=False, message="Импорт не завершён. Повторная проверка безопасна."), 503
+    finally:
+        WB_SYNC_LOCK.release()
+
+
 @app.post("/api/orders/wildberries/sync")
 def wildberries_orders_sync_api():
     require_csrf_when_authenticated()
@@ -1743,6 +1819,19 @@ def wildberries_orders_sync_api():
         store = OrdersSnapshotStore()
         previous_ids = store.source_ids("wildberries")
         result = synchronize_wildberries_orders(client, store)
+        previous_diagnostics = wb_diagnostics(store.path)
+        try:
+            recovery = WildberriesRecovery(client, store.path, CatalogDatabase().path)
+            recovery_result = recovery.reconcile(store)
+            recovery_result.update(new_orders=result['added'], last_success_at=sale_now_iso())
+            if recovery_result['errors'] or recovery_result['pending'] or result['errors']:
+                recovery_result['last_success_at'] = previous_diagnostics.get('last_success_at')
+            save_wb_diagnostics(store, recovery_result)
+            result['recovery'] = recovery_result
+        except (WildberriesReadOnlyError, ValueError, sqlite3.Error) as error:
+            previous_diagnostics.update(errors=[{'error': str(error)}], attention=1, checked_at=sale_now_iso())
+            save_wb_diagnostics(store, previous_diagnostics)
+            result['recovery'] = previous_diagnostics
         current_ids = store.source_ids("wildberries")
         saved_orders = [
             store.get(order_id)
@@ -2406,31 +2495,13 @@ def build_order_product_mapping_context(
                 continue
             attempts = []
             if identity["source"] == "wildberries":
-                if identity["article"]:
-                    attempts.append((
-                        ["lower(trim(COALESCE(p.excel_article, ''))) = lower(?)"],
-                        [identity["article"]],
-                        "vendor_code",
-                    ))
-                barcodes = [identity["barcode"]] + list(product.get("skus") or [])
-                for barcode in dict.fromkeys(barcodes):
-                    if not barcode:
-                        continue
-                    attempts.append((
-                        ["lower(trim(COALESCE(cp.barcode, ''))) = lower(?)"],
-                        [barcode],
-                        "barcode",
-                    ))
-                if identity["nm_id"]:
-                    attempts.append((
-                        [
-                            "(lower(trim(COALESCE(cp.external_source, ''))) = "
-                            "'wildberries' AND "
-                            "trim(COALESCE(cp.external_product_id, '')) = ?)"
-                        ],
-                        [identity["nm_id"]],
-                        "nm_id",
-                    ))
+                rows, method = order_product_candidates(connection, product)
+                automatic_id = rows[0]["id"] if len(rows) == 1 else None
+                automatic_ids.append(automatic_id)
+                automatic_methods.append(method if automatic_id is not None else "")
+                if automatic_id is not None:
+                    product_ids.append(automatic_id)
+                continue
             else:
                 clauses = []
                 parameters = []
@@ -2455,7 +2526,6 @@ def build_order_product_mapping_context(
                 continue
             rows = []
             automatic_method = ""
-            wb_matches = {}
             for clauses, parameters, method in attempts:
                 rows = connection.execute(
                     "SELECT DISTINCT p.id FROM catalog_excel_products p "
@@ -2464,15 +2534,9 @@ def build_order_product_mapping_context(
                     "ORDER BY p.id LIMIT 2",
                     parameters,
                 ).fetchall()
-                if identity["source"] == "wildberries":
-                    wb_matches.update({row["id"]: row for row in rows})
-                    if rows and not automatic_method:
-                        automatic_method = method
-                elif rows:
+                if rows:
                     automatic_method = method
                     break
-            if identity["source"] == "wildberries":
-                rows = list(wb_matches.values())
             automatic_id = rows[0]["id"] if len(rows) == 1 else None
             automatic_ids.append(automatic_id)
             automatic_methods.append(
