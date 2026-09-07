@@ -84,3 +84,31 @@ test('draft validation, duplicate prevention, search and pagination', async ({ p
   await expect(page.locator('#records')).toContainText('21096');
   await expect(page.locator('#count')).toHaveText('1');
 });
+
+test('period filter uses the displayed local calendar day', async ({ page }) => {
+  await page.route('**/api/v1/receipts/movements', (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        data: [
+          {
+            id: 'midnight',
+            source_type: 'legacy',
+            title: 'After midnight',
+            name: 'Watch',
+            created_at: '2026-09-07T22:30:00+00:00',
+            quantity: 1,
+            stock_before: 0,
+            stock_after: 1,
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto('/app/receipts');
+  await page.locator('#date-from').fill('2026-09-08');
+  await page.locator('#date-to').fill('2026-09-08');
+  await page.locator('#filters').getByRole('button', { name: 'Найти', exact: true }).click();
+  await expect(page.locator('#count')).toHaveText('1');
+  await expect(page.locator('#records')).toContainText('08.09.2026');
+});

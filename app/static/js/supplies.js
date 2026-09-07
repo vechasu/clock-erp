@@ -151,7 +151,14 @@
       ]
         .join(" ")
         .toLocaleLowerCase();
-      const date = (r.created_at || "").slice(0, 10);
+      const timestamp = new Date(r.created_at);
+      const date = Number.isNaN(timestamp.valueOf())
+        ? (r.created_at || "").slice(0, 10)
+        : [
+            timestamp.getFullYear(),
+            String(timestamp.getMonth() + 1).padStart(2, "0"),
+            String(timestamp.getDate()).padStart(2, "0"),
+          ].join("-");
       return (
         (!q || searchable.includes(q)) &&
         (!from || date >= from) &&
