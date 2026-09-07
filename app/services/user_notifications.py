@@ -125,7 +125,7 @@ class UserNotificationStore:
                     except (TypeError, ValueError):
                         pass
                 target = (
-                    "/order/wildberries/{}".format(_text(order.get("wb_order_id") or entity_id.removeprefix("wb:"), 160))
+                    "/order/wildberries/{}".format(_text(order.get("wb_order_id") or (entity_id[3:] if entity_id.startswith("wb:") else entity_id), 160))
                     if source == "wildberries" else "/order/{}".format(entity_id)
                 )
                 for user_id in recipients:

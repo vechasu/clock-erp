@@ -79,6 +79,17 @@ class OrdersProgressiveTest(unittest.TestCase):
             self.assertIsNone(web.exact_order_search_state('888', []))
             client.assert_not_called()
 
+    def test_bulk_sale_lookup_preserves_source_identifiers(self):
+        database = mock.MagicMock()
+        connection = database.connect.return_value.__enter__.return_value
+        connection.execute.return_value.fetchall.return_value = [
+            {'id':'wb-sale', 'source':'wildberries', 'external_order_id':'123'},
+            {'id':'ttt-sale', 'source':'tictactoy', 'external_order_id':'123'},
+        ]
+        self.assertEqual(web.bulk_conducted_order_sales(['wb:123', '123'], database),
+                         {'wb:123':'wb-sale', '123':'ttt-sale'})
+        self.assertEqual(connection.execute.call_args[0][1], ['123', '123'])
+
     def test_distant_pages_remain_reachable(self):
         rows = [dict(self.ttt[0], id=str(i),number=str(i)) for i in range(1,242)]
         self.store.replace(rows, 101)

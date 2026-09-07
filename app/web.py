@@ -1839,7 +1839,7 @@ def bulk_conducted_order_sales(order_ids, database=None):
                 "WHERE ((source = 'tictactoy' AND cancelled_at IS NULL AND deleted_at IS NULL) "
                 "OR source = 'wildberries') AND external_order_id IN ({}) "
                 "ORDER BY inserted_at DESC, id DESC".format(placeholders),
-                [value.removeprefix("wb:") for value in order_ids],
+                [value[3:] if value.startswith("wb:") else value for value in order_ids],
             ).fetchall()
     except sqlite3.Error:
         app.logger.exception("Failed to inspect conducted order sales in bulk")

@@ -122,6 +122,12 @@ class UserNotificationStoreTest(unittest.TestCase):
         self.assertEqual(created, 1)
         self.assertEqual(self.store.feed(1)["items"][0]["target_url"], "/order/wildberries/201")
 
+    def test_wb_link_without_separate_wb_id(self):
+        saved = order(201, "wildberries")
+        saved.pop("wb_order_id")
+        self.assertEqual(self.store.publish_saved_orders("wildberries", {"wb:200"}, [saved], [1]), 1)
+        self.assertEqual(self.store.feed(1)["items"][0]["target_url"], "/order/wildberries/201")
+
     def test_task_is_personal_read_state_and_preferences_persist(self):
         task = {"id": 77, "title": "Собрать заказ #21134", "due_date": "2026-09-01", "due_time": "15:00"}
         self.assertTrue(self.store.publish_task(task, 2, "Иван"))
