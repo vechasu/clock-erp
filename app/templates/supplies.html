@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ru">
+<head>
+{% include "_favicon.html" %}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>ТТТ ERP — Приход</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/supplies.css') }}">
+<script defer src="{{ url_for('static', filename='js/supplies.js') }}">
+</script>
+</head>
+<body class="receipts-page">
+<div class="app">
+{% include '_sidebar.html' %}
+<main class="main" id="main-content" tabindex="-1">
+<header class="page-header">
+<div>
+<h1>Приход</h1>
+<p>Поставки и приходные движения товаров</p>
+</div>
+<div class="actions">
+<label class="button">Импорт Excel<input type="file" id="excel" accept=".xlsx,.xlsm" hidden>
+</label>
+<button id="new-supply" class="button primary erp-primary-action">+ Новая поставка</button>
+</div>
+</header>
+<div id="message" role="status" aria-live="polite" aria-atomic="true" hidden>
+</div>
+<nav class="tabs" aria-label="Вкладки прихода">
+<button data-tab="all" aria-current="page">Все записи</button>
+<button data-tab="supplies">Поставки</button>
+<button data-tab="cancellations">Отмены продаж</button>
+</nav>
+<section class="stats">
+<div class="card">
+<span id="count-label">Записей прихода</span>
+<strong id="count">0</strong>
+</div>
+<div class="card">
+<span id="quantity-label">Принято единиц</span>
+<strong id="quantity">0</strong>
+</div>
+</section>
+<form id="filters" class="filters">
+<input id="query" type="search" placeholder="Поиск товара, документа, автора" aria-label="Поиск">
+<select id="type" aria-label="Тип прихода">
+<option value="">Все типы</option value="supply">Поставка</option value="sale_cancellation">Отмена продажи</option value="receipt">Старый приход</option value="legacy_excel">Excel — история</option value="legacy">Архивная запись</option value="draft">Черновик</option value="posted">Проведена</option>
+</select>
+<select id="brand" aria-label="Бренд">
+<option value="">Все бренды</option>
+</select>
+<select id="category" aria-label="Категория">
+<option value="">Все категории</option>
+</select>
+<label>С <input id="date-from" type="date">
+</label>
+<label>По <input id="date-to" type="date">
+</label>
+<button class="button" type="submit">Найти</button>
+<button class="button" type="reset">Сбросить</button>
+<details>
+<summary>Столбцы</summary>
+<div id="columns">
+</div>
+</details>
+</form>
+<div class="table-scroll">
+<table id="records" aria-label="Таблица приходов">
+<thead>
+</thead>
+<tbody>
+</tbody>
+</table>
+</div>
+<div class="pagination">
+<span id="page-info">
+</span>
+<select id="page-size" aria-label="Размер страницы">
+<option>25</option>
+<option>50</option>
+<option>100</option>
+</select>
+<button id="previous" class="button">Назад</button>
+<button id="next" class="button">Вперёд</button>
+</div>
+</main>
+</div>
+<dialog id="supply-dialog" aria-labelledby="supply-heading">
+<header>
+<h2 id="supply-heading">Новая поставка</h2>
+<button class="button" id="close-supply" aria-label="Закрыть">×</button>
+</header>
+<div id="supply-meta">
+</div>
+<label>Название<input id="title" maxlength="200" required>
+</label>
+<label>Комментарий<textarea id="comment" maxlength="2000">
+</textarea>
+</label>
+<div id="draft-actions" class="actions">
+<button id="add-bitrix" class="button">+ Добавить из Bitrix</button>
+<span>«Было» и «Станет» до проведения — предварительные значения</span>
+</div>
+<section id="bitrix-panel" hidden>
+<label>Поиск в Bitrix<input id="bitrix-query" placeholder="Название, артикул или ID">
+</label>
+<button id="bitrix-search" class="button">Найти в Bitrix</button>
+<div id="bitrix-results">
+</div>
+</section>
+<div class="table-scroll">
+<table id="items" aria-label="Таблица позиций поставки">
+<thead>
+<tr>
+<th scope="col">Фото</th>
+<th scope="col">Товар</th>
+<th scope="col">Артикул</th>
+<th scope="col">Бренд</th>
+<th scope="col">Было</th>
+<th scope="col">Приход</th>
+<th scope="col">Станет</th>
+<th scope="col">Действия</th>
+</tr>
+</thead>
+<tbody>
+</tbody>
+</table>
+</div>
+<p id="supply-totals">
+</p>
+<div id="dialog-message" role="alert" aria-atomic="true" hidden>
+</div>
+<footer>
+<button id="delete-supply" class="button danger">Удалить черновик</button>
+<button id="save-supply" class="button">Сохранить черновик</button>
+<button id="post-supply" class="button primary erp-primary-action">Провести поставку</button>
+</footer>
+</dialog>
+<dialog id="source-dialog" aria-label="Документ-источник">
+<header>
+<h2>Документ-источник</h2>
+<button id="close-source" class="button" aria-label="Закрыть">×</button>
+</header>
+<div id="source-content">
+</div>
+</dialog>
+</body>
+</html>

@@ -21521,7 +21521,7 @@ def api_receipts_catalog():
         brand_id=request.args.get("brand_id"),
         category_id=request.args.get("category_id"),
         limit=api_positive_int(request.args.get("limit"), 50, 200),
-        allow_legacy=not request.path.startswith("/api/v1/"),
+        allow_legacy=False,
     )
     if query:
         items = [
@@ -25193,6 +25193,11 @@ def api_mail_settings_disable():
 def react_application(react_path):
     del react_path
     return redirect("/app/products")
+
+
+from app.supply_routes import register_supply_routes
+import sys as _supply_sys
+register_supply_routes(_supply_sys.modules[__name__])
 
 
 if __name__ == "__main__":

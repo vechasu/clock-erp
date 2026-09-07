@@ -1921,21 +1921,17 @@ class SalesInventoryWebTest(SalesInventoryTest):
             external_request.assert_not_called()
 
     def test_cancelled_sale_receipt_appears_without_edit_actions(self):
-        sale = self.create_managed_sale(sale_id="receipt-ui")
-        response = self.cancel_sale_form(sale, reason="duplicate")
+        sale=self.create_managed_sale(sale_id='receipt-ui')
+        response=self.cancel_sale_form(sale,reason='duplicate')
+        self.assertEqual(response.status_code,200)
+        page=self.client.get('/receipts')
+        self.assertEqual(page.status_code,200)
+        rows=self.client.get('/api/v1/receipts/movements').get_json()['data']
+        cancellation=next(r for r in rows if r['source_type']=='sale_cancellation')
+        self.assertIn('ORDER-receipt-ui',cancellation['title'])
+        self.assertEqual(cancellation['quantity'],1)
+        self.assertEqual(self.client.delete('/api/v1/receipts/'+cancellation['source_id']).status_code,410)
 
-        page = self.client.get("/receipts")
-        text = page.get_data(as_text=True)
-        row = text.split("Отмена продажи №ORDER-receipt-ui", 1)[1].split(
-            "</tr>", 1
-        )[0]
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(page.status_code, 200)
-        self.assertIn("Создано автоматически при отмене продажи", text)
-        self.assertIn("Не указана", row)
-        self.assertNotIn("js-edit-receipt", row)
-        self.assertNotIn("/receipts/delete", row)
 
     def test_linked_sale_cancellation_atomically_refuses_order_once(self):
         payload = self.payload(self.product, "linked-cancel")

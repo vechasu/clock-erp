@@ -200,7 +200,6 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
             paths = (
                 "/app/products?toolbar_popover_e2e=1"
                 "&brand=Casio&q=Casio&sort_by=stock",
-                "/app/receipts?toolbar_popover_e2e=1",
             )
             for width, height in ((1440, 900), (390, 844), (320, 568)):
                 for path in paths:
@@ -234,10 +233,6 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                 (
                     "/app/sales?sales_modal_e2e=1",
                     'data-sales-modal-e2e="pass"',
-                ),
-                (
-                    "/app/receipts?receipts_modal_e2e=1",
-                    'data-receipts-modal-e2e="pass"',
                 ),
             )
             for width, height in ((1440, 900), (390, 844), (320, 568)):
@@ -350,7 +345,6 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
                 "/app/sales?source=tictactoy&datetime_e2e=1",
                 "/app/sales?source=wildberries&datetime_e2e=1",
                 "/app/sales?source=amazon&datetime_e2e=1",
-                "/app/receipts?datetime_e2e=1",
             )
             for width, height in ((1440, 900), (390, 844), (320, 568)):
                 for path in datetime_paths:
@@ -366,7 +360,6 @@ class ToolbarPopoverBrowserTest(unittest.TestCase):
             pagination_paths = (
                 "/app/products?pagination_e2e=1&page=2&per_page=25",
                 "/app/sales?pagination_e2e=1&source=all&page=2&per_page=25",
-                "/app/receipts?pagination_e2e=1&page=2&per_page=25",
             )
             for width, height in ((1440, 900), (390, 844), (320, 568)):
                 for path in pagination_paths:

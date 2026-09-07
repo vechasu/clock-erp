@@ -217,28 +217,12 @@ class ReceiptProductPhotosTest(unittest.TestCase):
         self.assertIn("position: absolute !important", components)
         self.assertIn("padding-left: 54px !important", components)
 
-    def test_page_render_has_one_image_or_placeholder_per_row(self):
-        rows = [receipt(1, "1"), receipt(2, "2")]
-        rows[0]["product_thumbnail_url"] = "https://cdn.test/broken.jpg"
-        rows[1]["product_thumbnail_url"] = ""
-        started = time.perf_counter()
-        with mock.patch.object(
-            web, "api_receipt_records", return_value=rows
-        ), mock.patch.object(
-            web,
-            "attach_receipt_product_thumbnails",
-            side_effect=lambda page_rows: page_rows,
-        ), mock.patch.dict(
-            web.app.config,
-            {"TESTING": True, "AUTH_TESTING": False},
-        ):
-            response = web.app.test_client().get("/app/receipts")
-        self.assertEqual(response.status_code, 200)
-        html = response.get_data(as_text=True)
-        elapsed_ms = (time.perf_counter() - started) * 1000
-        self.assertEqual(html.count('class="receipt-product-photo"'), 2)
-        self.assertEqual(html.count('class="receipt-product-thumb"'), 1)
-        self.assertLess(elapsed_ms, 1000)
+    def test_new_journal_has_lazy_photo_column(self):
+        source=(web.PROJECT_ROOT/'app/static/js/supplies.js').read_text(encoding='utf-8')
+        self.assertIn('loading="lazy"',source)
+        self.assertIn("'Фото'",source)
+        self.assertIn('image(r.image_url)',source)
+
 
 
 if __name__ == "__main__":

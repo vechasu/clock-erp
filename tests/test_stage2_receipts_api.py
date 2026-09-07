@@ -96,153 +96,21 @@ class Stage2ReceiptsApiTest(unittest.TestCase):
             },
         )
 
-    def test_create_list_search_sort_and_catalog(self):
-        created = self.create_receipt()
-        self.assertEqual(created.status_code, 201)
-        receipt = created.get_json()["data"]
-        self.assertEqual(receipt["total_quantity"], 2)
-        self.assertEqual(receipt["total_amount"], 10000)
-        self.assertEqual(receipt["moysklad_document_id"], "enter-1")
-        self.remote.create_stock_enter_many.assert_called_once()
+    def test_retired_receipt_write_api_is_stock_neutral(self):
+        response=self.create_receipt()
+        self.assertEqual(response.status_code,410)
+        self.remote.create_stock_enter_many.assert_not_called()
+        self.assertEqual(self.client.get('/api/v1/receipts').get_json()['data'],[])
 
-        listing = self.client.get(
-            "/api/v1/receipts?q=casio&date_from=2026-07-01"
-            "&sort_by=total_amount&sort_dir=desc&page_size=1"
-        )
-        self.assertEqual(listing.status_code, 200)
-        payload = listing.get_json()
-        self.assertEqual(payload["meta"]["total"], 1)
-        self.assertEqual(payload["meta"]["total_pages"], 1)
-        self.assertEqual(payload["meta"]["totals"]["quantity"], 2)
-        self.assertEqual(payload["data"][0]["number"], receipt["number"])
 
-        aliases = self.client.get(
-            "/api/v1/receipts?search=casio&date_from=2026-07-01"
-            "&sort=total_amount&order=desc&page_size=1"
-        ).get_json()
-        self.assertEqual(aliases["meta"]["total"], 1)
-
-        catalog = self.client.get("/api/receipts/catalog?q=strap").get_json()
-        self.assertEqual(catalog["meta"]["total"], 1)
-        self.assertEqual(catalog["data"][0]["id"], "ms-2")
-
-    def test_missing_price_is_null_and_mixed_total_is_unknown(self):
-        response = self.create_receipt([{
-            "product_id": "ms-1",
-            "brand": "Casio",
-            "category": "Часы",
-            "quantity": 1,
-            "purchase_price": "",
-        }, {
-            "product_id": "ms-2",
-            "brand": "Vechasu",
-            "category": "Ремешки",
-            "quantity": 2,
-            "purchase_price": 0,
-        }])
-        self.assertEqual(response.status_code, 201)
-        receipt = response.get_json()["data"]
-        self.assertIsNone(receipt["positions"][0]["purchase_price"])
-        self.assertIsNone(receipt["positions"][0]["line_total"])
-        self.assertEqual(receipt["positions"][1]["purchase_price"], 0)
-        self.assertEqual(receipt["positions"][1]["line_total"], 0)
-        self.assertIsNone(receipt["total_amount"])
-        listing = self.client.get(
-            "/api/receipts?sort_by=total_amount"
-        ).get_json()
-        self.assertIsNone(listing["meta"]["totals"]["amount"])
-    def test_patch_keeps_product_identity_and_delete_preserves_history(self):
-        receipt_id = self.create_receipt().get_json()["data"]["id"]
-        rejected = self.client.patch(
-            "/api/receipts/{}".format(receipt_id),
-            json={"product_id": "ms-2", "quantity": 4},
-        )
-        self.assertEqual(rejected.status_code, 422)
+    def test_legacy_patch_and_delete_are_retired(self):
+        for response in (self.client.patch('/api/v1/receipts/old',json={'quantity':10}),self.client.delete('/api/v1/receipts/old')):
+            self.assertEqual(response.status_code,410)
         self.remote.update_stock_enter_many.assert_not_called()
-        updated = self.client.patch(
-            "/api/receipts/{}".format(receipt_id),
-            json={
-                "receipt_date": "2026-07-31",
-                "note": "Уточнено",
-                "product_id": "ms-1",
-                "brand": "Casio",
-                "category": "Часы",
-                "quantity": 4,
-            },
-        )
-        self.assertEqual(updated.status_code, 200)
-        self.assertEqual(updated.get_json()["data"]["product_name"], "Casio G-Shock")
-        self.assertEqual(updated.get_json()["data"]["total_quantity"], 4)
-        self.remote.update_stock_enter_many.assert_called_once()
+        self.remote.delete_stock_enter.assert_not_called()
 
-        cancelled = self.client.delete("/api/receipts/{}".format(receipt_id))
-        self.assertEqual(cancelled.status_code, 200)
-        self.assertFalse(cancelled.get_json()["data"]["deleted"])
-        self.assertTrue(cancelled.get_json()["data"]["cancelled"])
-        self.remote.delete_stock_enter.assert_called_once_with("enter-1")
-        listing = self.client.get("/api/receipts").get_json()
-        self.assertEqual(listing["meta"]["total"], 1)
-        self.assertEqual(listing["data"][0]["status"], "cancelled")
 
-    def test_validation_conflict_and_remote_failure_are_structured(self):
-        invalid = self.client.post(
-            "/api/receipts",
-            json={"receipt_date": "bad", "positions": []},
-        )
-        self.assertEqual(invalid.status_code, 422)
-        self.assertEqual(
-            invalid.get_json()["code"],
-            "RECEIPT_VALIDATION_FAILED",
-        )
-        invalid_image = self.client.post(
-            "/api/receipts",
-            json={
-                "receipt_date": "2026-07-30",
-                "positions": [{
-                    "product_id": "ms-1",
-                    "quantity": 1,
-                    "purchase_price": 1,
-                }],
-                "product_image": {
-                    "name": "payload.png",
-                    "base64": "not-base64",
-                },
-            },
-        )
-        self.assertEqual(invalid_image.status_code, 422)
-        self.assertEqual(
-            invalid_image.get_json()["code"],
-            "RECEIPT_VALIDATION_FAILED",
-        )
 
-        self.remote.create_stock_enter_many.side_effect = RuntimeError(
-            "remote unavailable"
-        )
-        failed = self.create_receipt()
-        self.assertEqual(failed.status_code, 502)
-        self.assertEqual(failed.get_json()["code"], "REMOTE_DOCUMENT_CONFLICT")
-        self.assertEqual(web.load_receipts(), [])
-
-    def test_multi_position_receipt_is_not_editable(self):
-        created = self.create_receipt([
-            {
-                "product_id": "ms-1",
-                "quantity": 1,
-                "purchase_price": 100,
-            },
-            {
-                "product_id": "ms-2",
-                "quantity": 2,
-                "purchase_price": 50,
-            },
-        ])
-        receipt_id = created.get_json()["data"]["id"]
-        response = self.client.patch(
-            "/api/receipts/{}".format(receipt_id),
-            json={"quantity": 5},
-        )
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.get_json()["code"], "RECEIPT_NOT_EDITABLE")
 
     def test_unchanged_receipts_are_serialized_once_for_repeated_pages(self):
         self.create_receipt()
