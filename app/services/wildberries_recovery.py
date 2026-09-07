@@ -152,6 +152,10 @@ class WildberriesRecovery:
             notice = 'Заказ восстановлен из Wildberries после пропущенной синхронизации. Поставка: ' + (row['supply_id'] or 'не указана')
             order.update(recovered_from_wb=True, recovery_notice=notice, recovery_supply_id=row['supply_id'],
                          recovered_at=stamp(), requires_matching=row['matching_status'] != 'READY')
+            product_id = row['erp_product']['id'] if row['matching_status'] == 'READY' else None
+            order['products'] = [dict(item, product_id=product_id) for item in order['products']]
+            if order['requires_matching']:
+                order['status_name'] = 'Требует сопоставления · ' + order['status_name']
             try:
                 store.initialize()
                 with store.connection() as connection:
@@ -163,6 +167,19 @@ class WildberriesRecovery:
                         result['skipped'] += 1
                         continue
                     def journal(target, inserted):
+                        if product_id is not None:
+                            saved = target.execute(
+                                'SELECT product_id FROM recovery_catalog.erp_order_product_mappings '
+                                'WHERE order_id=? AND order_item_id=?',
+                                (inserted['id'], row['wb_order_id'])).fetchone()
+                            if saved and int(saved['product_id']) != int(product_id):
+                                raise ValueError('Сопоставление изменилось; повторите проверку')
+                            if not saved:
+                                target.execute(
+                                    'INSERT INTO recovery_catalog.erp_order_product_mappings '
+                                    '(order_id, order_item_id, product_id, created_at, updated_at) '
+                                    'VALUES (?, ?, ?, ?, ?)',
+                                    (inserted['id'], row['wb_order_id'], int(product_id), stamp(), stamp()))
                         AuditJournal().record('order', inserted['id'], 'system_created',
                             'Заказ WB №' + row['wb_order_id'], source='wildberries', actor_type='system',
                             actor_name=actor, metadata={'text_snapshot': notice, 'external_order_id': row['wb_order_id'],

@@ -90,8 +90,10 @@ class WildberriesRecoveryTest(unittest.TestCase):
         self.assertTrue(order['recovered_from_wb'])
         self.assertEqual(order['wb_supply_id'], KNOWN_SUPPLY)
         self.assertEqual(order['created_at'], '2026-09-06T10:00:00Z')
+        self.assertEqual(int(order['products'][0]['product_id']), int(self.product['id']))
         self.assertEqual(self.effects(), effects)
         with self.catalog_db.connect() as connection:
+            self.assertEqual(connection.execute('SELECT COUNT(*) FROM erp_order_product_mappings WHERE product_id=?', (self.product['id'],)).fetchone()[0], 8)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM erp_audit_events WHERE entity_type='order'").fetchone()[0], 8)
 
     def test_retries_and_concurrency_do_not_duplicate_orders_or_journal(self):
@@ -133,6 +135,30 @@ class WildberriesRecoveryTest(unittest.TestCase):
         self.assertEqual(self.recovery.import_report(report, self.store)['imported'], 8)
         self.assertTrue(self.store.get('wb:101')['requires_matching'])
         self.assertTrue(self.store.get('wb:102')['requires_matching'])
+        self.assertIsNone(self.store.get('wb:101')['products'][0]['product_id'])
+        self.assertIsNone(self.store.get('wb:102')['products'][0]['product_id'])
+        with self.catalog_db.connect() as connection:
+            self.assertEqual(connection.execute('SELECT COUNT(*) FROM erp_order_product_mappings').fetchone()[0], 6)
+
+    def test_imported_orders_visible_in_list_and_exact_search(self):
+        self.recovery.import_report(self.preview(), self.store)
+        with mock.patch.dict(web.app.config, TESTING=True, AUTH_TESTING=False, ORDERS_SNAPSHOT_TESTING=True), \
+                mock.patch.object(web, 'OrdersSnapshotStore', return_value=self.store), \
+                mock.patch.object(web, 'CatalogDatabase', return_value=self.catalog_db), \
+                mock.patch.object(web, 'get_orders', return_value=[]), \
+                mock.patch.object(self.store, 'ensure'), \
+                mock.patch.object(web, 'schedule_order_item_unit_backfill'):
+            client = web.app.test_client()
+            response = client.get('/api/orders?source=wildberries')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['total_filtered'], 8)
+            for order_id in self.client.ids:
+                self.assertIn(str(order_id), response.json['html'])
+            search = client.get('/api/orders?q=101&source=tictactoy&status=N&period=today')
+            self.assertEqual(search.status_code, 200)
+            self.assertEqual(search.json['total_filtered'], 1)
+            self.assertIn('101', search.json['html'])
+            self.assertEqual(client.get('/app/orders?source=wildberries').status_code, 200)
 
     def test_partial_status_failure_imports_only_known_orders(self):
         del self.client.statuses['101']
