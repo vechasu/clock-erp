@@ -76,3 +76,14 @@ ID заказа, idempotency key, повторной проверкой внут
 
 WB поддерживает проверку поставки и восстановление пропущенных заказов без
 продаж. См. [контракт recovery](../wildberries-recovery.md).
+
+## Добавление товаров
+
+Новые товары сотрудники добавляют через «Товары → Добавить из Bitrix».
+Ручное создание отключено: POST `/warehouse/add`, `/api/products`,
+`/api/v1/products` и создание product через `/receipts/catalog/create`
+возвращают HTTP 410. Старый выбор `__new__` в форме прихода также отключён.
+Общие сервисы каталога, существующие импорты, редактирование карточек,
+фотографии и складские операции сохранены. Проверка контракта:
+`tests/test_warehouse_initial_stock.py`, `tests/test_single_bitrix_product_import.py`
+и `tests/test_stage2_products_api.py`; внешние клиенты в тестах подменены.

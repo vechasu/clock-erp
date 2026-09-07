@@ -115,7 +115,6 @@ from app.catalog.application import CatalogApplication
 from app.services.excel_product_catalog import (
     ExcelProductCatalog,
     ProductDeleteBlockedError,
-    parse_initial_stock,
 )
 from app.services.product_collections import ProductCollections
 from app.services.excel_receipt_import import (
@@ -494,75 +493,6 @@ def file_cache_signature(path):
 
 def catalog_cache_signature():
     return file_cache_signature(CatalogDatabase().path)
-
-
-WAREHOUSE_ADD_REQUESTS_PATH = (
-    PROJECT_ROOT / "instance" / "warehouse_add_requests.json"
-)
-
-
-def claim_warehouse_add_request(request_id):
-    request_id = str(request_id or "").strip()
-
-    if not request_id:
-        return True
-
-    WAREHOUSE_ADD_REQUESTS_PATH.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    now = time.time()
-
-    with WAREHOUSE_ADD_REQUESTS_PATH.open(
-        "a+",
-        encoding="utf-8",
-    ) as file:
-        fcntl.flock(file.fileno(), fcntl.LOCK_EX)
-
-        file.seek(0)
-        raw_data = file.read().strip()
-
-        try:
-            data = json.loads(raw_data) if raw_data else {}
-        except (TypeError, ValueError):
-            data = {}
-
-        if not isinstance(data, dict):
-            data = {}
-
-        cleaned_data = {}
-
-        for key, value in data.items():
-            try:
-                timestamp = float(value)
-            except (TypeError, ValueError):
-                continue
-
-            if now - timestamp < 86400:
-                cleaned_data[str(key)] = timestamp
-
-        if request_id in cleaned_data:
-            fcntl.flock(file.fileno(), fcntl.LOCK_UN)
-            return False
-
-        cleaned_data[request_id] = now
-
-        file.seek(0)
-        file.truncate()
-
-        json.dump(
-            cleaned_data,
-            file,
-            ensure_ascii=False,
-            indent=2,
-        )
-
-        file.flush()
-        os.fsync(file.fileno())
-        fcntl.flock(file.fileno(), fcntl.LOCK_UN)
-
-    return True
 
 
 WAREHOUSE_CREATED_AT_PATH = (
@@ -5574,7 +5504,7 @@ def warehouse_page():
             export_all_url=url_for("warehouse_products_export", scope="all"),
             warehouse_active_filter_count=warehouse_active_filter_count,
             warehouse_active_filter_label=warehouse_active_filter_label,
-            open_add=request.args.get("open_add") == "1",
+            open_add=False,
             sort_by=sort_by,
             sort_dir=sort_dir,
             add_request_id=uuid.uuid4().hex,
@@ -6139,63 +6069,11 @@ def warehouse_update_cell():
 
 @app.route("/warehouse/add", methods=["POST"])
 def warehouse_add_product():
-    name = request.form.get("name", "").strip()
-    model = request.form.get("model", "").strip()
-    article = request.form.get("article", "").strip()
-    brand = request.form.get("brand", "").strip()
-    category = request.form.get("category", "").strip()
-    brand_id = request.form.get("brand_id", "").strip() or None
-    category_id = request.form.get("category_id", "").strip() or None
-    cell = request.form.get("cell", "").strip()
-    stock_raw = request.form.get("stock", "").strip()
-    request_id = request.form.get("request_id", "").strip()
-
-    if not name:
-        return redirect(url_for(
-            "warehouse_page",
-            notice="error",
-            message="Название товара обязательно"
-        ))
-
-    try:
-        stock = parse_initial_stock(stock_raw)
-    except ValueError as error:
-        return redirect(url_for(
-            "warehouse_page",
-            open_add="1",
-            notice="error",
-            message=str(error),
-            stock_error=str(error),
-            add_stock=stock_raw,
-        ))
-
-    if not claim_warehouse_add_request(request_id):
-        return redirect(url_for(
-            "warehouse_page",
-            notice="error",
-            message="Повторное добавление остановлено: этот запрос уже обработан"
-        ))
-
-    try:
-        ExcelProductCatalog().create_product(
-            name=name,
-            model=model,
-            article=article,
-            brand=brand,
-            category=category,
-            cell=cell,
-            stock=stock,
-            brand_id=brand_id,
-            category_id=category_id,
-            collection_ids=request.form.getlist("collection_ids"),
-        )
-        return redirect(url_for(
-            "warehouse_page", notice="success", message="Товар добавлен"
-        ))
-    except (TypeError, ValueError) as error:
-        return redirect(url_for(
-            "warehouse_page", notice="error", message=str(error)
-        ))
+    return api_error(
+        "MANUAL_PRODUCT_CREATION_DISABLED",
+        "Добавляйте новые товары через «Добавить из Bitrix».",
+        410,
+    )
 
 
 @app.route("/warehouse/edit", methods=["POST"])
@@ -13793,6 +13671,8 @@ def receipt_catalog_create():
         payload = request.form
 
     kind = normalize_catalog_label(payload.get("kind")).lower()
+    if kind == "product":
+        return warehouse_add_product()
     name = normalize_catalog_label(payload.get("name"))
     requested_brand = normalize_catalog_label(
         payload.get("brand")
@@ -13905,141 +13785,6 @@ def receipt_catalog_create():
             brand=brand,
         )
 
-    if not category:
-        return jsonify(
-            ok=False,
-            message="Сначала выберите категорию",
-        ), 400
-
-    all_products = [
-        *warehouse_items,
-        *[
-            {
-                "id": item.get("id"),
-                "name": item.get("name"),
-                "brand": item.get("brand"),
-                "category": item.get("category"),
-            }
-            for item in excel_items
-        ],
-    ]
-    duplicate = next(
-        (
-            item
-            for item in all_products
-            if (
-                catalog_label_key(item.get("brand"))
-                == catalog_label_key(brand)
-                and catalog_label_key(item.get("category"))
-                == catalog_label_key(category)
-                and catalog_label_key(item.get("name"))
-                == catalog_label_key(name)
-            )
-        ),
-        None,
-    )
-
-    if duplicate:
-        return jsonify(
-            ok=False,
-            message=(
-                "Такой товар у выбранных бренда и категории "
-                "уже существует"
-            ),
-        ), 409
-
-    local_product = None
-
-    try:
-        local_product = ExcelProductCatalog().create_product(
-            name=name,
-            brand=brand,
-            category=category,
-        )
-        client = MoySkladClient()
-        product_folder = client.get_or_create_product_folder(
-            "/".join([brand, category])
-        )
-        product_code = (
-            "VECHASU-"
-            + uuid.uuid4().hex[:12].upper()
-        )
-        created_product = client.create_product(
-            name=name,
-            code=product_code,
-            article=None,
-            product_folder=product_folder,
-        )
-
-        if not created_product:
-            raise ValueError("МойСклад не создал товар")
-
-        product_id = normalize_catalog_label(
-            created_product.get("id")
-        )
-
-        if not product_id:
-            raise ValueError("МойСклад не вернул ID товара")
-
-        record_warehouse_created_at(product_id)
-        remember_catalog_classification(brand, category)
-        WAREHOUSE_CACHE["items"] = []
-        WAREHOUSE_CACHE["loaded_at"] = 0
-
-        return jsonify(
-            ok=True,
-            kind=kind,
-            value=product_id,
-            label=(
-                created_product.get("name")
-                or name
-            ),
-            product={
-                "id": product_id,
-                "catalog_product_id": (
-                    local_product.get("id")
-                    if local_product
-                    else ""
-                ),
-                "name": (
-                    created_product.get("name")
-                    or name
-                ),
-                "article": (
-                    created_product.get("article")
-                    or ""
-                ),
-                "code": (
-                    created_product.get("code")
-                    or product_code
-                ),
-                "brand": brand,
-                "category": category,
-                "stock": 0,
-                "stock_display": "0",
-                "has_images": False,
-                "thumbnail_url": "",
-            },
-        )
-    except Exception as error:
-        if local_product:
-            try:
-                ExcelProductCatalog().archive_product(
-                    local_product["id"]
-                )
-            except Exception:
-                app.logger.exception(
-                    "Не удалось убрать локальную карточку "
-                    "после ошибки создания товара"
-                )
-
-        app.logger.exception(
-            "Ошибка создания товара из прихода"
-        )
-        return jsonify(
-            ok=False,
-            message="Не удалось создать товар: " + str(error),
-        ), 502
 
 
 def attach_receipt_product_thumbnails(receipts, shared_catalog=None):
@@ -15379,6 +15124,9 @@ def receipt_create():
     import json as receipt_json
     import uuid
 
+    if "__new__" in request.form.getlist("product_id"):
+        return warehouse_add_product()
+
     try:
         product_image = read_product_image_upload(
             request.files.get("product_image")
@@ -15401,9 +15149,6 @@ def receipt_create():
     ).strip()
 
     # === NEW PRODUCT IN RECEIPT BACKEND V1 ===
-    new_product_name = (
-        request.form.get("new_product_name") or ""
-    ).strip()
     catalog_product_id = (
         request.form.get("catalog_product_id") or ""
     ).strip()
@@ -15774,118 +15519,7 @@ def receipt_create():
             }
     # === RECEIPTS IMPORT CREATE MANY V1 END ===
 
-    # === NEW PRODUCT IN RECEIPT BACKEND V1 ===
-    if product_ids and product_ids[0] == "__new__":
-        if not new_product_name:
-            return redirect(url_for(
-                "receipts_page",
-                notice="error",
-                message="Укажите название нового товара",
-            ))
 
-        if not submitted_brand:
-            return redirect(url_for(
-                "receipts_page",
-                notice="error",
-                message="Укажите бренд нового товара",
-            ))
-
-        if not submitted_category:
-            return redirect(url_for(
-                "receipts_page",
-                notice="error",
-                message="Укажите категорию нового товара",
-            ))
-
-        try:
-            product_client = MoySkladClient()
-
-            product_folder = (
-                product_client
-                .get_or_create_product_folder(
-                    "/".join([
-                        submitted_brand,
-                        submitted_category,
-                    ])
-                )
-            )
-
-            product_code = (
-                "VECHASU-"
-                + uuid.uuid4().hex[:12].upper()
-            )
-
-            created_product = (
-                product_client.create_product(
-                    name=new_product_name,
-                    code=product_code,
-                    article=None,
-                    product_folder=product_folder,
-                    image=product_image,
-                )
-            )
-
-            if not created_product:
-                raise ValueError(
-                    "МойСклад не создал товар"
-                )
-
-            new_product_id = str(
-                created_product.get("id") or ""
-            ).strip()
-
-            if not new_product_id:
-                raise ValueError(
-                    "МойСклад не вернул ID товара"
-                )
-
-            record_warehouse_created_at(
-                new_product_id
-            )
-
-            catalog[new_product_id] = {
-                "id": new_product_id,
-                "name": (
-                    created_product.get("name")
-                    or new_product_name
-                ),
-                "article": (
-                    created_product.get("article")
-                    or ""
-                ),
-                "code": (
-                    created_product.get("code")
-                    or product_code
-                ),
-                "brand": submitted_brand,
-                "category": submitted_category,
-                "cell": "",
-                "stock": 0,
-                "has_images": bool(product_image),
-            }
-
-            product_ids = [new_product_id]
-            created_new_product = True
-
-        except Exception as error:
-            print(
-                "Ошибка создания товара из прихода: "
-                + str(error)
-            )
-
-            WAREHOUSE_CACHE["items"] = []
-            WAREHOUSE_CACHE["loaded_at"] = 0
-
-            return redirect(url_for(
-                "receipts_page",
-                notice="error",
-                message=(
-                    "Ошибка создания нового товара: "
-                    + str(error)
-                ),
-                open_receipt_modal="1",
-            ))
-    # === NEW PRODUCT IN RECEIPT BACKEND V1 END ===
 
     image_result_message = ""
 
@@ -19697,27 +19331,6 @@ def serialize_api_product(product):
     }
 
 
-def api_product_request_payload():
-    if request.mimetype == "multipart/form-data":
-        payload = {
-            key: request.form.get(key)
-            for key in (
-                "name", "model", "article", "brand", "category", "brand_id",
-                "category_id", "cell", "stock", "stock_reason", "price",
-            )
-        }
-        for key in ("brand_id", "category_id"):
-            if payload.get(key) in (None, ""):
-                payload[key] = None
-        payload["collection_ids"] = request.form.getlist("collection_ids")
-        return payload, read_product_image_upload(
-            request.files.get("product_image"),
-            allow_webp=True,
-        )
-    payload = api_json_payload()
-    return payload, decode_api_product_image(payload.get("product_image"))
-
-
 def api_product_update_request_payload():
     if request.mimetype != "multipart/form-data":
         return api_json_payload(), None, "keep", ""
@@ -19819,86 +19432,10 @@ def record_product_photo_audit(product, action, source):
 @app.route("/api/products", methods=["GET", "POST"])
 @app.route("/api/v1/products", methods=["GET", "POST"])
 def api_products_collection():
-    catalog_service = ExcelProductCatalog()
     if request.method == "POST":
         require_csrf_when_authenticated()
-        product_image = None
-        prepared_image = None
-        image_store = ProductImageStore(catalog_service.database)
-        try:
-            payload, product_image = api_product_request_payload()
-            name = str(payload.get("name") or "").strip()
-            if not name:
-                raise ValueError("Название товара обязательно.")
-            parse_initial_stock(payload.get("stock", 0))
-            if product_image:
-                prepared_image = image_store.prepare_image(
-                    product_image["content"],
-                    product_image["filename"],
-                    product_image["mime_type"],
-                )
-            product = catalog_service.create_product(
-                name=name,
-                model=payload.get("model", ""),
-                article=payload.get("article", ""),
-                brand=payload.get("brand", ""),
-                category=payload.get("category", ""),
-                brand_id=payload.get("brand_id"),
-                category_id=payload.get("category_id"),
-                cell=payload.get("cell", ""),
-                stock=payload.get("stock", 0),
-                price=payload.get("price"),
-                enforce_unique=True,
-                local_image_path=(prepared_image or {}).get("path"),
-                local_image_sha256=(prepared_image or {}).get("sha256"),
-                local_image_source="manual" if prepared_image else None,
-                local_image_updated_at=(prepared_image or {}).get("updated_at"),
-                collection_ids=payload.get("collection_ids") or [],
-                **current_audit_actor()
-            )
-        except DuplicateCatalogValueError as error:
-            image_store.discard_prepared(prepared_image)
-            return api_error(
-                "PRODUCT_ALREADY_EXISTS",
-                str(error),
-                409,
-                {"existing": error.existing},
-            )
-        except ProductImageUploadError as error:
-            image_store.discard_prepared(prepared_image)
-            return api_error(error.code, str(error), error.status)
-        except ValueError as error:
-            image_store.discard_prepared(prepared_image)
-            return api_error(
-                "PRODUCT_VALIDATION_FAILED",
-                str(error),
-                422,
-            )
-        except Exception:
-            image_store.discard_prepared(prepared_image)
-            if product_image is None:
-                raise
-            app.logger.exception(
-                "Products API failed to create product with image"
-            )
-            return api_error(
-                "PRODUCT_IMAGE_UPLOAD_FAILED",
-                "Не удалось сохранить фотографию товара. Товар не создан.",
-                502,
-            )
-        WAREHOUSE_CACHE["items"] = []
-        WAREHOUSE_CACHE["loaded_at"] = 0
-        image_message = ""
-        if product_image:
-            image_message = (
-                "Фото сохранено в ERP. "
-                "Синхронизация с Bitrix недоступна до сопоставления товара."
-            )
-        return api_success(
-            serialize_api_product(product),
-            201,
-            image_message=image_message,
-        )
+        return warehouse_add_product()
+    catalog_service = ExcelProductCatalog()
 
     sort_by = (
         request.args.get("sort_by")

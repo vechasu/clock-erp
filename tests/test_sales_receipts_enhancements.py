@@ -288,21 +288,8 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
         )
         self.assertEqual(brand_duplicate.status_code, 409)
         self.assertEqual(category_response.status_code, 200)
-        self.assertEqual(product_response.status_code, 200)
-        self.assertEqual(
-            product_response.get_json()["product"]["id"],
-            "new-moysklad-product",
-        )
-        self.assertEqual(
-            product_response.get_json()["product"][
-                "catalog_product_id"
-            ],
-            77,
-        )
-        self.assertEqual(
-            fake_excel.created[0]["name"],
-            "Новые часы",
-        )
+        self.assertEqual(product_response.status_code, 410)
+        self.assertEqual(fake_excel.created, [])
 
     def test_catalog_rejects_case_and_space_insensitive_duplicates(self):
         with mock.patch.object(
@@ -338,7 +325,7 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
 
         self.assertEqual(brand.status_code, 409)
         self.assertEqual(category.status_code, 409)
-        self.assertEqual(product.status_code, 409)
+        self.assertEqual(product.status_code, 410)
 
     def test_receipt_create_without_purchase_price(self):
         fake_client = FakeMoySkladClient()
