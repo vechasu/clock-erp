@@ -25,7 +25,13 @@
     async function loadDiagnostics() {
         try {
             const {diagnostics:d} = await request('');
-            root.querySelector('[data-wb-health]').textContent = d.attention ? 'Требует внимания' : 'Готово';
+            const lastSuccess = d.last_success_at ? new Date(d.last_success_at) : null;
+            const time = lastSuccess && !Number.isNaN(lastSuccess.getTime())
+                ? new Intl.DateTimeFormat('ru-RU', {dateStyle:'short',timeStyle:'short'}).format(lastSuccess) : '';
+            const hasIssues = d.attention || (d.errors || []).length || (d.pending || []).length;
+            root.querySelector('[data-wb-health]').textContent = hasIssues
+                ? `Требует внимания${d.attention ? ' · ' + d.attention : ''}`
+                : time ? `Синхронизирован · ${time}` : 'Синхронизация ещё не выполнялась';
             root.querySelector('[data-wb-diagnostic]').textContent = `Последняя успешная синхронизация: ${d.last_success_at || 'ещё не выполнялась'} · Новых: ${d.new_orders || 0} · Восстановлено: ${d.recovered || 0} · Требуют внимания: ${d.attention || 0}`;
             const warning = root.querySelector('[data-wb-missing]');
             const lines = (d.supplies || []).map(s => `${s.supply_id}: WB содержит ${s.wb_count}, ERP знала ${s.erp_count}, пропущено ${s.missing}.`);
@@ -36,7 +42,7 @@
             const restore = root.querySelector('[data-wb-restore]');
             restore.hidden = !(d.supplies || []).length;
             restore.onclick = () => {form.elements.supply_id.value = d.supplies[0].supply_id; form.requestSubmit();};
-            if (d.attention || lines.length) root.open = true;
+
         } catch (error) {
             root.querySelector('[data-wb-health]').textContent = 'Диагностика недоступна';
         }

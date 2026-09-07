@@ -154,7 +154,7 @@ class WildberriesRecoveryTest(unittest.TestCase):
             self.assertEqual(response.json['total_filtered'], 8)
             for order_id in self.client.ids:
                 self.assertIn(str(order_id), response.json['html'])
-            search = client.get('/api/orders?q=101&source=tictactoy&status=N&period=today')
+            search = client.get('/api/orders?q=101&source=wildberries&status=N&period=today')
             self.assertEqual(search.status_code, 200)
             self.assertEqual(search.json['total_filtered'], 1)
             self.assertIn('101', search.json['html'])

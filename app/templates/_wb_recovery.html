@@ -1,5 +1,8 @@
-<details class="panel" data-wb-recovery>
-    <summary>Синхронизация WB · <span data-wb-health>Загрузка диагностики…</span></summary>
+<details class="panel order-diagnostics" data-wb-recovery>
+    <summary>WB · <span data-wb-health>Загрузка диагностики…</span></summary>
+    <h2>Диагностика Wildberries</h2>
+    <button class="button button-secondary wb-refresh" type="button" data-wb-sync>Обновить WB</button>
+    <input type="hidden" value="{{ csrf_token() }}" data-wb-sync-csrf>
     <p data-wb-diagnostic role="status"></p>
     <p class="warning" data-wb-missing hidden></p>
     <button class="button button-secondary" type="button" data-wb-restore hidden>Восстановить</button>

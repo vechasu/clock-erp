@@ -168,6 +168,10 @@
     }
 
     function render(root, rows) {
+        if (root.dataset.hideEmpty === "true") {
+            root.hidden = rows.length === 0;
+            if (!rows.length) { root.replaceChildren(); return; }
+        }
         const active = rows.filter(item => !["completed", "cancelled"].includes(item.status));
         const recent = rows.filter(item => ["completed", "cancelled"].includes(item.status)).slice(0, 3);
         const head = document.createElement("div");
