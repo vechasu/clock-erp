@@ -14,6 +14,7 @@ from pathlib import Path
 from app.domain_schema_migrations import validate_orders_database
 from app.services.customer_identity import link_order_safely
 from app.services.order_presentation import sqlite_status
+from app.sqlite_compat import register_deterministic_function
 
 
 PAGE_SIZES = (20, 50, 100, 200)
@@ -672,7 +673,8 @@ class OrdersSnapshotStore:
         where_sql = " WHERE " + " AND ".join(clauses) if clauses else ""
 
         with self.connection() as connection:
-            connection.create_function("order_work_status", 1, lambda value: sqlite_status(value, status_overrides), deterministic=True)
+            register_deterministic_function(connection, "order_work_status", 1,
+                                            lambda value: sqlite_status(value, status_overrides))
             if allowed_order_ids is not None:
                 connection.execute(
                     "CREATE TEMP TABLE IF NOT EXISTS allowed_order_ids "

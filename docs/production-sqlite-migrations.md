@@ -10,6 +10,14 @@ SQLite 3.7.17. Системный `sqlite3` также имеет версию 3
 версия SQLite на машине разработчика. SQLite, Python и ОС этим контуром не
 обновляются.
 
+SQLite UDF с необязательным флагом `deterministic` регистрируются через
+`app.sqlite_compat.register_deterministic_function`: современные runtime сохраняют
+флаг, Python 3.6 (`TypeError`) и старый SQLite (`NotSupportedError`) используют
+ту же функцию без флага. Поведение SQL проверяет `tests/test_orders_sqlite_compat.py`,
+включая фильтр и счётчики заказов. CI использует Python 3.10; этот тест также
+выполнен на production-интерпретаторе 3.6.8 / SQLite 3.7.17 в отдельной рабочей
+папке с временной тестовой БД, без доступа к production-данным.
+
 ## Источник схемы и журнал
 
 Историческая схема остаётся в `app/catalog_db.py`: строка `SCHEMA` и методы
