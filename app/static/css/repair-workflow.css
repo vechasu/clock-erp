@@ -49,3 +49,18 @@
 .repair-page .repair-search { position:relative; }
 .repair-page .repair-search > svg { position:absolute; width:18px; height:18px; left:12px; top:50%; transform:translateY(-50%); fill:none; stroke:currentColor; stroke-width:1.5; }
 @media (max-width:900px) { .repair-page .repair-table.erp-data-table td { height:auto; min-height:0; } }
+
+/* The default create flow fits the drawer before optional details are opened. */
+.repair-page .repair-quick-create .repair-form-section { padding:0 0 12px; margin:0 0 12px; }
+.repair-page .repair-quick-create .repair-form-section h3 { margin:0 0 8px; }
+.repair-page .repair-quick-create .repair-form-grid { gap:10px 12px; }
+.repair-page .repair-quick-create .repair-control { min-height:40px; }
+.repair-page .repair-quick-create .repair-create-finder summary { padding:0; color:var(--erp-primary); }
+.repair-page .repair-create-hint { color:var(--erp-muted); margin:8px 0 0; line-height:1.4; }
+.repair-page .repair-create-extra { margin:0; padding:0; }
+.repair-page .repair-create-extra[open] { display:grid; gap:12px; }
+.repair-page .repair-queue .repair-button { padding:8px 12px; }
+
+.repair-page .repair-drawer-body:has(.repair-quick-create) { padding:16px 20px 12px; }
+.repair-page .repair-quick-create .repair-form-section { margin-bottom:8px; padding-bottom:8px; }
+.repair-page .repair-quick-create .repair-create-hint { font-size:13px; }
