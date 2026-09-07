@@ -6543,8 +6543,10 @@
                 .then(response => { if (!response.ok) throw new Error(); return response.json(); })
                 .then(payload => {
                     if (bundleStatus.dataset.productId !== productId) return;
-                    bundleStatus.textContent = payload.data.is_bundle
-                        ? "Доступно к сборке: " + payload.data.available_to_assemble : "";
+                    const data = payload.data;
+                    bundleStatus.textContent = data.is_bundle
+                        ? (data.physical_inventory_initialized ? "Доступно к сборке: " + data.available_to_assemble : "Физический остаток компонентов не подтверждён")
+                        : data.is_physical_component ? (data.physical_inventory_initialized ? "Физический остаток ERP: " + data.physical_stock : "Физический остаток не подтверждён") : "";
                 }).catch(() => {
                     if (bundleStatus.dataset.productId === productId) bundleStatus.textContent = "Не удалось загрузить состав";
                 });
