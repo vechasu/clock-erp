@@ -1773,7 +1773,8 @@
                     <div class="wb-assembly-copy">
                         <div><span class="source-badge source-badge--wildberries">WB</span> <strong>Заказ №{{ order.wb_order_id }}</strong></div>
                         <div class="wb-assembly-meta">
-                            {{ order.created_at or 'Дата не передана' }} · статус: {{ order.status }}
+                            {{ order.created_at or 'Дата не передана' }} · статус WB: {{ order.status }}
+                            {% if order.sale_id %} · <a href="/sales?source=wildberries&sale_id={{ order.sale_id }}">Проведён · {{ order.sale_id }}</a>{% endif %}
                             {% if order.supply_id %} · поставка: {{ order.supply_id }}{% endif %}
                             {% if order.warehouse_id is not none %} · склад: {{ order.warehouse_id }}{% endif %}
                         </div>
