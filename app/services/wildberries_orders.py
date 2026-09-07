@@ -28,8 +28,8 @@ def normalize_wildberries_order(order, synced_at=None):
         return None
     wb_order_id = _text(order["id"])
     skus = [_text(value) for value in (order.get("skus") or []) if _text(value)]
-    article = _text(order.get("article"))
-    item_name = article or "Товар Wildberries"
+    article = _text(order.get("article") or order.get("supplierArticle") or order.get("vendorCode"))
+    item_name = _text(order.get("name")) or article or "Товар Wildberries"
     supplier_status = _text(order.get("supplierStatus")) or "new"
     wb_status = _text(order.get("wbStatus"))
     status_label = supplier_status
@@ -74,6 +74,8 @@ def normalize_wildberries_order(order, synced_at=None):
         "warehouse_id": order.get("warehouseId"),
         "office_id": order.get("officeId"),
         "supply_id": _text(order.get("supplyId")),
+        "wb_supply_id": _text(order.get("supplyId")),
+        "wb_raw": dict(order),
         "delivery_type": _text(order.get("deliveryType")),
         "article": article,
         "skus": skus,

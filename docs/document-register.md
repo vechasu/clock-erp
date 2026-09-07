@@ -89,3 +89,9 @@
 WB через общий сервис продаж; код `app/services/wildberries_sales.py`,
 маршрут и шаблоны проверяются `tests/test_wildberries_sales.py`. Статус
 документа описывает код ветки и не означает выполненный production deploy.
+
+## Восстановление WB — 2026-09-07
+
+`docs/wildberries-recovery.md` — `current` для кода восстановления через
+существующие snapshot/matching/journal. Реальные recovery-записи требуют
+отдельного подтверждения dry-run; документ не подтверждает production deploy.

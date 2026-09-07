@@ -90,6 +90,9 @@
             <div class="notice notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') in ['error', 'danger'] else 'status' }}" data-erp-notification-source>{{ request.args.get('message') }}</div>
         {% endif %}
 
+        {% if request.args.get('source') == 'wildberries' or (selected_order and selected_order.get('source') == 'wildberries') %}
+            {% include "_wb_recovery.html" %}
+        {% endif %}
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
             <section class="panel orders-list-panel" aria-label="Список заказов">
                 {# Included results provide erp-empty-state, erp-no-results-state and «Сбросить фильтры». #}
@@ -221,6 +224,7 @@
                         </section>
                         {% endif %}
 
+                        {% if selected_order.get('recovered_from_wb') %}<p class="notice notice-success">{{ selected_order.get('recovery_notice') }}</p>{% endif %}
                         <section class="section order-products">
                             <div class="section-head"><h3>Товары в заказе · {{ detail_products|length }}</h3></div>
                             {% if detail_products %}<div class="product-list">

@@ -390,22 +390,34 @@ class OrdersSnapshotStore:
         """Compatibility entry point: recent refreshes are additive, never destructive."""
         return self.upsert_bitrix(orders, loaded_at)
 
-    def upsert_wildberries(self, orders):
+    def upsert_wildberries(self, orders, only_missing=False, connection=None, on_insert=None):
         """Idempotently store each WB assembly order as its own record."""
         self.initialize()
+        if connection is None:
+            with self.connection() as target:
+                target.execute("BEGIN IMMEDIATE")
+                return self.upsert_wildberries(orders, only_missing, target, on_insert)
         added = 0
         updated = 0
-        with self.connection() as connection:
+        if connection is not None:
             for order in orders:
                 wb_order_id = _text(order.get("wb_order_id"))
                 if not wb_order_id:
                     continue
                 order_id = "wb:" + wb_order_id
                 existing = connection.execute(
-                    "SELECT order_id, customer_id FROM orders_snapshot "
+                    "SELECT order_id, customer_id, payload_json FROM orders_snapshot "
                     "WHERE source = 'wildberries' AND external_order_id = ?",
                     (wb_order_id,),
                 ).fetchone()
+                if existing and only_missing:
+                    continue
+                order = dict(order)
+                if existing:
+                    previous = json.loads(existing["payload_json"])
+                    for key in ("recovered_from_wb", "recovery_notice", "recovery_supply_id", "recovered_at"):
+                        if key in previous:
+                            order[key] = previous[key]
                 created = order.get("created_at") or order.get("date")
                 total = order.get("order_total")
                 if total is None:
@@ -458,6 +470,8 @@ class OrdersSnapshotStore:
                         "VALUES (?, 'wildberries', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
                         (order_id, wb_order_id) + values + (customer_id,),
                     )
+                    if on_insert:
+                        on_insert(connection, order)
                     added += 1
         return {"added": added, "updated": updated}
 
