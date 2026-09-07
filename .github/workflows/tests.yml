@@ -135,6 +135,9 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Orders UX Playwright regression
+        run: pnpm exec playwright test --config playwright.orders.config.ts
+
       - name: Local supplies Playwright regression
         run: pnpm exec playwright test --config playwright.supplies.config.ts
 
