@@ -95,3 +95,5 @@ WB через общий сервис продаж; код `app/services/wildber
 `docs/wildberries-recovery.md` — `current` для кода восстановления через
 существующие snapshot/matching/journal. Реальные recovery-записи требуют
 отдельного подтверждения dry-run; документ не подтверждает production deploy.
+
+2026-09-07: в `docs/product/README.md` зафиксирован отказ от ручного создания товаров и сохранение добавления из Bitrix; подтверждение — целевые API/UI-тесты.
