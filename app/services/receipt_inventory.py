@@ -344,6 +344,8 @@ class ReceiptInventory:
             ).fetchone()
             if current is None:
                 raise ReceiptInventoryError("Приход не найден в локальном журнале.")
+            if json.loads(current["metadata_json"] or "{}").get("source_type") == "supply":
+                raise ReceiptInventoryError("Проведённую поставку нельзя изменять задним числом.")
             if current["status"] != "posted":
                 raise ReceiptInventoryError(
                     "Изменять остаток можно только у проведённого прихода."
@@ -598,6 +600,8 @@ class ReceiptInventory:
             ).fetchone()
             if receipt is None:
                 raise ReceiptInventoryError("Приход не найден в локальном журнале.")
+            if json.loads(receipt["metadata_json"] or "{}").get("source_type") == "supply":
+                raise ReceiptInventoryError("Поставку нельзя отменить через старый механизм прихода.")
             if receipt["status"] == "cancelled":
                 return self._receipt_payload(connection, receipt_id)
             rows = connection.execute(

@@ -333,8 +333,8 @@ class InventoryLockModeWebTest(unittest.TestCase):
                     }],
                 },
             )
-        self.assertEqual(receipt.status_code, 409)
-        self.assertIn("находится на инвентаризации", receipt.get_json()["message"])
+        self.assertEqual(receipt.status_code, 410)
+        self.assertIn("отключён", receipt.get_json()["message"])
         client.assert_not_called()
 
 

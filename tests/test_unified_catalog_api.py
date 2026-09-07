@@ -171,150 +171,30 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         )
 
     def test_full_api_flow_uses_one_card_and_one_stock_ledger(self):
-        receipt_response = self.client.post(
-            "/api/v1/receipts",
-            json=self.receipt_payload(),
-        )
-        self.assertEqual(receipt_response.status_code, 201)
-        receipt = receipt_response.get_json()["data"]
-        self.assertEqual(self.stock(), 10)
-        self.remote.create_product.assert_called_once()
-        remote_positions = (
-            self.remote.create_stock_enter_many.call_args[1]["positions"]
-        )
-        self.assertEqual(
-            remote_positions[0]["product_id"],
-            "ms-casio-a168",
-        )
+        from app.services.supplies import SupplyEngine
+        engine=SupplyEngine(CatalogDatabase(self.database_path))
+        product=engine.resolve_bitrix({'external_product_id':'test-a168','name':'Casio A168','external_sku':'A168','stock':47})
+        self.assertEqual(product['id'],self.product['id'])
+        draft=engine.create('Integration',items=[{'product_id':product['id'],'quantity':10}])
+        self.assertEqual(self.stock(),0)
+        engine.post(draft['id'])
+        engine.post(draft['id'])
+        self.assertEqual(self.stock(),10)
+        sale=self.client.post('/api/v1/sales',json={'created_at':'2026-07-30','source':'Tictactoy','product_id':str(product['id']),'quantity':3,'unit_price':1000,'order_number':'ORDER-API-1'})
+        self.assertEqual(sale.status_code,201)
+        self.assertEqual(self.stock(),7)
+        sale_id=sale.get_json()['data']['id']
+        cancelled=self.client.post('/api/v1/sales/'+sale_id+'/cancel',json={'reason':'input_error'})
+        self.assertEqual(cancelled.status_code,200)
+        self.assertEqual(self.stock(),10)
+        self.assertEqual(self.client.patch('/api/v1/receipts/supplies/'+draft['id'],json={'title':'x','items':[]}).status_code,422)
+        self.assertEqual(self.client.delete('/api/v1/receipts/supplies/'+draft['id']).status_code,422)
+        movements=self.client.get('/api/v1/products/{}/movements'.format(product['id'])).get_json()['data']
+        self.assertEqual({m['type'] for m in movements},{'receipt','sale','cancellation'})
+        rows=self.client.get('/api/v1/receipts/movements').get_json()['data']
+        self.assertEqual({m['source_type'] for m in rows},{'supply','sale_cancellation'})
+        self.moysklad_class.assert_not_called()
 
-        repeated = self.client.post(
-            "/api/v1/receipts",
-            json=self.receipt_payload(),
-        )
-        self.assertEqual(repeated.status_code, 200)
-        self.assertEqual(repeated.get_json()["data"]["id"], receipt["id"])
-        self.remote.create_stock_enter_many.assert_called_once()
-        self.assertEqual(self.stock(), 10)
-
-        sale_response = self.client.post(
-            "/api/v1/sales",
-            json={
-                "created_at": "2026-07-30",
-                "source": "Tictactoy",
-                "product_id": str(self.product["id"]),
-                "brand_id": self.product["brand_id"],
-                "category_id": self.product["category_id"],
-                "quantity": 3,
-                "unit_price": 1000,
-                "order_number": "ORDER-API-1",
-            },
-        )
-        self.assertEqual(sale_response.status_code, 201)
-        sale = sale_response.get_json()["data"]
-        self.assertEqual(self.stock(), 7)
-
-        edited = self.client.patch(
-            "/api/v1/sales/{}".format(sale["id"]),
-            json={
-                "created_at": "2026-07-30",
-                "source": "Tictactoy",
-                "product_id": str(self.product["id"]),
-                "brand_id": self.product["brand_id"],
-                "category_id": self.product["category_id"],
-                "quantity": 2,
-                "unit_price": 1000,
-                "order_number": "ORDER-API-1",
-            },
-        )
-        self.assertEqual(edited.status_code, 409)
-        self.assertEqual(self.stock(), 7)
-
-        cancelled = self.client.post(
-            "/api/v1/sales/{}/cancel".format(sale["id"]),
-            json={"reason": "input_error"},
-        )
-        self.assertEqual(cancelled.status_code, 200)
-        deleted = self.client.delete(
-            "/api/v1/sales/{}".format(sale["id"])
-        )
-        self.assertEqual(deleted.status_code, 200)
-        self.assertEqual(self.stock(), 10)
-
-        changed_payload = self.receipt_payload(quantity=6)
-        changed_payload["idempotency_key"] = "receipt-update-once"
-        changed_receipt = self.client.patch(
-            "/api/v1/receipts/{}".format(receipt["id"]),
-            json=changed_payload,
-        )
-        self.assertEqual(changed_receipt.status_code, 200)
-        self.assertEqual(self.stock(), 6)
-
-        movements = self.client.get(
-            "/api/v1/products/{}/movements".format(self.product["id"])
-        )
-        self.assertEqual(movements.status_code, 200)
-        movement_rows = movements.get_json()["data"]
-        self.assertTrue(
-            any(item.get("sale_id") == sale["id"] for item in movement_rows)
-        )
-
-        self.assertTrue(
-            any(
-                item.get("receipt_id") == receipt["id"]
-                for item in movement_rows
-            )
-        )
-        self.assertEqual(
-            {item["type"] for item in movement_rows},
-            {"receipt", "sale", "manual_adjustment", "cancellation"},
-        )
-
-        renamed = self.client.patch(
-            "/api/v1/brands/{}".format(self.product["brand_id"]),
-            json={"name": "Casio Japan"},
-        )
-        self.assertEqual(renamed.status_code, 200)
-        receipt_listing = self.client.get("/api/v1/receipts").get_json()
-        self.assertEqual(receipt_listing["data"][0]["brand"], "Casio Japan")
-
-        cancelled_receipt = self.client.delete(
-            "/api/v1/receipts/{}".format(receipt["id"])
-        )
-        self.assertEqual(cancelled_receipt.status_code, 200)
-        self.assertFalse(cancelled_receipt.get_json()["data"]["deleted"])
-        self.assertEqual(self.stock(), 0)
-        receipt_listing = self.client.get("/api/v1/receipts").get_json()
-        self.assertEqual(receipt_listing["meta"]["total"], 2)
-        receipts_by_id = {
-            item["id"]: item for item in receipt_listing["data"]
-        }
-        self.assertEqual(receipts_by_id[receipt["id"]]["status"], "cancelled")
-        automatic_receipt = receipts_by_id[
-            "sale-cancellation:{}".format(sale["id"])
-        ]
-        self.assertEqual(automatic_receipt["status"], "posted")
-        self.assertFalse(automatic_receipt["editable"])
-        self.assertEqual(automatic_receipt["source_sale_id"], sale["id"])
-        automatic_id = automatic_receipt["id"]
-        self.assertEqual(self.client.patch(
-            "/api/v1/receipts/{}".format(automatic_id),
-            json={"comment": "нельзя"},
-        ).status_code, 409)
-        self.assertEqual(self.client.delete(
-            "/api/v1/receipts/{}".format(automatic_id)
-        ).status_code, 409)
-        self.assertIsNotNone(receipt_listing["meta"]["totals"]["amount"])
-        receipt_movements = self.client.get(
-            "/api/v1/products/{}/movements".format(self.product["id"])
-        ).get_json()["data"]
-        self.assertTrue(
-            any(
-                item["type"] == "cancellation"
-                and item.get("receipt_id") == receipt["id"]
-                and item["diff"] == -6
-                for item in receipt_movements
-            )
-        )
 
     def test_shared_catalog_stock_statistics_follow_inventory_lifecycle(self):
         def brand_stock():
@@ -327,10 +207,11 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             )["stock_total"]
 
         self.assertEqual(brand_stock(), 0)
-        receipt = self.client.post(
-            "/api/v1/receipts",
-            json=self.receipt_payload(quantity=10),
-        ).get_json()["data"]
+        from app.services.supplies import SupplyEngine
+        engine=SupplyEngine(CatalogDatabase(self.database_path))
+        product=engine.resolve_bitrix({'external_product_id':'test-a168','name':'Casio A168','external_sku':'A168','stock':47})
+        receipt=engine.create('Statistics',items=[{'product_id':product['id'],'quantity':10}])
+        engine.post(receipt['id'])
         self.assertEqual(brand_stock(), 10)
 
         sale = self.client.post(
@@ -354,155 +235,32 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         )
         self.client.delete("/api/v1/sales/{}".format(sale["id"]))
         self.assertEqual(brand_stock(), 10)
-        self.client.delete("/api/v1/receipts/{}".format(receipt["id"]))
-        self.assertEqual(brand_stock(), 0)
+        self.assertEqual(self.client.delete("/api/v1/receipts/supplies/{}".format(receipt["id"])).status_code,422)
+        self.assertEqual(brand_stock(), 10)
 
     def test_receipt_requires_positive_integer_quantity(self):
-        for index, quantity in enumerate((1.5, "1,5", 0, -1, "text")):
+        from app.services.supplies import SupplyEngine
+        engine=SupplyEngine(CatalogDatabase(self.database_path))
+        product=engine.resolve_bitrix({'external_product_id':'test-a168','name':'Casio A168','external_sku':'A168','stock':47})
+        d=engine.create('Validation')
+        for quantity in (1.5,'1,5',0,-1,'text',True,None):
             with self.subTest(quantity=quantity):
-                payload = self.receipt_payload(quantity=quantity)
-                payload["idempotency_key"] = "invalid-quantity-{}".format(index)
-                response = self.client.post("/api/v1/receipts", json=payload)
-                self.assertEqual(response.status_code, 422)
-                self.assertIn("целым положительным", response.get_json()["message"])
-        valid = self.receipt_payload(quantity=1.0)
-        valid["idempotency_key"] = "whole-float-quantity"
-        response = self.client.post("/api/v1/receipts", json=valid)
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.get_json()["data"]["total_quantity"], 1)
+                r=self.client.patch('/api/v1/receipts/supplies/'+d['id'],json={'title':'Validation','items':[{'product_id':product['id'],'quantity':quantity}]})
+                self.assertEqual(r.status_code,422)
+                self.assertEqual(self.stock(),0)
 
-    def test_document_number_and_comment_are_independent_and_filterable(self):
-        payload = self.receipt_payload(quantity=2)
-        payload.update({
-            "document_number": "DOC-ORIGINAL",
-            "comment": "Первая поставка",
-            "idempotency_key": "receipt-document-fields",
-        })
-        created = self.client.post("/api/v1/receipts", json=payload)
-        self.assertEqual(created.status_code, 201)
-        receipt = created.get_json()["data"]
-        self.assertEqual(
-            (receipt["document_number"], receipt["comment"]),
-            ("DOC-ORIGINAL", "Первая поставка"),
-        )
-        filtered = self.client.get(
-            "/api/v1/receipts?document_number=original&comment=первая"
-        ).get_json()
-        self.assertEqual(filtered["meta"]["total"], 1)
 
-        changed = self.receipt_payload(quantity=2)
-        changed.update({
-            "document_number": "DOC-CHANGED",
-            "comment": "Комментарий изменён",
-            "idempotency_key": "receipt-document-fields-update",
-        })
-        updated = self.client.patch(
-            "/api/v1/receipts/{}".format(receipt["id"]),
-            json=changed,
-        )
-        self.assertEqual(updated.status_code, 200)
-        self.assertEqual(
-            (
-                updated.get_json()["data"]["document_number"],
-                updated.get_json()["data"]["comment"],
-            ),
-            ("DOC-CHANGED", "Комментарий изменён"),
-        )
 
-    def test_unmapped_bitrix_product_is_created_in_moysklad_before_receipt(self):
-        now = "2026-07-30T12:00:00+00:00"
-        with CatalogDatabase(self.database_path).connect() as connection:
-            connection.execute(
-                "INSERT INTO catalog_products ("
-                "name, article, barcode, brand, active, external_source, "
-                "external_product_id, external_xml_id, payload_hash, "
-                "normalized_payload_json, created_at, updated_at, "
-                "first_synced_at, last_synced_at"
-                ") VALUES (?, ?, ?, ?, 1, 'bitrix', ?, ?, ?, '{}', ?, ?, ?, ?)",
-                (
-                    "Under Pressure II Orange",
-                    "under-pressure-ii-orange",
-                    "",
-                    "666 Barcelona",
-                    "743",
-                    "743",
-                    "b" * 64,
-                    now,
-                    now,
-                    now,
-                    now,
-                ),
-            )
-            bitrix_product_id = connection.execute(
-                "SELECT last_insert_rowid()"
-            ).fetchone()[0]
+    def test_unmapped_bitrix_product_supply_never_creates_moysklad_objects(self):
+        from app.services.supplies import SupplyEngine
+        engine=SupplyEngine(CatalogDatabase(self.database_path))
+        product=engine.resolve_bitrix({'external_product_id':'new-bitrix','name':'New Bitrix','external_sku':'NEW-BITRIX','stock':47})
+        self.assertEqual(product['stock'],0)
+        d=engine.create('Local only',items=[{'product_id':product['id'],'quantity':6}])
+        result=engine.post(d['id'])
+        self.assertEqual(result['items'][0]['stock_after'],6)
+        self.moysklad_class.assert_not_called()
 
-        product = ExcelProductCatalog(
-            CatalogDatabase(self.database_path)
-        ).create_product(
-            name="Under Pressure II Orange",
-            brand="666 Barcelona",
-            category="Наручные часы",
-            stock=0,
-        )
-        with CatalogDatabase(self.database_path).connect() as connection:
-            connection.execute(
-                "UPDATE catalog_excel_products SET "
-                "source_key = 'bitrix:743', "
-                "bitrix_catalog_product_id = ?, "
-                "bitrix_external_product_id = '743' "
-                "WHERE id = ?",
-                (bitrix_product_id, product["id"]),
-            )
-
-        self.remote.create_product.return_value = {
-            "id": "ms-under-pressure-orange",
-        }
-        response = self.client.post(
-            "/api/v1/receipts",
-            json={
-                "receipt_date": "2026-07-30",
-                "note": "",
-                "idempotency_key": "receipt-bitrix-unmapped",
-                "positions": [{
-                    "product_id": str(product["id"]),
-                    "brand_id": product["brand_id"],
-                    "category_id": product["category_id"],
-                    "quantity": 55,
-                    "purchase_price": 0,
-                }],
-            },
-        )
-
-        self.assertEqual(response.status_code, 201)
-        self.remote.find_product_by_code.assert_called_once_with(
-            "VECHASU-{}".format(product["id"])
-        )
-        self.remote.create_product.assert_called_once_with(
-            name="Under Pressure II Orange",
-            code="VECHASU-{}".format(product["id"]),
-            article=None,
-        )
-        remote_positions = (
-            self.remote.create_stock_enter_many.call_args.kwargs["positions"]
-        )
-        self.assertEqual(
-            remote_positions[0]["product_id"],
-            "ms-under-pressure-orange",
-        )
-        linked = web.SharedCatalog(
-            CatalogDatabase(self.database_path)
-        ).get_product(product["id"])
-        self.assertEqual(
-            linked["moysklad_product_id"],
-            "ms-under-pressure-orange",
-        )
-        self.assertEqual(
-            ExcelProductCatalog(
-                CatalogDatabase(self.database_path)
-            ).get_product(product["id"])["stock"],
-            55,
-        )
 
     def test_product_duplicate_returns_existing_card(self):
         response = self.client.post(
@@ -524,301 +282,17 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             str(self.product["id"]),
         )
 
-    def test_multipart_receipt_without_photo_updates_stock_and_history(self):
-        response = self.multipart_receipt(
-            quantity=1,
-            note="",
-            idempotency_key="receipt-no-photo",
-        )
 
-        self.assertEqual(response.status_code, 201)
-        receipt = response.get_json()["data"]
-        self.assertEqual(receipt["note"], "")
-        self.assertEqual(self.stock(), 1)
-        self.assertEqual(len(web.load_receipts()), 1)
-        movements = self.client.get(
-            "/api/v1/products/{}/movements".format(self.product["id"])
-        ).get_json()["data"]
-        self.assertTrue(
-            any(
-                item.get("receipt_id") == receipt["id"]
-                and item["diff"] == 1
-                for item in movements
-            )
-        )
-        self.remote.upload_product_image.assert_not_called()
 
-    def test_receipt_document_is_optional_on_create_and_update(self):
-        created = self.client.post(
-            "/api/v1/receipts",
-            json=self.receipt_payload(quantity=1),
-        )
-        self.assertEqual(created.status_code, 201)
-        receipt = created.get_json()["data"]
 
-        updated = self.client.patch(
-            "/api/v1/receipts/{}".format(receipt["id"]),
-            json={
-                "document_number": "",
-                "receipt_date": "2026-07-31",
-                "quantity": 1,
-            },
-        )
 
-        self.assertEqual(updated.status_code, 200)
-        self.assertEqual(updated.get_json()["data"]["document_number"], "")
 
-    def test_receipt_category_scope_depends_on_new_brand_state(self):
-        other_brand = self.client.post(
-            "/api/v1/brands",
-            json={"name": "Новый бренд прихода"},
-        ).get_json()["data"]
 
-        existing_options = self.client.get(
-            "/api/v1/catalog/options?type=category&category_scope=brand"
-            "&brand_id={}".format(self.product["brand_id"])
-        ).get_json()["data"]
-        new_brand_options = self.client.get(
-            "/api/v1/catalog/options?type=category&category_scope=all"
-            "&brand_id={}".format(other_brand["id"])
-        ).get_json()["data"]
 
-        self.assertEqual(
-            [item["id"] for item in existing_options],
-            [self.product["category_id"]],
-        )
-        self.assertIn(
-            self.product["category_id"],
-            [item["id"] for item in new_brand_options],
-        )
 
-    def test_receipt_api_uploads_photo_for_existing_product(self):
-        payload = self.receipt_payload(quantity=1)
-        payload["idempotency_key"] = "receipt-data-url"
-        payload["product_image"] = {
-            "name": "watch.png",
-            "data_url": (
-                "data:image/png;base64,"
-                + base64.b64encode(
-                    b"\x89PNG\r\n\x1a\nlegacy-data-url"
-                ).decode("ascii")
-            ),
-        }
 
-        response = self.client.post(
-            "/api/v1/receipts",
-            json=payload,
-        )
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(self.stock(), 1)
-        self.assertEqual(
-            response.get_json()["meta"]["image_message"],
-            "Фото товара добавлено.",
-        )
-        self.remote.upload_product_image.assert_called_once()
 
-    def test_receipt_edit_replaces_existing_product_photo(self):
-        created = self.client.post(
-            "/api/v1/receipts",
-            json=self.receipt_payload(quantity=1),
-        ).get_json()["data"]
-        self.remote.product_has_images.return_value = True
-
-        response = self.client.patch(
-            "/api/v1/receipts/{}".format(created["id"]),
-            data={
-                "receipt_date": "2026-07-30",
-                "document_number": created["document_number"],
-                "quantity": "1",
-                "product_id": str(self.product["id"]),
-                "product_image": (
-                    BytesIO(PNG),
-                    "replacement.png",
-                    "image/png",
-                ),
-            },
-            content_type="multipart/form-data",
-            headers={"Idempotency-Key": "receipt-photo-replacement"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.get_json()["meta"]["image_message"],
-            "Фото товара обновлено.",
-        )
-        self.remote.upload_product_image.assert_called_once_with(
-            "ms-casio-a168",
-            "replacement.png",
-            PNG,
-        )
-
-    def test_photo_upload_is_part_of_remote_receipt_creation(self):
-        response = self.multipart_receipt(
-            image=PNG,
-            idempotency_key="receipt-parallel-remote",
-        )
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(self.stock(), 1)
-        self.remote.create_stock_enter_many.assert_called_once()
-        self.remote.upload_product_image.assert_called_once()
-
-    def test_receipt_request_does_not_mutate_shared_catalog_schema(self):
-        def schema_sql():
-            with CatalogDatabase(self.database_path).connect() as connection:
-                return connection.execute(
-                    "SELECT type, name, sql FROM sqlite_master "
-                    "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
-                ).fetchall()
-
-        before = schema_sql()
-        response = self.multipart_receipt(
-            idempotency_key="receipt-one-catalog-initialize",
-        )
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(schema_sql(), before)
-
-    def test_multipart_receipt_accepts_png_and_jpeg_for_existing_product(self):
-        fixtures = (
-            (
-                PNG,
-                "watch.png",
-                "image/png",
-            ),
-            (
-                JPEG,
-                "watch.jpg",
-                "image/jpeg",
-            ),
-        )
-
-        for index, (content, filename, mimetype) in enumerate(fixtures):
-            response = self.multipart_receipt(
-                quantity=2,
-                note="Фото и комментарий {}".format(index),
-                image=content,
-                filename=filename,
-                mimetype=mimetype,
-                idempotency_key="receipt-photo-{}".format(index),
-            )
-            self.assertEqual(response.status_code, 201)
-
-        self.assertEqual(self.stock(), 4)
-        self.assertEqual(self.remote.upload_product_image.call_count, 2)
-
-    def test_create_next_mode_is_idempotent_and_does_not_double_stock(self):
-        first = self.multipart_receipt(
-            quantity=3,
-            note="Следующий приход",
-            idempotency_key="receipt-create-next",
-            submit_mode="create_next",
-        )
-        repeated = self.multipart_receipt(
-            quantity=3,
-            note="Следующий приход",
-            idempotency_key="receipt-create-next",
-            submit_mode="create_next",
-        )
-
-        self.assertEqual(first.status_code, 201)
-        self.assertEqual(repeated.status_code, 200)
-        self.assertEqual(
-            first.get_json()["data"]["id"],
-            repeated.get_json()["data"]["id"],
-        )
-        self.assertEqual(self.stock(), 3)
-        self.remote.create_stock_enter_many.assert_called_once()
-        self.remote.upload_product_image.assert_not_called()
-        self.assertEqual(len(web.load_receipts()), 1)
-
-    def test_invalid_multipart_inputs_leave_no_partial_receipt(self):
-        response = self.multipart_receipt(
-            quantity=2,
-            note="Недопустимый файл",
-            image=b"not-an-image",
-            filename="watch.txt",
-            mimetype="text/plain",
-            idempotency_key="receipt-invalid-image",
-        )
-
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(
-            response.get_json()["message"],
-            "Недопустимое расширение файла. Выберите JPG, PNG или WebP.",
-        )
-        oversized = self.multipart_receipt(
-            quantity=2,
-            image=(
-                b"\x89PNG\r\n\x1a\n"
-                + b"x" * web.PRODUCT_IMAGE_MAX_BYTES
-            ),
-            idempotency_key="receipt-oversized-image",
-        )
-        missing_quantity = self.multipart_receipt(
-            quantity=0,
-            idempotency_key="receipt-missing-quantity",
-        )
-
-        self.assertEqual(oversized.status_code, 422)
-        self.assertEqual(
-            oversized.get_json()["message"],
-            "Файл слишком большой. Максимальный размер — 3 МБ.",
-        )
-        self.assertEqual(missing_quantity.status_code, 422)
-        self.assertIn(
-            "Количество",
-            missing_quantity.get_json()["message"],
-        )
-        self.assertEqual(self.stock(), 0)
-        self.assertEqual(web.load_receipts(), [])
-        self.remote.create_stock_enter_many.assert_not_called()
-
-    def test_local_persistence_failure_rolls_back_stock_files_and_remote(self):
-        with mock.patch.object(
-            web,
-            "save_stock_operations",
-            side_effect=[RuntimeError("forced persistence failure"), None],
-        ):
-            response = self.multipart_receipt(
-                quantity=5,
-                note="Транзакционный тест",
-                idempotency_key="receipt-persistence-failure",
-            )
-
-        self.assertEqual(response.status_code, 500)
-        self.assertEqual(
-            response.get_json()["code"],
-            "RECEIPT_PERSISTENCE_FAILED",
-        )
-        self.assertEqual(self.stock(), 0)
-        self.assertEqual(web.load_receipts(), [])
-        self.assertEqual(web.load_stock_operations(), [])
-        self.assertIsNone(
-            web.ReceiptInventory().get_receipt_by_idempotency(
-                "receipt-persistence-failure"
-            )
-        )
-        self.remote.delete_stock_enter.assert_called_once_with("enter-1")
-
-    def test_image_upload_failure_rolls_back_before_local_persistence(self):
-        self.remote.upload_product_image.return_value = False
-        response = self.multipart_receipt(
-            quantity=2,
-            note="Ошибка фото",
-            image=PNG,
-            idempotency_key="receipt-image-failure",
-        )
-
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.get_json()["code"],
-            "PRODUCT_IMAGE_UPLOAD_FAILED",
-        )
-        self.assertEqual(self.stock(), 0)
-        self.assertEqual(web.load_receipts(), [])
-        self.remote.delete_stock_enter.assert_called_once_with("enter-1")
 
     def test_products_sales_and_receipts_use_the_same_catalog_ids(self):
         query = (
@@ -981,28 +455,13 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             self.product["category_id"],
         )
 
-        receipt_response = self.client.post(
-            "/api/v1/receipts",
-            json={
-                "receipt_date": "2026-08-03",
-                "note": "Глобальная категория",
-                "idempotency_key": "global-category-receipt",
-                "positions": [{
-                    "product_id": str(product["id"]),
-                    "brand_id": brand["id"],
-                    "category_id": self.product["category_id"],
-                    "quantity": 1,
-                    "purchase_price": 100,
-                }],
-            },
-        )
-        self.assertEqual(receipt_response.status_code, 201)
-        receipt_position = receipt_response.get_json()["data"]["positions"][0]
-        self.assertEqual(receipt_position["brand_id"], brand["id"])
-        self.assertEqual(
-            receipt_position["category_id"],
-            self.product["category_id"],
-        )
+        from app.services.supplies import SupplyEngine
+        engine=SupplyEngine(CatalogDatabase(self.database_path))
+        linked=engine.resolve_bitrix({'external_product_id':'global-category','name':'Global Category Product','external_sku':'GLOBAL-CATEGORY-1','stock':47})
+        receipt=engine.create('Global category',items=[{'product_id':linked['id'],'quantity':1}])
+        receipt_position=receipt['items'][0]
+        self.assertEqual(receipt_position['brand_id'],brand['id'])
+        self.assertEqual(receipt_position['category_id'],self.product['category_id'])
 
     def test_product_editor_persists_global_category_without_stock_movement(self):
         brand = self.client.post(

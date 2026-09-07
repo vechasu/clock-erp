@@ -1,0 +1,274 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #f4f6f8;
+  color: #111827;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+.main {
+  min-width: 0;
+  padding: 16px 26px 24px;
+  overflow: hidden;
+}
+.page-header,
+dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+h1 {
+  font-size: 27px;
+  margin: 0;
+}
+h2 {
+  margin: 0;
+  font-size: 21px;
+}
+p {
+  color: #6b7280;
+}
+.actions,
+.filters,
+.pagination,
+dialog footer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.button,
+.tabs button {
+  border: 1px solid #dfe3e8;
+  border-radius: 9px;
+  padding: 9px 14px;
+  background: white;
+  color: #111827;
+  cursor: pointer;
+}
+.primary {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+.danger {
+  color: #b91c1c;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+.tabs [aria-current="page"] {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+.stats {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: white;
+  border: 1px solid #dfe3e8;
+  padding: 12px 16px;
+  border-radius: 12px;
+}
+.card strong {
+  font-size: 22px;
+}
+.filters {
+  padding: 12px 0;
+}
+input,
+select,
+textarea {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  max-width: 100%;
+  background: white;
+}
+textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 13px;
+}
+.table-scroll {
+  overflow: auto;
+  max-width: 100%;
+  border: 1px solid #dfe3e8;
+  border-radius: 12px;
+  background: white;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+th,
+td {
+  text-align: left;
+  padding: 11px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+th {
+  background: #f9fafb;
+  white-space: nowrap;
+}
+td img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+td input {
+  width: 88px;
+}
+td .name {
+  min-width: 150px;
+}
+.pagination {
+  justify-content: flex-end;
+  padding: 14px 0;
+}
+dialog {
+  width: min(1100px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border: 1px solid #dfe3e8;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 24px 80px #0003;
+}
+dialog::backdrop {
+  background: #11182766;
+}
+dialog > label {
+  display: grid;
+  margin: 12px 0;
+}
+dialog header {
+  margin-bottom: 12px;
+}
+dialog footer {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+dialog .table-scroll {
+  margin-top: 14px;
+}
+#message,
+#dialog-message {
+  padding: 12px;
+  border-radius: 9px;
+  background: #eff6ff;
+  margin: 12px 0;
+}
+#bitrix-results {
+  display: grid;
+  gap: 8px;
+  max-height: 230px;
+  overflow: auto;
+  padding-top: 10px;
+}
+#bitrix-results button {
+  text-align: left;
+}
+#supply-meta {
+  color: #6b7280;
+  font-size: 13px;
+}
+.positive {
+  color: #15803d;
+  font-weight: 700;
+}
+details {
+  position: relative;
+}
+#columns {
+  position: absolute;
+  right: 0;
+  background: white;
+  padding: 12px;
+  z-index: 2;
+  box-shadow: 0 4px 20px #0002;
+  min-width: 180px;
+}
+#columns label {
+  white-space: nowrap;
+  padding: 4px;
+}
+@media (max-width: 760px) {
+  .main {
+    padding: 12px;
+  }
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .tabs {
+    overflow: auto;
+  }
+  .tabs button {
+    white-space: nowrap;
+  }
+  .filters > * {
+    max-width: 100%;
+  }
+  .card {
+    gap: 12px;
+    padding: 10px;
+    font-size: 12px;
+  }
+  .stats {
+    flex-wrap: wrap;
+  }
+  dialog {
+    padding: 12px;
+  }
+  dialog footer .button {
+    flex: 1;
+  }
+  .table-scroll {
+    border-radius: 8px;
+  }
+}
+[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 767px) {
+  .receipts-page .app.sidebar-ready {
+    transition: none;
+  }
+  .receipts-page .main {
+    padding-bottom: 80px !important;
+  }
+}

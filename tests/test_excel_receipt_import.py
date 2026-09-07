@@ -405,32 +405,17 @@ class ExcelReceiptImportTest(unittest.TestCase):
             canonical.close()
             legacy.close()
 
-    def test_web_preview_requires_a_separate_post_confirmation(self):
+    def test_web_preview_requires_bitrix_reference_and_does_not_post(self):
         from app import web
+        web.app.config['TESTING']=True
+        before=self.catalog_totals()
+        # No catalog match: upload must fail visibly, without a stock mutation.
+        with mock.patch.dict('os.environ',{'CATALOG_DATABASE_PATH':str(self.path)}):
+            response=web.app.test_client().post('/products/receipts/preview',data={'file':(BytesIO(self.valid_file()),'receipt.xlsx')})
+        self.assertEqual(response.status_code,422)
+        self.assertIn('Bitrix',response.get_json()['message'])
+        self.assertEqual(before,self.catalog_totals())
 
-        web.app.config["TESTING"] = True
-        before = self.catalog_totals()
-        data = self.valid_file()
-        self.seed_bitrix_rows(data)
-        with mock.patch.dict("os.environ", {"CATALOG_DATABASE_PATH": str(self.path)}):
-            client = web.app.test_client()
-            response = client.post(
-                "/products/receipts/preview",
-                data={"file": (BytesIO(data), "receipt.xlsx")},
-                content_type="multipart/form-data",
-                follow_redirects=True,
-            )
-        rendered = response.get_data(as_text=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Предпросмотр прихода", rendered)
-        self.assertIn("Оформить приход", rendered)
-        self.assertIn("Каталог и остатки ещё не изменены", rendered)
-        self.assertEqual(before, self.catalog_totals())
-        with self.database.connect() as connection:
-            self.assertEqual(
-                connection.execute("SELECT COUNT(*) FROM catalog_excel_receipts").fetchone()[0],
-                0,
-            )
 
     def test_legacy_excel_payload_cannot_bypass_receipt_draft(self):
         from app import web
@@ -441,9 +426,7 @@ class ExcelReceiptImportTest(unittest.TestCase):
                 "/receipts/create",
                 data={"import_payload": '[{"name":"Bypass","quantity":1}]'},
             )
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("notice=error", response.headers["Location"])
-        self.assertIn("open_receipt_modal=1", response.headers["Location"])
+        self.assertEqual(response.status_code, 410)
         moysklad.assert_not_called()
 
 
