@@ -274,13 +274,8 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 409)
-        payload = response.get_json()
-        self.assertEqual(payload["code"], "PRODUCT_ALREADY_EXISTS")
-        self.assertEqual(
-            payload["fields"]["existing"]["id"],
-            str(self.product["id"]),
-        )
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.get_json()["code"], "MANUAL_PRODUCT_CREATION_DISABLED")
 
 
 
@@ -358,18 +353,10 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.assertEqual(category_response.status_code, 201)
         category = category_response.get_json()["data"]
 
-        product_response = self.client.post(
-            "/api/v1/products",
-            json={
-                "name": "Orient Bambino",
-                "article": "FAC00009N0",
-                "brand_id": brand["id"],
-                "category_id": category["id"],
-                "stock": 0,
-            },
+        product = ExcelProductCatalog(CatalogDatabase(self.database_path)).create_product(
+            name="Orient Bambino", article="FAC00009N0", brand_id=brand["id"],
+            category_id=category["id"], stock=0,
         )
-        self.assertEqual(product_response.status_code, 201)
-        product = product_response.get_json()["data"]
 
         brand_search = self.client.get(
             "/api/v1/catalog/options?type=brand&q=O"
@@ -437,18 +424,10 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             [item["id"] for item in category_options],
         )
 
-        product_response = self.client.post(
-            "/api/v1/products",
-            json={
-                "name": "Global Category Product",
-                "article": "GLOBAL-CATEGORY-1",
-                "brand_id": brand["id"],
-                "category_id": self.product["category_id"],
-                "stock": 0,
-            },
+        product = ExcelProductCatalog(CatalogDatabase(self.database_path)).create_product(
+            name="Global Category Product", article="GLOBAL-CATEGORY-1",
+            brand_id=brand["id"], category_id=self.product["category_id"], stock=0,
         )
-        self.assertEqual(product_response.status_code, 201)
-        product = product_response.get_json()["data"]
         self.assertEqual(product["brand_id"], brand["id"])
         self.assertEqual(
             product["category_id"],

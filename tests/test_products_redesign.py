@@ -34,7 +34,7 @@ class ProductsRedesignStructureTest(unittest.TestCase):
         self.assertNotIn("Экспортировать все товары", workspace)
         self.assertIn('name="stock_state"', source)
         self.assertNotIn(">Инвентаризация</a>", workspace)
-        self.assertIn("+ Добавить товар", workspace)
+        self.assertIn("Добавить из Bitrix", workspace)
         self.assertNotIn("Только в наличии", source)
 
     def test_brand_and_category_lists_offer_empty_toggle_and_correct_metrics(self):

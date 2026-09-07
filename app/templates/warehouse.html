@@ -3293,23 +3293,7 @@
             min-height: 44px;
         }
 
-        .warehouse-create-new-product {
-            align-self: flex-start;
-            margin: 2px 0 0;
-            padding: 0;
-            border: 0;
-            background: transparent;
-            color: #2457d6;
-            font-size: 12px;
-            font-weight: 750;
-            cursor: pointer;
-            box-shadow: none;
-        }
 
-        .warehouse-create-new-product:hover {
-            color: #1d4ed8;
-            text-decoration: underline;
-        }
 
         #warehouseAddCard .brand-combobox-dropdown {
             margin-top: 6px;
@@ -4579,7 +4563,7 @@
                 <div class="warehouse-add-header modal-header">
                     <span class="warehouse-add-header-icon" aria-hidden="true">＋</span>
                     <div>
-                        <div class="add-title" id="warehouseAddTitle">Добавление товара</div>
+                        <div class="add-title" id="warehouseAddTitle">Редактирование товара</div>
                         <p class="warehouse-add-subtitle">Заполните информацию о товаре</p>
                     </div>
                     <button
@@ -4602,7 +4586,7 @@
                     id="warehouseAddForm"
                     class="add-form"
                     method="post"
-                    action="/warehouse/add"
+                    action="/warehouse/edit"
                     enctype="multipart/form-data"
                     data-shared-catalog-scope
                     data-global-category-options="true"
@@ -4677,16 +4661,9 @@
                                     component_class="filter-combobox",
                                     clear_selection_on_search_clear=true,
                                     input_id="warehouseProductId",
-                                    action_kind="product",
-                                    action_label="Добавить новый товар",
                                     shared_catalog_kind="product"
                                 ) }}
-                                <button
-                                    id="warehouseCreateNewProduct"
-                                    class="warehouse-create-new-product"
-                                    type="button"
-                                    hidden
-                                >Создать новый товар</button>
+
                             </div>
                         </div>
                     </section>
@@ -4819,7 +4796,7 @@
                     ></div>
 
                     <div class="warehouse-add-actions">
-                        <button id="warehouseAddSubmit" type="submit">Добавить товар</button>
+                        <button id="warehouseAddSubmit" type="submit">Сохранить изменения</button>
                     </div>
                 </form>
             </div>
@@ -5251,7 +5228,7 @@
                         <div class="empty erp-empty-state" role="status">
                             <strong>{{ 'Нет товаров без остатка' if out_of_stock else 'Товаров пока нет' }}</strong>
                             <span>{{ 'Все активные товары сейчас в наличии.' if out_of_stock else 'Добавьте первый товар, чтобы он появился в каталоге.' }}</span>
-                            {% if not out_of_stock %}<button class="erp-state-action" type="button" onclick="openWarehouseAddModal()">Добавить товар</button>{% endif %}
+                            {% if not out_of_stock %}<button class="erp-state-action" type="button" onclick="openBitrixImportModal()">Добавить из Bitrix</button>{% endif %}
                         </div>
                     {% endif %}
                 {% endif %}
@@ -7892,11 +7869,6 @@
         button?.setAttribute("aria-expanded", "false");
     }
 
-    function openManualProductCreate() {
-        closeProductsAddMenu();
-        toggleWarehouseAddCard();
-    }
-
     async function loadBitrixTaxonomyOptions() {
         const pairs = [
             ["brand", document.getElementById("bitrixBrandSelect")],
@@ -8136,6 +8108,10 @@
     });
     document.getElementById("bitrixImportProduct")?.addEventListener("click", function(){submitBitrixImport("create");});
     document.getElementById("bitrixUpdateProduct")?.addEventListener("click", function(){submitBitrixImport("update");});
+
+    if (new URLSearchParams(window.location.search).get("open_bitrix") === "1") {
+        openBitrixImportModal();
+    }
 
     function openWarehouseAddModal() {
         const modal = document.getElementById("warehouseAddModal");
@@ -8864,17 +8840,14 @@
             const indicator = document.getElementById(
                 "warehouseAddModeIndicator"
             );
-            const createButton = document.getElementById(
-                "warehouseCreateNewProduct"
-            );
             const submit = document.getElementById("warehouseAddSubmit");
 
-            form.dataset.productMode = editing ? "edit" : "create";
+            form.dataset.productMode = editing ? "edit" : "select";
             card?.classList.toggle("is-editing-product", editing);
             if (title) {
                 title.textContent = editing
                     ? "Редактирование товара"
-                    : "Добавление товара";
+                    : "Выберите товар для редактирования";
             }
             if (indicator) {
                 indicator.hidden = !editing;
@@ -8884,13 +8857,8 @@
                         + " · ID " + String(product?.id || "")
                     : "";
             }
-            if (createButton) {
-                createButton.hidden = !editing;
-            }
             if (submit && form.dataset.submitting !== "1") {
-                submit.textContent = editing
-                    ? "Сохранить изменения"
-                    : "Добавить товар";
+                submit.textContent = "Сохранить изменения";
             }
             document.getElementById("warehouseProductImageChoose").textContent = (
                 editing && warehouseExistingProductPhotoUrl
@@ -8916,33 +8884,6 @@
             warehouseExistingProductPhotoFileId = "";
             restoreWarehouseProductPhoto();
             warehouseAddError("");
-        }
-
-        function prepareWarehouseNewProduct(form, name) {
-            const combobox = document.getElementById("addProductCombobox");
-            const normalizedName = String(name || "")
-                .replace(/\s+/g, " ")
-                .trim();
-
-            resetWarehouseProductFields(form);
-            window.clearSharedCatalogCombobox(combobox);
-            warehouseAddControl(form, "name").value = normalizedName;
-            combobox.dataset.sharedCatalogSelectedLabel = normalizedName;
-            window.setBrandComboboxValue(
-                combobox,
-                "",
-                normalizedName
-                    ? 'Новый товар: "' + normalizedName + '"'
-                    : "Выберите товар"
-            );
-            const search = combobox.querySelector(
-                ".brand-combobox-search"
-            );
-            if (search) {
-                search.value = "";
-            }
-            window.setBrandDropdownOpen(combobox, false);
-            setWarehouseAddMode(form, "create");
         }
 
         async function loadWarehouseExistingProduct(form, productId, fallback) {
@@ -9099,10 +9040,9 @@
                 warehouseAddControl(form, "product_id")?.value || ""
             ).trim();
             const editing = Boolean(productId);
-            const name = warehouseAddControl(form, "name").value.trim();
-            if (!editing && !name) {
+            if (!editing) {
                 warehouseAddError(
-                    "Выберите существующий товар или создайте новый."
+                    "Выберите существующий товар. Новые товары добавляются через «Добавить из Bitrix»."
                 );
                 document.getElementById("addProductComboboxTrigger")?.focus();
                 return false;
@@ -9112,9 +9052,7 @@
             const button = document.getElementById("warehouseAddSubmit");
             if (button) {
                 button.disabled = true;
-                button.textContent = editing
-                    ? "Сохраняем..."
-                    : "Добавляем...";
+                button.textContent = "Сохраняем...";
             }
             warehouseAddError("");
 
@@ -9161,12 +9099,6 @@
                             body: updateBody,
                         }
                     );
-                } else {
-                    response = await fetch("/api/v1/products", {
-                        method: "POST",
-                        body: new FormData(form),
-                        headers: {"X-Requested-With": "XMLHttpRequest"},
-                    });
                 }
 
                 const payload = await response.json();
@@ -9174,34 +9106,19 @@
                     throw new Error(
                         payload.message
                         || payload?.error?.message
-                        || (editing
-                            ? "Не удалось сохранить товар."
-                            : "Не удалось добавить товар.")
+                        || "Не удалось сохранить товар."
                     );
                 }
                 form.dataset.submitted = "1";
-                if (!editing && payload.data) {
-                    form.dataset.createSubmitSuccess = "1";
-                    window.setSharedCatalogComboboxValue(
-                        document.getElementById("addProductCombobox"),
-                        payload.data
-                    );
-                    setWarehouseAddMode(form, "create");
-                    if (button) {
-                        button.textContent = "Добавить товар";
-                    }
-                }
                 window.navigateAfterWarehouseAddSuccess(
                     payload.meta?.image_message
-                    || (editing ? "Товар обновлён" : "Товар добавлен")
+                    || "Товар обновлён"
                 );
             } catch (submitError) {
                 form.dataset.submitting = "0";
                 if (button) {
                     button.disabled = false;
-                    button.textContent = editing
-                        ? "Сохранить изменения"
-                        : "Добавить товар";
+                    button.textContent = "Сохранить изменения";
                 }
                 warehouseAddError(submitError.message);
             }
@@ -9241,42 +9158,9 @@
                 ).hidden = false;
             });
             warehouseAddForm.addEventListener(
-                "click",
-                function(event) {
-                    const action = event.target.closest(
-                        '[data-catalog-create-action="product"]'
-                    );
-                    if (!action || !warehouseAddForm.contains(action)) {
-                        return;
-                    }
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.stopImmediatePropagation();
-                    const name = action.dataset.catalogCreateName || "";
-                    if (
-                        !warehouseAddControl(warehouseAddForm, "brand_id")?.value
-                        || !warehouseAddControl(
-                            warehouseAddForm,
-                            "category_id"
-                        )?.value
-                    ) {
-                        warehouseAddError(
-                            "Сначала выберите бренд и категорию."
-                        );
-                        return;
-                    }
-                    prepareWarehouseNewProduct(warehouseAddForm, name);
-                },
-                true
-            );
-
-            warehouseAddForm.addEventListener(
                 "shared-catalog:selected",
                 function(event) {
-                    if (
-                        event.detail?.kind !== "product"
-                        || warehouseAddForm.dataset.createSubmitSuccess === "1"
-                    ) {
+                    if (event.detail?.kind !== "product") {
                         return;
                     }
                     loadWarehouseExistingProduct(
@@ -9300,21 +9184,13 @@
                     if (kind === "brand" || kind === "category") {
                         window.setTimeout(function() {
                             resetWarehouseProductFields(warehouseAddForm);
-                            setWarehouseAddMode(warehouseAddForm, "create");
+                            setWarehouseAddMode(warehouseAddForm, "select");
                         }, 0);
                     }
                 }
             );
 
-            document.getElementById("warehouseCreateNewProduct")
-                ?.addEventListener("click", function() {
-                    prepareWarehouseNewProduct(warehouseAddForm, "");
-                    document.getElementById(
-                        "addProductComboboxTrigger"
-                    )?.focus();
-                });
-
-            setWarehouseAddMode(warehouseAddForm, "create");
+            setWarehouseAddMode(warehouseAddForm, "select");
         }
     </script>
 
@@ -10577,7 +10453,6 @@
                 active: true,
             };
             let failPatch = true;
-            let postBody = null;
 
             try {
                 window.confirm = () => true;
@@ -10605,20 +10480,6 @@
                         return response(true, {
                             ...existing,
                             ...patchData,
-                        });
-                    }
-                    if (method === "POST" && path === "/api/v1/products") {
-                        await wait(25);
-                        postBody = settings.body;
-                        return response(true, {
-                            ...existing,
-                            id: "99",
-                            product_id: "99",
-                            name: "Fresh Product",
-                            article: "NEW-ARTICLE",
-                            stock: 3,
-                            stock_display: "3",
-                            cell: "B-02",
                         });
                     }
                     return response(true, []);
@@ -10674,9 +10535,6 @@
                 result.editMode = (
                     form.dataset.productMode === "edit"
                     && submit.textContent === "Сохранить изменения"
-                    && !document.getElementById(
-                        "warehouseCreateNewProduct"
-                    ).hidden
                 );
                 result.photoPreserved = (
                     !image.disabled
@@ -10794,67 +10652,6 @@
                 form.dataset.submitting = "0";
                 delete form.dataset.submitted;
                 submit.disabled = false;
-                document.getElementById("warehouseCreateNewProduct").click();
-                result.createReset = (
-                    productId.value === ""
-                    && form.dataset.productMode === "create"
-                    && submit.textContent === "Добавить товар"
-                );
-                const createAction = product.querySelector(
-                    '[data-catalog-create-action="product"]'
-                );
-                createAction.hidden = false;
-                createAction.disabled = false;
-                createAction.dataset.catalogCreateName = "Fresh Product";
-                createAction.click();
-                result.inlineDeferred = (
-                    productId.value === ""
-                    && warehouseAddControl(form, "name").value
-                        === "Fresh Product"
-                    && !requests.some((item) => item.method === "POST")
-                );
-
-                article.value = "NEW-ARTICLE";
-                stock.value = "3";
-                cell.value = "B-02";
-                const transfer = new DataTransfer();
-                transfer.items.add(new File(["photo"], "watch.jpg", {
-                    type: "image/jpeg",
-                }));
-                image.files = transfer.files;
-                const createdFirst = submitWarehouseAddForm(
-                    {preventDefault() {}},
-                    form
-                );
-                const createdSecond = submitWarehouseAddForm(
-                    {preventDefault() {}},
-                    form
-                );
-                await Promise.all([createdFirst, createdSecond]);
-                const postRequests = requests.filter(
-                    (item) => item.method === "POST"
-                );
-                result.postOnly = postRequests.length === 1;
-                result.postPayload = (
-                    postBody instanceof FormData
-                    && postBody.get("name") === "Fresh Product"
-                    && postBody.get("article") === "NEW-ARTICLE"
-                    && postBody.get("stock") === "3"
-                    && postBody.get("cell") === "B-02"
-                    && postBody.get("product_image").name === "watch.jpg"
-                );
-                result.createSelected = productId.value === "99";
-                result.createMode = (
-                    form.dataset.productMode === "create"
-                    && submit.textContent === "Добавить товар"
-                    && navigations.includes("Товар добавлен")
-                );
-                result.doubleSubmit = (
-                    failedPatchRequests.length === 1
-                    && postRequests.length === 1
-                );
-
-                form.dataset.createSubmitSuccess = "0";
                 form.dataset.submitting = "0";
                 window.setSharedCatalogComboboxValue(product, existing);
                 await wait(10);
@@ -10877,6 +10674,12 @@
                     && productId.value === ""
                     && warehouseAddControl(form, "category_id").value === ""
                 );
+
+                const requestCount = requests.length;
+                await submitWarehouseAddForm({preventDefault() {}}, form);
+                result.manualCreationBlocked = requests.length === requestCount
+                    && !requests.some((item) => item.method === "POST");
+                result.doubleSubmit = failedPatchRequests.length === 1;
 
                 const passed = Object.values(result).every(Boolean);
                 document.documentElement.dataset.warehouseAddUiE2e = passed

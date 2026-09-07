@@ -26,7 +26,7 @@ class CompactModalLayoutTest(unittest.TestCase):
         form = self.warehouse.split('id="warehouseAddForm"', 1)[1].split(
             "</form>", 1
         )[0]
-        self.assertIn('action="/warehouse/add"', form)
+        self.assertIn('action="/warehouse/edit"', form)
         for marker in (
             'name="name"',
             '"brand",',

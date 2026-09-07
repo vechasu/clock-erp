@@ -231,10 +231,6 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
         self.assertEqual(response.status_code,410)
         remote.assert_not_called()
 
-
-
-
-
     def test_receipt_ui_uses_supply_documents(self):
         page=web.app.test_client().get('/receipts')
         text=page.get_data(as_text=True)

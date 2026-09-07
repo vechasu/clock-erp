@@ -40,7 +40,7 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
             "app/templates/_products_workspace.html"
         )
         self.assertIn("products_workspace_header", warehouse)
-        for text in ("Товары", "Каталог и складские остатки", "+ Добавить товар"):
+        for text in ("Товары", "Каталог и складские остатки", "Добавить из Bitrix"):
             self.assertIn(text, products_workspace)
 
     def test_three_pages_use_the_shared_metrics_contract(self):
@@ -82,7 +82,7 @@ class UnifiedPageArchitectureTest(unittest.TestCase):
         )[0]
         self.assertNotIn("Добавить товар", search_form)
         macro = self.source("app/templates/_products_workspace.html")
-        self.assertIn("toggleWarehouseAddCard()", macro)
+        self.assertIn("openBitrixImportModal()", macro)
 
     def test_receipt_advanced_filters_are_inside_compact_details_panel(self):
         receipts = self.source("app/templates/receipts.html")

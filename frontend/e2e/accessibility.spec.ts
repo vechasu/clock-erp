@@ -68,11 +68,31 @@ test('core pages expose one main landmark and one h1', async ({ page }) => {
   }
 });
 
-test('product modal traps focus, closes on Escape, and restores trigger', async ({ page }) => {
+test('product add menu only opens Bitrix with the keyboard', async ({ page }) => {
   await page.goto('/app/products', { waitUntil: 'domcontentloaded' });
   const trigger = page.locator('#openWarehouseAddModal');
   await trigger.focus();
   await trigger.press('Enter');
+  const menu = page.locator('#productsAddMenu');
+  await expect(menu.getByRole('menuitem')).toHaveCount(1);
+  const bitrix = menu.getByRole('menuitem', { name: 'Добавить из Bitrix' });
+  await bitrix.focus();
+  await bitrix.press('Enter');
+  await expect(page.locator('#bitrixImportModal')).toHaveAttribute('aria-hidden', 'false');
+  await expect(page.locator('#bitrixProductSearch')).toBeFocused();
+  await expect(page.locator('#warehouseAddModal')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.locator('#openManualProductCreate')).toHaveCount(0);
+});
+
+test('existing product editor traps focus, closes on Escape, and restores focus', async ({ page }) => {
+  await page.goto('/app/products', { waitUntil: 'domcontentloaded' });
+  const trigger = page.locator('#openWarehouseAddModal');
+  await trigger.focus();
+  // The shared editor is retained for existing products; the add menu only imports Bitrix.
+  await page.evaluate(() => {
+    const editor = window as unknown as { openWarehouseAddModal: () => void };
+    editor.openWarehouseAddModal();
+  });
   const modal = page.locator('#warehouseAddModal');
   await expect(modal).toHaveAttribute('aria-hidden', 'false');
   await expect(modal.locator(':focus')).toHaveCount(1);
