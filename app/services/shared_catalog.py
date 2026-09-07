@@ -12,10 +12,14 @@ from app.services.inventory_lock import unlocked_product_sql
 
 
 ASSEMBLABLE_STOCK_SQL = (
-    "(p.stock>0 OR (EXISTS(SELECT 1 FROM erp_bundle_components bc WHERE bc.product_id=p.id) "
+    "((NOT EXISTS(SELECT 1 FROM erp_product_bundles b WHERE b.product_id=p.id) AND "
+    "CASE WHEN EXISTS(SELECT 1 FROM erp_component_inventory ci WHERE ci.product_id=p.id) "
+    "THEN COALESCE((SELECT physical_stock FROM erp_component_inventory ci WHERE ci.product_id=p.id),0) ELSE p.stock END>0) "
+    "OR (EXISTS(SELECT 1 FROM erp_bundle_components bc WHERE bc.product_id=p.id) "
     "AND NOT EXISTS(SELECT 1 FROM erp_bundle_components bc "
     "JOIN catalog_excel_products component ON component.id=bc.component_id "
-    "WHERE bc.product_id=p.id AND (component.active=0 OR component.stock<bc.quantity))))"
+    "LEFT JOIN erp_component_inventory ci ON ci.product_id=bc.component_id "
+    "WHERE bc.product_id=p.id AND (component.active=0 OR ci.physical_stock IS NULL OR ci.physical_stock<bc.quantity))))"
 )
 
 
@@ -1723,10 +1727,9 @@ class SharedCatalog:
                 parameters,
             ).fetchall()
         items = [self._product(row) for row in rows]
-        if include_assemblable:
-            from app.services.product_bundles import ProductBundles
-            bundles = ProductBundles(self.database).get_many([item["id"] for item in items])
-            items = [{**item, **bundles.get(int(item["id"]), {})} for item in items]
+        from app.services.product_bundles import ProductBundles
+        bundles = ProductBundles(self.database).get_many([item["id"] for item in items])
+        items = [{**item, **bundles.get(int(item["id"]), {})} for item in items]
         return items
 
     def legacy_links(self, entity_type, entity_ids):
@@ -1794,7 +1797,10 @@ class SharedCatalog:
                 "WHERE p.id = ?" + where_active,
                 (product_id,),
             ).fetchone()
-        return self._product(row) if row else None
+        if row is None:
+            return None
+        from app.services.product_bundles import ProductBundles
+        return {**self._product(row), **ProductBundles(self.database).get_many([product_id]).get(product_id, {})}
 
     def products_by_ids(self, product_ids, include_archived=True):
         ids = []

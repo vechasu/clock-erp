@@ -18,6 +18,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.component_inventory_migration import COMPONENT_SQL, apply_component_inventory_migration
 from app.bundle_migration import BUNDLE_SQL, apply_bundle_migration
 
 from app.catalog_migration_steps import (
@@ -237,6 +238,8 @@ ORDER_REFUSAL_MIGRATION_CHECKSUM = hashlib.sha256(
 
 BUNDLE_MIGRATION_ID = "2026-09-07-local-product-bundles-v1"
 
+COMPONENT_MIGRATION_ID = "2026-09-07-component-physical-inventory-v1"
+
 MIGRATIONS = (
     {
         "id": BASELINE_ID,
@@ -315,6 +318,9 @@ MIGRATIONS = (
         "transactional": True,
         "recovery": "restore verified catalog database backup while service is stopped",
     },
+    {"id": COMPONENT_MIGRATION_ID, "name": "Separate physical component balances", "recovery": "restore verified catalog database backup while service is stopped",
+     "checksum": hashlib.sha256("\n".join(COMPONENT_SQL).encode("utf-8")).hexdigest(),
+     "transactional": True},
 )
 
 REQUIRED_TABLES = {
@@ -714,6 +720,12 @@ def verify_complete_catalog_contract(connection, include_bundles=True):
         expected["tables"].update(extra["tables"])
         for kind in ("indexes", "triggers", "views"):
             expected[kind] = sorted(expected[kind] + extra[kind])
+    if include_bundles:
+        extra = json.loads(Path(__file__).resolve().with_name("catalog_component_schema_manifest.json").read_text(encoding="utf-8"))
+        expected["tables"].update(extra["tables"])
+        for kind in ("indexes", "triggers", "views"):
+            expected[kind] = sorted(expected[kind] + extra[kind])
+        expected["triggers"] = [row for row in expected["triggers"] if row[0] != "trg_bundle_physical_stock"]
     actual = _json_structure(connection)
     if actual == expected:
         return True
@@ -1281,12 +1293,12 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                         raise
                     finally:
                         connection.close()
-                elif migration["id"] == BUNDLE_MIGRATION_ID:
+                elif migration["id"] in (BUNDLE_MIGRATION_ID, COMPONENT_MIGRATION_ID):
                     connection = sqlite3.connect(str(path))
                     try:
                         connection.execute("PRAGMA foreign_keys = ON")
                         connection.execute("BEGIN IMMEDIATE")
-                        apply_bundle_migration(connection, ddl_observer)
+                        (apply_component_inventory_migration if migration["id"] == COMPONENT_MIGRATION_ID else apply_bundle_migration)(connection, ddl_observer)
                         connection.commit()
                     except Exception:
                         connection.rollback()
@@ -1533,6 +1545,9 @@ def validate_known_sql_compatibility(source_root):
     bundle_migration = source_root / "app" / "bundle_migration.py"
     if bundle_migration.exists():
         paths.append(bundle_migration)
+    component_migration = source_root / "app" / "component_inventory_migration.py"
+    if component_migration.exists():
+        paths.append(component_migration)
     domain_migrations = source_root / "app" / "domain_schema_migrations.py"
     if domain_migrations.exists():
         paths.append(domain_migrations)

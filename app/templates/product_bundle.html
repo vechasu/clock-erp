@@ -9,23 +9,35 @@
 {% if error %}<p role="alert" class="error">{{ error }}</p>{% endif %}
 {% if notice %}<p role="status">{{ notice }}</p>{% endif %}
 <section><h2>Складской учёт</h2>
-<p>{% if bundle.is_bundle %}Доступно к сборке: <strong>{{ bundle.available_to_assemble }}</strong>{% else %}Физический остаток: <strong>{{ '%g'|format(product.stock) }}</strong>{% endif %}</p>
+<p>{% if bundle.is_bundle and not bundle.physical_inventory_initialized %}Физический остаток компонентов не подтверждён{% elif bundle.is_bundle %}Доступно к сборке: <strong>{{ bundle.available_to_assemble }}</strong>{% else %}Bitrix/legacy остаток: <strong>{{ '%g'|format(product.stock) }}</strong>{% endif %}</p>
 <form method="post" id="bundleForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <label>Режим <select name="mode"><option value="ordinary" {% if not bundle.is_bundle %}selected{% endif %}>Обычный</option><option value="bundle" {% if bundle.is_bundle %}selected{% endif %}>Сборный</option></select></label>
 <p>Состав хранится в ERP. Изменения применяются к будущим продажам.</p>
-<table><thead><tr><th>Компонент</th><th>На единицу</th><th></th></tr></thead><tbody id="parts">
-{% for part in bundle.components %}<tr><td>{{ part.name }}<input type="hidden" name="component_id" value="{{ part.component_id }}"></td><td><input name="quantity" type="number" min="1" step="1" required value="{{ part.quantity }}" aria-label="Количество {{ part.name }}"></td><td><button type="button" class="remove">Удалить</button></td></tr>{% endfor %}
+<div id="composition"><h3>Состав товара</h3><table><thead><tr><th>Компонент</th><th>На единицу</th><th></th></tr></thead><tbody id="parts">
+{% for part in bundle.components %}<tr data-stock="{{ part.stock if part.initialized_at else "" }}"><td>{{ part.name }}<small style="display:block">Артикул: {{ part.article or "—" }} · Bitrix/legacy: {{ "%g"|format(part.legacy_stock) }}<br>{% if part.initialized_at %}Физический остаток ERP: {{ "%g"|format(part.stock) }}{% else %}Физический остаток не подтверждён{% endif %}</small><input type="hidden" name="component_id" value="{{ part.component_id }}"></td><td><input name="quantity" type="number" min="1" step="1" required value="{{ part.quantity }}" aria-label="Количество {{ part.name }}"></td><td><button type="button" class="remove">Удалить</button></td></tr>{% endfor %}
 </tbody></table>
 <label>Найти компонент <input id="search" type="search" placeholder="Название или артикул" autocomplete="off"></label>
 <div id="searchStatus" role="status"></div><div id="results" class="row"></div>
-<p><button type="submit">Сохранить состав</button></p></form></section>
-<section><h2>Создать локальный компонент</h2><p>Начальный остаток — 0. После создания оформите приход компонента в ERP.</p>
+<p id="assemblyPreview" role="status"></p><p>Рассчитывается автоматически по физическим остаткам компонентов.</p></div><p><button type="submit">Сохранить состав</button></p></form></section>
+<section><details><summary>Не нашли компонент? Создать локальный складской компонент</summary><p>Начальный остаток — 0. После создания оформите приход компонента в ERP.</p>
 <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="create_component">
 <label>Название <input name="name" required></label><label>Артикул <input name="article"></label><label>Бренд <input name="brand"></label>
-<button type="submit">Создать компонент</button></form></section>
+<button type="submit">Создать компонент</button></form></details></section>
+{% if bundle.components %}<section><h2>Физический остаток ERP</h2><p>Укажите фактически пересчитанное количество. Значения Bitrix не копируются. После подтверждения приход и инвентаризация компонента работают с физическим остатком ERP.</p>
+{% for part in bundle.components %}<details><summary>{{ part.name }} — {% if part.initialized_at %}изменить физический остаток{% else %}подтвердить физический остаток{% endif %}</summary>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="confirm_physical"><input type="hidden" name="physical_product_id" value="{{ part.component_id }}"><label>Фактическое количество <input name="physical_stock" type="number" min="0" step="1" required></label><button type="submit">Подтвердить пересчёт</button></form></details>{% endfor %}</section>{% endif %}
 </main><script>
 const parts=document.getElementById('parts');
-parts.addEventListener('click',event=>{if(event.target.classList.contains('remove'))event.target.closest('tr').remove();});
+parts.addEventListener('click',event=>{if(event.target.classList.contains('remove')){event.target.closest('tr').remove();updateAvailability();}});
+function updateAvailability(){
+ const rows=[...parts.querySelectorAll('tr')];
+ const known=rows.length>0 && rows.every(row=>row.dataset.stock!=='' && Number.isInteger(Number(row.querySelector('[name=quantity]').value)) && Number(row.querySelector('[name=quantity]').value)>0);
+ document.getElementById('assemblyPreview').textContent=known ? 'Доступно к сборке: '+Math.max(0,Math.min(...rows.map(row=>Math.floor(Number(row.dataset.stock)/Number(row.querySelector('[name=quantity]').value)))))+' шт.' : 'Физический остаток не подтверждён или состав не заполнен';
+}
+parts.addEventListener('input',updateAvailability);
+const mode=document.querySelector('[name=mode]');
+function updateMode(){document.getElementById('composition').hidden=mode.value!=='bundle';updateAvailability();}
+mode.addEventListener('change',updateMode);updateMode();
 let sequence=0,timer;
 document.getElementById('search').addEventListener('input',event=>{
  clearTimeout(timer);const q=event.target.value.trim(),current=++sequence;
@@ -35,14 +47,14 @@ document.getElementById('search').addEventListener('input',event=>{
  const response=await fetch('/api/v1/products?q='+encodeURIComponent(q)+'&page_size=20');const payload=await response.json();
  if(!response.ok)throw new Error('Не удалось найти компоненты');if(current!==sequence)return;
  const items=payload.data||[];status.textContent=items.length?'Выберите компонент':'Не найдено';
- items.forEach(item=>{if(String(item.id)==={{ product.id|string|tojson }})return;
- const button=document.createElement('button');button.type='button';button.textContent=(item.name||item.display_name)+' · '+(item.article||'');
+ items.forEach(item=>{if(item.is_bundle)return;if(String(item.id)==={{ product.id|string|tojson }})return;
+ const button=document.createElement('button');button.type='button';button.textContent=(item.name||item.display_name)+' · '+(item.article||'')+' · Bitrix/legacy: '+item.stock+' · '+(item.is_physical_component && item.physical_inventory_initialized ? 'Физический остаток ERP: '+item.physical_stock : 'Физический остаток не подтверждён');
  button.addEventListener('click',()=>{
  if([...parts.querySelectorAll('[name=component_id]')].some(input=>input.value===String(item.id))){status.textContent='Компонент уже добавлен';return;}
- const row=document.createElement('tr'),name=document.createElement('td'),count=document.createElement('td'),action=document.createElement('td');
- name.textContent=item.name||item.display_name;const id=document.createElement('input');id.type='hidden';id.name='component_id';id.value=item.id;name.append(id);
+ const row=document.createElement('tr'),name=document.createElement('td'),count=document.createElement('td'),action=document.createElement('td');row.dataset.stock=item.physical_inventory_initialized?String(item.physical_stock):'';
+ name.textContent=(item.name||item.display_name)+' · '+(item.article||'')+' · Bitrix/legacy: '+item.stock+' · '+(item.is_physical_component && item.physical_inventory_initialized ? 'Физический остаток ERP: '+item.physical_stock : 'Физический остаток не подтверждён; сохраните состав и подтвердите количество ниже');const id=document.createElement('input');id.type='hidden';id.name='component_id';id.value=item.id;name.append(id);
  const quantity=document.createElement('input');Object.assign(quantity,{name:'quantity',type:'number',min:'1',step:'1',value:'1',required:true});quantity.setAttribute('aria-label','Количество '+name.textContent);count.append(quantity);
- const remove=document.createElement('button');Object.assign(remove,{type:'button',className:'remove',textContent:'Удалить'});action.append(remove);row.append(name,count,action);parts.append(row);status.textContent='Компонент добавлен';
+ const remove=document.createElement('button');Object.assign(remove,{type:'button',className:'remove',textContent:'Удалить'});action.append(remove);row.append(name,count,action);parts.append(row);updateAvailability();status.textContent='Компонент добавлен';
  });results.append(button);});
  }catch(error){if(current===sequence)status.textContent=error.message;}},250);
 });

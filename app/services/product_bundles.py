@@ -27,11 +27,11 @@ def compositions(connection, product_ids):
     for offset in range(0, len(ids), 400):
         chunk = ids[offset:offset + 400]
         rows = connection.execute(
-            "SELECT b.product_id,c.component_id,c.quantity,p.stock,p.active,"
+            "SELECT b.product_id,c.component_id,c.quantity,p.stock AS legacy_stock,ci.physical_stock AS stock,ci.initialized_at,p.active,"
             "p.excel_name_raw AS name,p.excel_article AS article "
             "FROM erp_product_bundles b LEFT JOIN erp_bundle_components c "
             "ON c.product_id=b.product_id LEFT JOIN catalog_excel_products p "
-            "ON p.id=c.component_id WHERE b.product_id IN ({}) "
+            "ON p.id=c.component_id LEFT JOIN erp_component_inventory ci ON ci.product_id=p.id WHERE b.product_id IN ({}) "
             "ORDER BY b.product_id,c.component_id".format(
                 ",".join("?" for _ in chunk)), chunk,
         ).fetchall()
@@ -59,10 +59,11 @@ class ProductBundles:
     def get_many(self, product_ids):
         with self.database.connect() as connection:
             configs = compositions(connection, product_ids)
-        return {
+        result = {
             product_id: {
                 "is_bundle": True,
                 "components": parts,
+                "physical_inventory_initialized": bool(parts) and all(part["initialized_at"] is not None for part in parts),
                 "available_to_assemble": max(0, min(
                     [int(math.floor(float(part["stock"] or 0) / part["quantity"]))
                      if part["active"] else 0 for part in parts] or [0]
@@ -70,6 +71,16 @@ class ProductBundles:
             }
             for product_id, parts in configs.items()
         }
+
+        ids = list(dict.fromkeys(int(value) for value in product_ids))
+        with self.database.connect() as connection:
+            for offset in range(0, len(ids), 400):
+                chunk = ids[offset:offset + 400]
+                for row in connection.execute("SELECT product_id,physical_stock,initialized_at FROM erp_component_inventory WHERE product_id IN ({})".format(",".join("?" for _ in chunk)), chunk):
+                    result[int(row["product_id"])] = {"is_bundle": False, "is_physical_component": True,
+                        "physical_stock": row["physical_stock"], "physical_inventory_initialized": row["initialized_at"] is not None,
+                        "available_to_assemble": None, "components": []}
+        return result
 
     def get(self, product_id):
         return self.get_many([product_id]).get(int(product_id), {
@@ -104,21 +115,17 @@ class ProductBundles:
             if product is None:
                 raise BundleError("Товар не найден.")
             assert_products_unlocked(connection, [product_id] + list(prepared), BundleError)
+            previous = connection.execute("SELECT 1 FROM erp_product_bundles WHERE product_id=?", (product_id,)).fetchone() is not None
+            if previous and not enabled and float(product["stock"] or 0) != 0:
+                raise BundleError("Нельзя вернуть legacy-остаток в физический учёт сменой режима.")
             if enabled:
-                if float(product["stock"] or 0) != 0:
-                    raise BundleError("У SKU ненулевой собственный остаток: {}. Автоматическое преобразование запрещено.".format(product["stock"]))
+                if connection.execute("SELECT 1 FROM erp_component_inventory WHERE product_id=?", (product_id,)).fetchone():
+                    raise BundleError("У товара уже есть отдельный физический учёт компонента.")
                 if connection.execute(
                     "SELECT 1 FROM erp_bundle_components WHERE component_id=? LIMIT 1",
                     (product_id,),
                 ).fetchone():
                     raise BundleError("Товар уже используется физическим компонентом другого состава.")
-                if connection.execute(
-                    "SELECT 1 FROM erp_sale_items i LEFT JOIN erp_sale_component_snapshots s "
-                    "ON s.sale_item_id=i.id WHERE i.returned_quantity<i.quantity AND "
-                    "((i.product_id=? AND s.sale_item_id IS NULL) OR s.component_id=?) LIMIT 1",
-                    (product_id, product_id),
-                ).fetchone():
-                    raise BundleError("У товара есть незавершённые физические списания; сначала оформите возврат или отмену.")
                 for component_id in prepared:
                     component = connection.execute(
                         "SELECT active FROM catalog_excel_products WHERE id=?", (component_id,),
@@ -129,10 +136,16 @@ class ProductBundles:
                         "SELECT 1 FROM erp_product_bundles WHERE product_id=?", (component_id,),
                     ).fetchone():
                         raise BundleError("Многоуровневые составы запрещены.")
+                for component_id in prepared:
+                    connection.execute("INSERT OR IGNORE INTO erp_component_inventory(product_id,updated_at) VALUES (?,?)",
+                                       (component_id, datetime.now(timezone.utc).isoformat()))
                 connection.execute(
                     "INSERT OR IGNORE INTO erp_product_bundles(product_id,updated_at) VALUES (?,?)",
                     (product_id, datetime.now(timezone.utc).isoformat()),
                 )
+            if previous != bool(enabled):
+                connection.execute("INSERT INTO erp_bundle_transitions(product_id,enabled,legacy_stock,created_at) VALUES (?,?,?,?)",
+                                   (product_id,int(bool(enabled)),product["stock"],datetime.now(timezone.utc).isoformat()))
             if enabled:
                 connection.execute("UPDATE erp_product_bundles SET updated_at=? WHERE product_id=?",
                                    (datetime.now(timezone.utc).isoformat(), product_id))

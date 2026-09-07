@@ -91,6 +91,9 @@ class ReceiptRecovery:
                             item["product_id"]
                         )
                     )
+                from app.services.component_inventory import physical
+                if physical(connection, item["product_id"]):
+                    raise ReceiptRecoveryError("Восстановление legacy-прихода компонента требует проверки физического учёта.")
                 stock_before = float(item["stock"] or 0)
                 quantity = float(item["quantity"])
                 stock_after = stock_before + quantity

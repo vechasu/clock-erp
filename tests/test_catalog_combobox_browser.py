@@ -42,7 +42,7 @@ class CatalogComboboxStructureTest(unittest.TestCase):
         self.assertIn("Math.max(triggerRect.width, 520)", script)
         self.assertIn("Math.max(triggerRect.width, 320)", script)
         self.assertIn("include_order_counts", script)
-        self.assertIn('Number(item?.is_bundle ? item.available_to_assemble : item?.stock) > 0', script)
+        self.assertIn('Number(item?.is_bundle ? item.available_to_assemble : item?.is_physical_component ? item.physical_stock : item?.stock) > 0', script)
         self.assertIn('if (item.is_bundle) return "Доступно к сборке: "', script)
         self.assertIn('"Нет товаров в наличии"', script)
         stylesheet = (

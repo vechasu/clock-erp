@@ -1,4 +1,5 @@
 """Transactional sales, returns and product stock movements."""
+from app.services.component_inventory import balance, write_balance, overlay, remember
 
 import json
 import math
@@ -214,7 +215,7 @@ class SalesInventory:
 
     @staticmethod
     def _product_snapshot(connection, product_id):
-        return connection.execute(
+        row = connection.execute(
             "SELECT p.id, p.stock, p.brand_id, p.category_id, "
             "p.excel_name_raw AS name, p.model, p.excel_article AS article, "
             "COALESCE(b.name, p.excel_brand, '') AS brand, "
@@ -225,6 +226,8 @@ class SalesInventory:
             "WHERE p.id=? AND p.active=1",
             (int(product_id),),
         ).fetchone()
+
+        return overlay(connection, row)
 
     @staticmethod
     def _potential_removed_strap_duplicates(
@@ -524,16 +527,12 @@ class SalesInventory:
                     "SELECT stock FROM catalog_excel_products WHERE id=? AND active=1",
                     (product_id,),
                 ).fetchone()
-                before = float(row["stock"] or 0)
+                remember(connection, product_id, ("sale", sale_id))
+                before = balance(connection, product_id, ("sale", sale_id))
                 after = before + float(delta)
                 if after < -0.000001:
                     raise InsufficientStockError(before)
-                cursor = connection.execute(
-                    "UPDATE catalog_excel_products SET stock=?,stock_source=?,updated_at=? "
-                    "WHERE id=? AND active=1 AND (? >= 0 OR stock >= ?)",
-                    (after, "order_strap_replacement", inserted_at, product_id,
-                     delta, abs(delta)),
-                )
+                cursor = write_balance(connection, product_id, after, "order_strap_replacement", inserted_at, ("sale", sale_id))
                 if cursor.rowcount != 1:
                     latest = connection.execute(
                         "SELECT stock FROM catalog_excel_products WHERE id=?",
@@ -683,6 +682,7 @@ class SalesInventory:
         except BundleError as error:
             raise SalesInventoryError(str(error))
         is_bundle = product_id in compositions(connection, [product_id])
+        document = ("sale", sale_id)
         assert_products_unlocked(connection, [line[0] for line in lines], SalesInventoryError)
         for index, (physical_id, required) in enumerate(lines):
             product = connection.execute(
@@ -691,11 +691,14 @@ class SalesInventory:
             ).fetchone()
             if product is None:
                 raise SalesInventoryError("Компонент или товар не найден.")
-            cursor = connection.execute(
-                "UPDATE catalog_excel_products SET stock=stock-?,stock_source='sale',"
-                "updated_at=? WHERE id=? AND active=1 AND stock>=?",
-                (required, timestamp, physical_id, required),
-            )
+            remember(connection, physical_id, document)
+            try:
+                product = overlay(connection, product, physical_id, document)
+            except ValueError as error:
+                raise SalesInventoryError(str(error))
+            if product["stock"] < required:
+                raise InsufficientStockError(product["stock"])
+            cursor = write_balance(connection, physical_id, product["stock"] - required, "sale", timestamp, document)
             if cursor.rowcount != 1:
                 raise InsufficientStockError(product["stock"])
             if is_bundle:
@@ -1248,30 +1251,13 @@ class SalesInventory:
                     (returned_at, item["product_id"]),
                 )
 
+            document = ("sale", sale_id)
+            product = overlay(connection, product, item["product_id"], document)
             stock_before = float(product["stock"] or 0)
-            stock_cursor = connection.execute(
-                "UPDATE catalog_excel_products "
-                "SET stock = stock + ?, stock_source = ?, "
-                "updated_at = ? WHERE id = ? AND active = 1",
-                (
-                    quantity,
-                    (
-                        "sale_cancel"
-                        if movement_type == "cancellation"
-                        else "return"
-                    ),
-                    returned_at,
-                    item["product_id"],
-                ),
-            )
+            stock_cursor = write_balance(connection, item["product_id"], stock_before + quantity, "return", returned_at, document)
             if stock_cursor.rowcount != 1:
                 raise ReturnConflictError("Товар не найден.")
-            product = connection.execute(
-                "SELECT stock FROM catalog_excel_products WHERE id = ?",
-                (item["product_id"],),
-            ).fetchone()
-            if product is None:
-                raise ReturnConflictError("Товар не найден.")
+            product = {"stock": balance(connection, item["product_id"], document)}
 
             item_cursor = connection.execute(
                 "UPDATE erp_sale_items SET returned_quantity = ?, "
@@ -1377,11 +1363,10 @@ class SalesInventory:
             ).fetchone()
             if product is None:
                 raise ReturnConflictError("Исторический компонент не найден.")
+            document = ("sale", sale["id"])
+            product = overlay(connection, product, physical_id, document)
             stock_after = float(product["stock"]) + required
-            connection.execute(
-                "UPDATE catalog_excel_products SET stock=?,stock_source='return',updated_at=? WHERE id=?",
-                (stock_after, timestamp, physical_id),
-            )
+            write_balance(connection, physical_id, stock_after, "return", timestamp, document)
             connection.execute(
                 "INSERT INTO catalog_stock_movements "
                 "(id,product_id,movement_type,quantity_delta,stock_before,stock_after,"
@@ -1713,6 +1698,8 @@ class SalesInventory:
                         "Не удалось безопасно восстановить остаток товара. "
                         "Продажа не отменена."
                     )
+                document = ("sale", sale_id)
+                product = overlay(connection, product, product_id, document)
                 stock_before = float(product["stock"] or 0)
                 stock_after = stock_before + quantity_delta
                 if stock_after < -0.000001:
@@ -1733,11 +1720,7 @@ class SalesInventory:
                         "Отмена создаст отрицательный остаток товара. "
                         "Требуется ручное разрешение."
                     )
-                connection.execute(
-                    "UPDATE catalog_excel_products SET stock = ?, "
-                    "stock_source = 'sale_cancel', updated_at = ? WHERE id = ?",
-                    (stock_after, cancelled_at, product_id),
-                )
+                write_balance(connection, product_id, stock_after, "sale_cancel", cancelled_at, document)
                 item = item_by_product.get(product_id) or items[0]
                 component_items = component_item_ids.get(product_id)
                 reversal_item_id = item["id"]

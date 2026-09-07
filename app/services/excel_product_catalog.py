@@ -315,6 +315,12 @@ def _matching_snapshot(row):
 
 
 def _restore_columns(connection, product_id, state, columns):
+    if "stock" in columns:
+        from app.services.component_inventory import physical
+        if physical(connection, product_id):
+            legacy = connection.execute("SELECT stock FROM catalog_excel_products WHERE id=?", (int(product_id),)).fetchone()
+            if legacy is not None and state.get("stock") != legacy[0]:
+                raise ValueError("Для компонента используйте физическую инвентаризацию или приход; замена legacy-остатка импортом запрещена.")
     assignments = ", ".join("{} = ?".format(column) for column in columns)
     connection.execute(
         "UPDATE catalog_excel_products SET {} WHERE id = ?".format(assignments),
@@ -1644,7 +1650,10 @@ class ExcelProductCatalog:
                 raise ValueError("Товар не найден.")
             if stock is not None:
                 assert_products_unlocked(connection, [product_id])
-                if float(stock) != 0 and connection.execute(
+                from app.services.component_inventory import physical
+                if physical(connection, product_id):
+                    raise ValueError("Физический остаток компонента изменяется через инвентаризацию или приход.")
+                if connection.execute(
                     "SELECT 1 FROM erp_product_bundles WHERE product_id=?", (product_id,),
                 ).fetchone():
                     raise ValueError("Для сборного SKU изменяйте остатки физических компонентов.")
