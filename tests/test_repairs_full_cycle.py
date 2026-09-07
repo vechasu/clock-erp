@@ -96,6 +96,28 @@ class RepairsFullCycleTest(unittest.TestCase):
             headers={"Idempotency-Key": payload["idempotency_key"]},
         )
 
+    def test_guided_create_derives_initial_step_without_workflow_fields(self):
+        for location, status, action in [
+            ("at_us", "waiting_diagnostics", "start_diagnostics"),
+            ("with_customer", "new", "request_shipment"),
+        ]:
+            payload = {"guided_create": True, "client_name": "Клиент",
+                       "contact": "@client", "product_name": "Часы",
+                       "problem": "Не идут", "location": location}
+            response = self.client.post("/api/v1/repairs", json=payload)
+            self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+            case = response.get_json()["data"]
+            self.assertEqual(case["status"], status)
+            self.assertEqual(case["workflow"]["action"], action)
+            self.assertEqual(case["waiting_for"], "us")
+            self.assertEqual(case["request_type"], "diagnostics")
+            self.assertEqual(case["control_date"], (date.today() + timedelta(days=1)).isoformat())
+            fetched = self.client.get("/api/v1/repairs/" + case["id"]).get_json()["data"]
+            self.assertEqual(fetched["status"], status)
+            self.assertTrue(fetched["history"])
+        payload["location"] = "delivered"
+        self.assertEqual(self.client.post("/api/v1/repairs", json=payload).status_code, 422)
+
     def test_page_defers_product_catalog_until_editor_is_opened(self):
         with mock.patch.object(
             web, "build_repair_catalog_items",

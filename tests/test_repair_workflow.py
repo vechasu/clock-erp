@@ -46,9 +46,28 @@ class RepairWorkflowTest(unittest.TestCase):
         self.assertFalse(repair_workflow(case)['needs_attention'])
 
     def test_local_receipt_and_free_repair_do_not_infer_payment(self):
-        self.assertEqual(repair_workflow(dict(status='new', location='at_us'))['action'], 'receive')
+        self.assertEqual(repair_workflow(dict(status='new', location='at_us'))['action'], 'receive_and_start_diagnostics')
         case = dict(status='waiting_decision', location='with_master', history=[])
         apply_repair_action(case, 'accept_free', dict(guided=True, customer_decision='Гарантия', control_date='2026-10-01'))
         self.assertEqual(case['status'], 'in_repair')
         self.assertNotIn('payment_amount', case)
         self.assertTrue(case['history'])
+
+    def test_handover_combines_existing_transitions_atomically_and_is_idempotent(self):
+        case = dict(status='new', location='at_us', history=[])
+        before = copy.deepcopy(case)
+        with self.assertRaises(ValueError):
+            apply_repair_action(case, 'receive_and_start_diagnostics', {'guided': True})
+        self.assertEqual(case, before)
+        payload = dict(guided=True, control_date='2026-10-01', idempotency_key='handover')
+        self.assertTrue(apply_repair_action(case, 'receive_and_start_diagnostics', payload))
+        self.assertEqual((case['status'], case['location']), ('diagnostics', 'with_master'))
+        self.assertEqual(len([e for e in case['history'] if e.get('field') == 'status']), 2)
+        after = copy.deepcopy(case)
+        self.assertFalse(apply_repair_action(case, 'receive_and_start_diagnostics', payload))
+        self.assertEqual(case, after)
+        case = dict(status='new', location='with_customer', history=[])
+        before = copy.deepcopy(case)
+        with self.assertRaises(ValueError):
+            apply_repair_action(case, 'receive_and_start_diagnostics', payload)
+        self.assertEqual(case, before)

@@ -5,6 +5,7 @@ from pathlib import Path
 
 state = runpy.run_path(str(Path(__file__).with_name('stage2_preview_server.py')))
 web, root = state['web'], state['PREVIEW_ROOT']
+web.get_order = lambda order_id: next((dict(order) for order in state['preview_orders'] if order['id'] == str(order_id)), None)
 web.get_repair_cases_path = lambda: root / 'repair_cases.json'
 web.save_repair_cases([
     dict(id='ux-' + str(i), status=status, location=location, client_name='Тестовый клиент',

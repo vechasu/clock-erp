@@ -22929,6 +22929,22 @@ def find_api_repair(case_id, cases=None):
 
 
 def create_api_repair(payload, idempotency_key=""):
+    guided_create = payload.get("guided_create") is True
+    if guided_create:
+        payload = dict(payload)
+        location = _repair_text(payload.get("location"))
+        if location not in {"at_us", "with_customer"}:
+            raise ValueError("Укажите, где товар: у нас или у клиента")
+        payload["next_action"] = (
+            "Передайте товар мастеру для диагностики."
+            if location == "at_us" else "Согласуйте с клиентом передачу товара."
+        )
+        payload["waiting_for"] = "us"
+        payload["control_date"] = payload.get("control_date") or (
+            datetime.now() + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        payload["request_type"] = payload.get("request_type") or "diagnostics"
+        payload["communication_channel"] = payload.get("communication_channel") or "other"
     now = repair_now()
     case_id = str(uuid.uuid4())
     order_snapshot = None
@@ -22949,6 +22965,8 @@ def create_api_repair(payload, idempotency_key=""):
         order_snapshot=order_snapshot,
         order_item=order_item,
     )
+    if guided_create and normalized["location"] == "at_us":
+        normalized["status"] = "waiting_diagnostics"
     actor = current_repair_user_name()
     idempotency_key = _repair_text(
         idempotency_key or payload.get("idempotency_key")

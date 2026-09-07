@@ -7,7 +7,7 @@
     <title>ТТТ ERP — Ремонт</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/repair-workflow.css', v='1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/repair-workflow.css', v='2') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='1') }}">
 </head>
 <body class="repair-page">
@@ -30,7 +30,7 @@
                 <a class="repair-tab erp-section-tab{% if repair_view == 'archive' %} is-active{% endif %}"{% if repair_view == 'archive' %} aria-current="page"{% endif %} href="{{ url_for('repair_page', view='archive') }}">Архив · {{ archive_count }}</a>
             </nav>
 
-            {% if repair_view == 'active' %}<nav class="repair-queue" aria-label="Рабочая очередь">{% for key, label in queue_labels.items() %}<a class="repair-button{% if filters.queue == key %} is-selected{% endif %}" href="{{ queue_urls[key] }}"{% if filters.queue == key %} aria-current="page"{% endif %}>{{ label }} · {{ queue_counts[key] }}</a>{% endfor %}</nav>{% endif %}
+            {% if repair_view == 'active' %}<nav class="repair-queue" aria-label="Рабочая очередь">{% for key, label in queue_labels.items() %}{% if key in ['', 'attention', 'master', 'customer'] or queue_counts[key] or filters.queue == key %}<a class="repair-button{% if filters.queue == key %} is-selected{% endif %}" href="{{ queue_urls[key] }}"{% if filters.queue == key %} aria-current="page"{% endif %}>{{ label }} · {{ queue_counts[key] }}</a>{% endif %}{% endfor %}</nav>{% endif %}
             <form id="repairFilters" class="repair-toolbar erp-toolbar" method="get">
                 <input type="hidden" name="view" value="{{ repair_view }}"><input type="hidden" name="queue" value="{{ filters.queue }}">{% if request.args.get('mine') == '1' %}<input type="hidden" name="mine" value="1">{% endif %}
                 <div class="repair-search">
@@ -66,7 +66,7 @@
                 {% set repair_has_query_state = active_filter_count or filters.q or filters.queue %}
                 {% if data_error %}<div class="repair-empty repair-error-state erp-error-state" role="alert"><strong>Не удалось загрузить ремонты</strong><span>{{ data_error }}</span><a class="erp-state-action" href="{{ request.full_path }}">Повторить загрузку</a></div>{% elif not cases %}<div class="repair-empty {{ 'erp-no-results-state' if repair_has_query_state else 'erp-empty-state' }}" role="status"><strong>{% if repair_has_query_state %}По текущим условиям ремонты не найдены{% elif repair_view == 'archive' %}В архиве пока нет ремонтов{% else %}Ремонтов пока нет{% endif %}</strong><span>{% if repair_has_query_state %}Ремонты не удалены — измените поиск или фильтры.{% elif repair_view == 'archive' %}Архивированные обращения появятся здесь с сохранённой историей.{% else %}Добавьте первое ремонтное обращение.{% endif %}</span>{% if repair_has_query_state %}<a class="erp-state-action" href="{{ url_for('repair_page', view=repair_view) }}">Сбросить фильтры</a>{% endif %}</div>{% else %}
                 <div class="repair-table-wrap erp-table-scroll" tabindex="0" aria-label="Таблица ремонтов, доступна горизонтальная прокрутка"><table class="repair-table erp-data-table"><thead><tr>
-                    <th data-column="status" style="width:130px">Статус</th><th data-column="customer" style="width:180px">Заказ / клиент</th><th data-column="product" style="width:155px">Товар</th><th hidden data-column="channel" style="width:115px">Связь</th><th data-column="problem" style="width:210px">Проблема</th><th data-column="location" style="width:130px">Сейчас</th><th hidden data-column="control" style="width:170px">{% if repair_view == 'archive' %}Архивирование{% else %}Контроль{% endif %}</th><th hidden data-column="event" style="width:175px">Последнее событие</th><th class="repair-next-column">Следующее действие</th>
+                    <th data-column="status" style="width:130px">Статус</th><th data-column="customer" style="width:180px">Клиент / заказ</th><th data-column="product" style="width:155px">Товар</th><th hidden data-column="channel" style="width:115px">Связь</th><th data-column="problem" style="width:210px">Проблема</th><th data-column="location" style="width:130px">Сейчас</th><th hidden data-column="control" style="width:170px">{% if repair_view == 'archive' %}Архивирование{% else %}Контроль{% endif %}</th><th hidden data-column="event" style="width:175px">Последнее событие</th><th class="repair-next-column">Что делать</th>
                 </tr></thead><tbody>
                     {% for case in cases %}<tr class="{% if case.control_state == 'overdue' %}is-overdue{% endif %}" data-repair-id="{{ case.id }}" tabindex="0">
                         <td data-column="status"><span class="repair-status" data-status="{{ case.status }}" data-ux="{{ case.workflow.state }}">{{ case.workflow.label }}</span>{% if case.workflow.overdue_days %}<span class="repair-overdue">Просрочено на {{ case.workflow.overdue_days }} дн.</span>{% endif %}</td>
@@ -84,7 +84,7 @@
             </section>
 
             <section class="repair-mobile-list" aria-label="Ремонтные обращения">
-                {% for case in cases %}<article class="repair-mobile-card" data-repair-id="{{ case.id }}" tabindex="0"><div class="repair-mobile-head"><span class="repair-status" data-status="{{ case.status }}">{{ case.status_label }}</span><span class="repair-control-date {{ case.control_state }}">{% if repair_view == 'archive' %}{{ case.archived_at_display or '—' }}{% else %}{{ case.control_date_display or '—' }}{% endif %}</span></div><h2>{{ case.brand }} {{ case.model or case.product_name }}</h2><p><strong>{{ case.order_label }}</strong> · {{ case.client_name }} · {{ case.contact or case.client_phone }}</p><p>{{ case.problem }}</p><p>{% if repair_view == 'archive' %}Архивировал: {{ case.archived_by or 'не указан' }}{% else %}{{ case.location_label }} · {{ case.next_action }}{% endif %}</p><button class="repair-button" type="button" data-open-repair="{{ case.id }}">{{ case.workflow.action_label if case.workflow.action else ('Уточнить данные' if case.workflow.needs_review else 'Посмотреть') }}</button></article>{% else %}<div class="repair-empty erp-empty-state" role="status">{% if repair_view == 'archive' %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}.</div>{% endfor %}
+                {% for case in cases %}<article class="repair-mobile-card" data-repair-id="{{ case.id }}" tabindex="0"><div class="repair-mobile-head"><span class="repair-status" data-ux="{{ case.workflow.state }}">{{ case.workflow.label }}</span><span class="repair-control-date {{ case.control_state }}">{% if repair_view == 'archive' %}{{ case.archived_at_display or '—' }}{% else %}{{ case.control_date_display or '—' }}{% endif %}</span></div><h2>{{ case.brand }} {{ case.model or case.product_name }}</h2><p><strong>{{ case.order_label }}</strong> · {{ case.client_name }} · {{ case.contact or case.client_phone }}</p><p>{{ case.problem }}</p><p>{% if repair_view == 'archive' %}Архивировал: {{ case.archived_by or 'не указан' }}{% else %}{{ case.location_label }} · {{ case.next_action }}{% endif %}</p><button class="repair-button" type="button" data-open-repair="{{ case.id }}">{{ case.workflow.action_label if case.workflow.action else ('Уточнить данные' if case.workflow.needs_review else 'Посмотреть') }}</button></article>{% else %}<div class="repair-empty erp-empty-state" role="status">{% if repair_view == 'archive' %}В архиве пока нет ремонтов{% else %}Ремонты не найдены{% endif %}.</div>{% endfor %}
             </section>
         </div>
     </main>
@@ -229,7 +229,7 @@
         body.innerHTML = `
             ${repair.is_archived ? '<div class="repair-archive-banner">Ремонт находится в архиве</div>' : ''}
             <section class="repair-detail-section"><div class="repair-detail-summary"><div><span class="repair-status" data-status="${escapeHtml(repair.status)}" data-ux="${escapeHtml(repair.workflow.state)}">${escapeHtml(repair.workflow.label)}</span><div class="repair-detail-product">${escapeHtml([repair.brand, repair.model || repair.product_name].filter(Boolean).join(' '))}</div><div class="repair-secondary">${escapeHtml(repair.problem)}</div></div></div></section>
-            <section class="repair-detail-section repair-next-step"><h3>Следующий шаг</h3><p class="repair-location">${escapeHtml(repair.location_label)}</p><p>${escapeHtml(repair.workflow.hint)}</p>${repair.workflow.overdue_days ? `<p class="repair-overdue">Просрочено на ${repair.workflow.overdue_days} дн.</p>` : ''}${repair.workflow.action ? renderActionForm(repair) : repair.workflow.needs_review && !repair.is_archived ? '<button class="repair-button primary" type="button" data-review-repair>Уточнить данные</button>' : ''}</section>
+            <section class="repair-detail-section repair-next-step"><h3>Что делать</h3><p class="repair-location">${escapeHtml(repair.location_label)}</p><p>${escapeHtml(repair.workflow.hint)}</p>${repair.workflow.overdue_days ? `<p class="repair-overdue">Просрочено на ${repair.workflow.overdue_days} дн.</p>` : ''}${repair.workflow.action ? renderActionForm(repair) : repair.workflow.needs_review && !repair.is_archived ? '<button class="repair-button primary" type="button" data-review-repair>Уточнить данные</button>' : ''}</section>
             <section class="repair-detail-section"><h3>Клиент и связь</h3><dl class="repair-detail-grid">${field('Заказ', repair.order_label)}${field('Клиент', repair.client_name)}${field('Основной контакт', repair.contact || repair.client_phone || repair.client_email || repair.client_messenger)}${repair.client_phone ? field('Телефон', repair.client_phone) : ''}${repair.client_email ? field('Email', repair.client_email) : ''}${repair.client_messenger ? field('Мессенджер', repair.client_messenger) : ''}${field('Где общаемся', repair.channel_label)}</dl><div style="margin-top:12px">${orderLink}</div></section>
             <details class="repair-secondary-details"><summary>Подробности ремонта и служебные данные</summary><section class="repair-detail-section"><h3>Основная информация</h3><dl class="repair-detail-grid">${field('Исходный статус', repair.status_label)}${field('Тип ремонта', repair.request_type_label)}${field('Где товар', repair.location_label)}${field('Краткая проблема', repair.problem)}${field('Полное описание', repair.problem_details)}${field('Комплектация', repair.equipment)}${field('Внешнее состояние', repair.external_condition)}${field('Примечание', repair.note)}</dl></section>
             <section class="repair-detail-section"><h3>Логистика</h3><dl class="repair-detail-grid">${field('Входящая накладная', repair.incoming_waybill)}${field('Способ возврата', repair.return_method_label)}${field('Исходящая накладная', repair.outgoing_waybill)}</dl></section>
@@ -361,10 +361,64 @@
         let orderTimer=0; const search=body.querySelector('[data-order-search]'); search.addEventListener('input',()=>{ clearTimeout(orderTimer); form.elements.order_id.value=''; form.elements.order_number.value=search.value.trim(); form.elements.order_item_id.innerHTML='<option value="">Сначала выберите заказ</option>'; body.querySelector('[data-order-selected]').hidden=true; body.querySelector('[data-order-error]').hidden=true; body.querySelector('[data-order-item-error]').hidden=true; orderTimer=setTimeout(()=>searchOrders(search.value,form),350); });
         if (repair?.product_id) form.elements.product_id.innerHTML += `<option value="${escapeHtml(repair.product_id)}" data-name="${escapeHtml(repair.product_name)}" data-brand="${escapeHtml(repair.brand)}" data-model="${escapeHtml(repair.model)}">${escapeHtml([repair.brand,repair.product_name||repair.model].filter(Boolean).join(' · '))}</option>`;
         if (repair) fillEditor(form, repair); else { const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10); form.elements.control_date.value=tomorrow; form.elements.next_action.value='Связаться с клиентом'; }
+        if (!editingId) configureQuickCreate(form, repair);
         bindRepairCatalogSearch(form,repair);
-        footer.innerHTML='<button class="repair-button" type="button" data-cancel-editor>Отмена</button><button class="repair-button primary" type="submit" form="repairEditor">Сохранить</button>';
+        footer.innerHTML='<button class="repair-button" type="button" data-cancel-editor>Отмена</button><button class="repair-button primary" type="submit" form="repairEditor">'+(editingId?'Сохранить':'Создать ремонт')+'</button>';
         footer.querySelector('[data-cancel-editor]').addEventListener('click', () => createCopy ? loadRepair(repair.parent_repair_id) : repair ? renderDetail(repair) : closeDrawer());
         form.addEventListener('submit', submitEditor); openDrawer();
+    }
+    function configureQuickCreate(form, source) {
+        form.classList.add('repair-quick-create');
+        const extra = form.querySelector('details');
+        extra.classList.add('repair-create-extra');
+        // Reuse the editor controls so optional and legacy fields retain their contracts.
+        ['client_phone','client_email','communication_channel','brand','request_type','parent_repair_id','incoming_waybill','control_date'].forEach(name => {
+            extra.append(form.elements[name].closest('.repair-field'));
+        });
+        ['waiting_for','next_action'].forEach(name => {
+            const control = form.elements[name]; control.disabled = true; control.required = false;
+            control.closest('.repair-field').hidden = true;
+        });
+        form.elements.control_date.required = false;
+        form.elements.control_date.value = '';
+        if (!source) form.elements.communication_channel.value = 'other';
+        form.elements.control_date.closest('label').querySelector('span').textContent = 'Проверить снова';
+        form.elements.contact.closest('label').querySelector('span').textContent = 'Телефон / контакт *';
+        form.elements.contact.required = true;
+        form.elements.contact.value = form.elements.contact.value || form.elements.client_phone.value || form.elements.client_email.value;
+        form.elements.model.closest('label').querySelector('span').textContent = 'Название товара *';
+        form.elements.model.closest('label').classList.add('full');
+        const catalog = form.querySelector('[data-manual-product]');
+        const finder = document.createElement('details'); finder.className = 'repair-field full repair-create-finder';
+        finder.innerHTML = '<summary>Найти товар в каталоге</summary>';
+        catalog.before(finder); finder.append(catalog);
+        form.elements.location.innerHTML = '<option value="at_us">У нас</option><option value="with_customer">У клиента</option>';
+        form.elements.location.value = source?.location === 'with_customer' ? 'with_customer' : 'at_us';
+        form.elements.location.closest('label').querySelector('span').textContent = 'Где сейчас товар?';
+        const sections = form.querySelectorAll('.repair-form-section');
+        sections[1].querySelector('h3').textContent = 'Товар и проблема';
+        sections[2].querySelector('h3').textContent = 'Приём';
+        const note = document.createElement('p'); note.className = 'repair-create-hint';
+        const updateHint = () => { note.textContent = form.elements.location.value === 'at_us'
+            ? 'Создание подтвердит приём. Следующий шаг — передать мастеру. Проверить снова — завтра; дату можно изменить в дополнительных данных.'
+            : 'Следующий шаг — согласовать передачу товара. Проверить снова — завтра; дату можно изменить в дополнительных данных.'; };
+        sections[2].append(note); form.elements.location.addEventListener('change', updateHint); updateHint();
+        form.append(extra);
+        const updateOrderMode = () => {
+            const ours = form.elements.has_order.value === 'yes';
+            form.elements.model.required = !ours;
+            form.elements.model.closest('label').hidden = ours;
+            finder.hidden = ours;
+            ['client_name', 'contact'].forEach(name => {
+                const control = form.elements[name];
+                const fromOrder = ours && (!form.elements.order_id.value || control.value.trim());
+                control.closest('label').hidden = Boolean(fromOrder);
+                control.required = !fromOrder;
+            });
+        };
+        form.elements.has_order.forEach(radio => radio.addEventListener('change', updateOrderMode));
+        form.addEventListener('repair-order-selected', updateOrderMode);
+        updateOrderMode();
     }
     function fillEditor(form, repair) {
         [...form.elements].forEach(control => { if (control.name && repair[control.name] != null && !['has_order'].includes(control.name)) control.value = repair[control.name]; });
@@ -376,9 +430,9 @@
         const results=body.querySelector('[data-order-results]'); if(query.trim().length<2){results.hidden=true;return;} results.hidden=false; results.innerHTML='<div class="repair-loading">Поиск…</div>';
         try { const orders=await api(`/api/v1/repairs/orders?q=${encodeURIComponent(query.trim())}`); results.innerHTML=orders.map(order=>`<button class="repair-order-result" type="button" data-order-id="${escapeHtml(order.id)}"><strong>${escapeHtml('№'+order.number)}</strong><br><span>${escapeHtml(order.client_name)} · ${escapeHtml(order.phone)}</span></button>`).join('')||'<div class="repair-loading">Заказы не найдены</div>'; results.querySelectorAll('[data-order-id]').forEach(button=>button.addEventListener('click',()=>selectOrder(orders.find(order=>order.id===button.dataset.orderId),form))); } catch(error){results.innerHTML=`<div class="repair-error">${escapeHtml(error.message)}</div>`;}
     }
-    function selectOrder(order, form) { form.elements.order_id.value=order.id; form.elements.order_number.value=order.number; form.elements.client_name.value=order.client_name||''; form.elements.client_phone.value=order.phone||''; form.elements.client_email.value=order.email||''; const selected=body.querySelector('[data-order-selected]'); selected.hidden=false; selected.textContent=`Заказ №${order.number} · ${order.client_name}`; const positions=form.elements.order_item_id; positions.innerHTML='<option value="">Выберите конкретный товар</option>'+order.products.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml([item.brand,item.name,`${item.quantity} шт.`].filter(Boolean).join(' · '))}</option>`).join(''); if(order.products.length===1)positions.value=order.products[0].id; body.querySelector('[data-order-error]').hidden=true; body.querySelector('[data-order-item-error]').hidden=true; body.querySelector('[data-order-results]').hidden=true; }
+    function selectOrder(order, form) { form.elements.order_id.value=order.id; form.elements.order_number.value=order.number; form.elements.client_name.value=order.client_name||''; form.elements.client_phone.value=order.phone||''; form.elements.client_email.value=order.email||''; form.elements.contact.value=order.phone||order.email||''; const selected=body.querySelector('[data-order-selected]'); selected.hidden=false; selected.textContent=`Заказ №${order.number} · ${order.client_name}`; const positions=form.elements.order_item_id; positions.innerHTML='<option value="">Выберите конкретный товар</option>'+order.products.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml([item.brand,item.name,`${item.quantity} шт.`].filter(Boolean).join(' · '))}</option>`).join(''); if(order.products.length===1)positions.value=order.products[0].id; body.querySelector('[data-order-error]').hidden=true; body.querySelector('[data-order-item-error]').hidden=true; body.querySelector('[data-order-results]').hidden=true; form.dispatchEvent(new Event('repair-order-selected')); }
     async function submitEditor(event) {
-        event.preventDefault(); const form=event.currentTarget; if(!form.checkValidity()){form.reportValidity();return;} const errorNode=form.querySelector('#repairEditorError'); const payload=Object.fromEntries(new FormData(form)); payload.order_source=payload.has_order==='yes'?'our':'none'; delete payload.has_order; payload.product_name=payload.model; const orderError=form.querySelector('[data-order-error]'); const orderItemError=form.querySelector('[data-order-item-error]'); orderError.hidden=true; orderItemError.hidden=true; if(payload.order_source==='our'&&!payload.order_id){orderError.textContent=`Заказ ${body.querySelector('[data-order-search]').value.trim()} не найден`;orderError.hidden=false;return;} if(payload.order_source==='our'&&!payload.order_item_id){orderItemError.textContent='Выберите конкретную позицию заказа';orderItemError.hidden=false;return;} payload.idempotency_key=crypto.randomUUID(); if(payload.order_source==='none'){payload.order_id='';payload.order_number='';payload.order_item_id='';}
+        event.preventDefault(); const form=event.currentTarget; if(!form.checkValidity()){form.reportValidity();return;} const errorNode=form.querySelector('#repairEditorError'); const payload=Object.fromEntries(new FormData(form)); payload.order_source=payload.has_order==='yes'?'our':'none'; delete payload.has_order; payload.product_name=payload.model; if(!editingId) payload.guided_create=true; const orderError=form.querySelector('[data-order-error]'); const orderItemError=form.querySelector('[data-order-item-error]'); orderError.hidden=true; orderItemError.hidden=true; if(payload.order_source==='our'&&!payload.order_id){orderError.textContent=`Заказ ${body.querySelector('[data-order-search]').value.trim()} не найден`;orderError.hidden=false;return;} if(payload.order_source==='our'&&!payload.order_item_id){orderItemError.textContent='Выберите конкретную позицию заказа';orderItemError.hidden=false;return;} payload.idempotency_key=crypto.randomUUID(); if(payload.order_source==='none'){payload.order_id='';payload.order_number='';payload.order_item_id='';}
         const submit=footer.querySelector('[type=submit]'); const submitLabel=submit.textContent; submit.disabled=true; submit.textContent='Сохраняем…'; errorNode.hidden=true;
         try { const repair=await api(editingId?`/api/v1/repairs/${encodeURIComponent(editingId)}`:'/api/v1/repairs',{method:editingId?'PATCH':'POST',body:JSON.stringify(payload),headers:{'Idempotency-Key':payload.idempotency_key}}); toast(editingId?'Ремонт обновлён':'Ремонт создан'); renderDetail(repair); const url = new URL(location.href); url.searchParams.set('repair_id', repair.id); history.replaceState(null, '', url.pathname + url.search); listChanged = true; } catch(error){errorNode.textContent=error.message;errorNode.hidden=false;submit.disabled=false;submit.textContent=submitLabel;toast(error.message,true);body.scrollTo({top:0,behavior:'smooth'});}
     }
@@ -423,7 +477,7 @@
     function togglePanel(panel){[filterPanel,columnsPanel,morePanel].forEach(item=>{if(item!==panel)item.hidden=true;});panel.hidden=!panel.hidden;}
     document.getElementById('repairFilterToggle').addEventListener('click',()=>togglePanel(filterPanel)); document.getElementById('repairColumnsToggle').addEventListener('click',()=>togglePanel(columnsPanel)); document.getElementById('repairMoreToggle').addEventListener('click',()=>togglePanel(morePanel));
     let searchTimer=0; document.getElementById('repairSearch').addEventListener('input',event=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const url=new URL(location.href);if(event.target.value.trim())url.searchParams.set('q',event.target.value.trim());else url.searchParams.delete('q');url.searchParams.delete('page');location.assign(url.pathname+url.search);},450);});
-    let columnState={}; try { columnState=JSON.parse(localStorage.getItem('vechasu:repair-columns-v2')||'{}') || {}; } catch {} document.querySelectorAll('[data-repair-column]').forEach(control=>{const key=control.dataset.repairColumn;control.checked=columnState[key] ?? !['channel','control','event'].includes(key);document.querySelectorAll(`[data-column="${key}"]`).forEach(node=>node.hidden=!control.checked);control.addEventListener('change',()=>{columnState[key]=control.checked;localStorage.setItem('vechasu:repair-columns-v2',JSON.stringify(columnState));document.querySelectorAll(`[data-column="${key}"]`).forEach(node=>node.hidden=!control.checked);});});
+    let columnState={}; try { columnState=JSON.parse(localStorage.getItem('vechasu:repair-columns-v3')||'{}') || {}; } catch {} document.querySelectorAll('[data-repair-column]').forEach(control=>{const key=control.dataset.repairColumn;control.checked=columnState[key] ?? !['channel','control','event'].includes(key);document.querySelectorAll(`[data-column="${key}"]`).forEach(node=>node.hidden=!control.checked);control.addEventListener('change',()=>{columnState[key]=control.checked;localStorage.setItem('vechasu:repair-columns-v3',JSON.stringify(columnState));document.querySelectorAll(`[data-column="${key}"]`).forEach(node=>node.hidden=!control.checked);});});
 })();
 </script>
 <script src="{{ url_for('static', filename='js/entity-tasks.js', v='1') }}"></script>
