@@ -6,6 +6,7 @@ const python = process.env.ERP_E2E_PYTHON || 'python3';
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'repairs-workflow.spec.ts',
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),

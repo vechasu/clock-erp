@@ -144,6 +144,9 @@ jobs:
       - name: Product lifecycle Playwright regression
         run: pnpm run test:e2e:products
 
+      - name: Repair guided workflow Playwright regression
+        run: pnpm exec playwright test --config playwright.repairs.config.ts
+
       - name: SMS responsive Playwright smoke
         env:
           ERP_TEST_MODE: "1"

@@ -358,11 +358,13 @@ class RepairsFullCycleTest(unittest.TestCase):
         repair = self.create()
         cases = load_repair_file(self.store)
         cases[0]["status"] = "diagnostics"
+        cases[0]["location"] = "with_master"
         web.save_repair_cases(cases)
         missing = self.action(repair["id"], "finish_diagnostics")
         self.assertEqual(missing.status_code, 409)
         cases = load_repair_file(self.store)
         cases[0]["status"] = "waiting_decision"
+        cases[0]["location"] = "with_master"
         web.save_repair_cases(cases)
         missing_cost = self.action(repair["id"], "accept_paid", customer_decision="Да")
         self.assertEqual(missing_cost.status_code, 409)
@@ -375,6 +377,7 @@ class RepairsFullCycleTest(unittest.TestCase):
         repair = self.create(request_type="warranty_repair")
         cases = load_repair_file(self.store)
         cases[0]["status"] = "waiting_decision"
+        cases[0]["location"] = "with_master"
         web.save_repair_cases(cases)
         response = self.action(repair["id"], "accept_free", customer_decision="Согласовано по гарантии")
         self.assertEqual(response.status_code, 200)
@@ -384,6 +387,7 @@ class RepairsFullCycleTest(unittest.TestCase):
         repair = self.create(incoming_waybill="IN-100")
         cases = load_repair_file(self.store)
         cases[0]["status"] = "ready_return"
+        cases[0]["location"] = "at_us"
         web.save_repair_cases(cases)
         completed = self.action(
             repair["id"], "complete", return_method="pickup",
@@ -398,6 +402,7 @@ class RepairsFullCycleTest(unittest.TestCase):
         repair = self.create()
         cases = load_repair_file(self.store)
         cases[0]["status"] = "ready_return"
+        cases[0]["location"] = "at_us"
         web.save_repair_cases(cases)
         response = self.action(repair["id"], "send_to_customer", return_method="cdek")
         self.assertEqual(response.status_code, 409)
@@ -406,6 +411,7 @@ class RepairsFullCycleTest(unittest.TestCase):
         repair = self.create()
         cases = load_repair_file(self.store)
         cases[0]["status"] = "ready_return"
+        cases[0]["location"] = "at_us"
         web.save_repair_cases(cases)
         self.assertEqual(self.action(repair["id"], "complete", return_method="pickup").status_code, 409)
         cases = load_repair_file(self.store)
@@ -516,7 +522,7 @@ class RepairsFullCycleTest(unittest.TestCase):
     def test_page_has_required_desktop_mobile_drawers_and_no_forbidden_kpi(self):
         self.create()
         html = self.client.get("/app/repairs").get_data(as_text=True)
-        self.assertIn("Учёт ремонтных обращений", html)
+        self.assertIn("Рабочая очередь · состояние и следующий шаг", html)
         self.assertIn("Добавить ремонт", html)
         self.assertIn("repair-table", html)
         self.assertIn("repair-mobile-card", html)

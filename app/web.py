@@ -222,6 +222,7 @@ from app.sales_reporting.application import build_report_context
 from app.sales_reporting.routes import SalesReportingRoutes
 from app.system_settings.application import SettingsApplication
 from app.system_settings.routes import SettingsRoutes
+from app.services.repair_workflow import QUEUE_LABELS, repair_workflow
 from app.services.repair_cases import (
     COMPLETION_RESULT_LABELS,
     LEGACY_STATUS_MAP,
@@ -7468,6 +7469,7 @@ def _repair_order_label(case):
 def prepare_repair_case(case):
     prepared = dict(case)
     prepared.pop("legacy_snapshot", None)
+    prepared["workflow"] = repair_workflow(case)
     prepared["is_archived"] = bool(prepared.get("archived_at"))
     prepared["can_archive"] = not prepared["is_archived"]
     prepared["archived_at_display"] = _repair_text(
@@ -7875,6 +7877,10 @@ def repair_page():
         "attention": _repair_text(request.args.get("attention")),
         "view": repair_view,
     }
+    queue = _repair_text(request.args.get("queue"))
+    if queue not in QUEUE_LABELS:
+        queue = ""
+    filters["queue"] = queue
     notice = _repair_text(request.args.get("notice"))
     message = _repair_text(request.args.get("message"))
     data_error = ""
@@ -7887,7 +7893,7 @@ def repair_page():
 
     cases = [
         case for case in all_cases
-        if bool(case.get("archived_at")) == (repair_view == "archive")
+        if (bool(case.get("archived_at")) or case.get("status") in {"completed", "cancelled"}) == (repair_view == "archive")
         and repair_case_matches(case, filters)
     ]
     if request.args.get("mine") == "1":
@@ -7895,6 +7901,22 @@ def repair_page():
             "repair", current_auth_user()["id"]
         )
         cases = [case for case in cases if str(case.get("id")) in assigned]
+    workflows = {case["id"]: repair_workflow(case) for case in cases}
+
+    def matches_queue(case, key):
+        workflow = workflows[case["id"]]
+        if not key:
+            return True
+        if key == "attention":
+            return workflow["needs_attention"]
+        return workflow["state"] == key
+
+    queue_counts = {
+        key: sum(matches_queue(case, key) for case in cases)
+        for key in QUEUE_LABELS
+    }
+    if repair_view == "active" and queue:
+        cases = [case for case in cases if matches_queue(case, queue)]
     cases.sort(key=repair_attention_key)
 
     page, per_page = parse_erp_pagination()
@@ -7920,13 +7942,15 @@ def repair_page():
         cases=prepared_cases,
         filters=filters,
         repair_view=repair_view,
+        queue_labels=QUEUE_LABELS, queue_counts=queue_counts,
+        queue_urls={key: url_for("repair_page", **dict({name: value for name, value in request.args.items() if name != "repair_id"}, queue=key, page=1)) for key in QUEUE_LABELS},
         notice=notice,
         message=message,
         data_error=data_error,
         pagination=pagination,
         total=total,
-        active_count=sum(1 for case in all_cases if not case.get("archived_at")),
-        archive_count=sum(1 for case in all_cases if case.get("archived_at")),
+        active_count=sum(1 for case in all_cases if not case.get("archived_at") and case.get("status") not in {"completed", "cancelled"}),
+        archive_count=sum(1 for case in all_cases if case.get("archived_at") or case.get("status") in {"completed", "cancelled"}),
         status_labels=REPAIR_STATUS_LABELS,
         type_labels=REPAIR_TYPE_LABELS,
         location_labels=REPAIR_LOCATION_LABELS,
