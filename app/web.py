@@ -63,6 +63,7 @@ from app.services.bitrix_erp_product_sync import (
     enrichment_from_product,
 )
 from app.services.audit_journal import AuditJournal
+from app.services.order_presentation import present_order, status_key, status_label, navigation_counts
 from app.services.service_vault import (
     ServiceConflictError,
     ServiceNotFoundError,
@@ -221,6 +222,7 @@ from app.sales_reporting.application import build_report_context
 from app.sales_reporting.routes import SalesReportingRoutes
 from app.system_settings.application import SettingsApplication
 from app.system_settings.routes import SettingsRoutes
+from app.services.repair_workflow import QUEUE_LABELS, repair_workflow
 from app.services.repair_cases import (
     COMPLETION_RESULT_LABELS,
     LEGACY_STATUS_MAP,
@@ -278,6 +280,7 @@ from app.auth import (
 from app.static_assets import register_static_asset_versioning
 
 app = Flask(__name__)
+app.jinja_env.globals["order_present"] = present_order
 register_static_asset_versioning(app)
 
 
@@ -1037,7 +1040,7 @@ def allow_external_order_search(identity, now=None):
 
 def exact_order_search_state(number, local_rows, client=None, store=None):
     """Search one exact number locally, then via supported read-only adapters."""
-    if number is None:
+    if number is None or request.args.get("source") == "wildberries":
         return None
     state = {
         "active": True,
@@ -1430,6 +1433,9 @@ def orders_list_api():
         orders_page_count=list_state["page_count"],
         orders_page_items=list_state.get("page_items", [list_state["page"]]),
         order_kpis=list_state["kpis"],
+        order_source_counts=list_state.get("source_counts", {}),
+        order_status_counts=list_state.get("status_counts", {}),
+        order_status_label=status_label,
         sync_error=ORDERS_CACHE.get("error", ""),
         exact_search=exact_search,
         orders_clear_url=url_for(
@@ -1830,23 +1836,25 @@ def bulk_conducted_order_sales(order_ids, database=None):
         placeholders = ",".join("?" for _value in order_ids)
         with database.connect() as connection:
             rows = connection.execute(
-                "SELECT id, external_order_id FROM erp_sales "
-                "WHERE source = 'tictactoy' AND cancelled_at IS NULL "
-                "AND deleted_at IS NULL AND external_order_id IN ({}) "
+                "SELECT id, source, external_order_id FROM erp_sales "
+                "WHERE ((source = 'tictactoy' AND cancelled_at IS NULL AND deleted_at IS NULL) "
+                "OR source = 'wildberries') AND external_order_id IN ({}) "
                 "ORDER BY inserted_at DESC, id DESC".format(placeholders),
-                order_ids,
+                [value.removeprefix("wb:") for value in order_ids],
             ).fetchall()
     except sqlite3.Error:
         app.logger.exception("Failed to inspect conducted order sales in bulk")
         return {}
     result = {}
     for row in rows:
-        result.setdefault(str(row["external_order_id"]), str(row["id"]))
+        key = ("wb:" if row["source"] == "wildberries" else "") + str(row["external_order_id"])
+        if key in order_ids:
+            result.setdefault(key, str(row["id"]))
     return result
 
 
 def enrich_orders_list_rows(rows, database=None):
-    prepared = [dict(order) for order in rows]
+    prepared = [dict(order, source_status=order.get("status")) for order in rows]
     sale_ids = bulk_conducted_order_sales(
         [order.get("id") or order.get("ID") for order in prepared],
         database=database,
@@ -1914,16 +1922,36 @@ def enrich_orders_list_rows(rows, database=None):
         )
         order["conducted_sale_id"] = sale_ids.get(order_id, "")
         order["sale_completed"] = bool(order["conducted_sale_id"])
-        order.update(metadata.get(order_id, {}))
+        order.update({key: value for key, value in metadata.get(order_id, {}).items()
+                      if key not in {"status", "status_name", "erp_status"}})
+        products = order.get("products") or order.get("items") or []
+        if products:
+            mappings = build_order_product_mapping_context(
+                products[:1], mappings=load_order_product_mappings(order_id), order_counts={},
+            )
+            mapping = mappings.get(order_product_mapping_key(products[0])) or {}
+            if mapping.get("state") == "mapped" and mapping.get("product"):
+                order["product_preview"] = mapping["product"]
     return prepared
+
+
+def order_ui_status_overrides():
+    database = CatalogDatabase()
+    if not database.exists():
+        return {}
+    with database.connect() as connection:
+        return {str(row["external_order_id"]): row["erp_status"] for row in connection.execute(
+            "SELECT external_order_id, erp_status FROM erp_order_statuses"
+        )}
 
 
 def current_orders_list_state(args, force=False, allowed_order_ids=None):
     orders = get_orders(force=force)
+    overrides = order_ui_status_overrides()
     if app.testing and not app.config.get("ORDERS_SNAPSHOT_TESTING"):
-        state = prepare_orders_list(orders, args, allowed_order_ids=allowed_order_ids)
+        state = prepare_orders_list(orders, args, allowed_order_ids=allowed_order_ids, status_overrides=overrides)
         state["physical_total"] = len(orders)
-        state["rows"] = enrich_orders_list_rows(state["rows"])
+        state["rows"] = [present_order(row, overrides) for row in enrich_orders_list_rows(state["rows"])]
         return orders, state
     loaded_at = ORDERS_CACHE.get("loaded_at") or 0
     if not loaded_at:
@@ -1934,12 +1962,12 @@ def current_orders_list_state(args, force=False, allowed_order_ids=None):
     store = OrdersSnapshotStore()
     store.ensure(orders, loaded_at)
     schedule_order_item_unit_backfill(store)
-    state = store.query(args, allowed_order_ids=allowed_order_ids)
-    state["rows"] = enrich_orders_list_rows(state["rows"])
+    state = store.query(args, allowed_order_ids=allowed_order_ids, status_overrides=overrides)
+    state["rows"] = [present_order(row, overrides) for row in enrich_orders_list_rows(state["rows"])]
     return state["rows"], state
 
 
-def prepare_orders_list(orders, args, allowed_order_ids=None):
+def prepare_orders_list(orders, args, allowed_order_ids=None, status_overrides=None):
     """Build the read-only list view without changing order data or APIs."""
     raw_query = str(args.get("q") or "").strip()
     query = raw_query.casefold()
@@ -1969,7 +1997,7 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
         ) not in allowed_order_ids:
             continue
         order_source = str(order.get("source") or "tictactoy").casefold()
-        if exact_number is None and source_filter in {"tictactoy", "wildberries"} and order_source != source_filter:
+        if source_filter in {"tictactoy", "wildberries"} and order_source != source_filter:
             continue
         search_values = [order.get(key) for key in (
             "number", "id", "customer", "phone", "email", "order_total",
@@ -1990,7 +2018,7 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
                 continue
         elif query and query not in search_text:
             continue
-        code = str(order.get("status") or "").upper()
+        code = status_key(order, status_overrides)
         if exact_number is None and status_filter != "ALL" and code != status_filter:
             continue
         if exact_number is None and period in {"today", "7d", "30d"}:
@@ -2030,8 +2058,14 @@ def prepare_orders_list(orders, args, allowed_order_ids=None):
         code = str(order.get("status") or "").strip().upper()
         if code in counts:
             counts[code] += 1
+    source_counts, status_counts = navigation_counts(
+        [row for row in orders if allowed_order_ids is None or str(row.get("id") or row.get("ID")) in allowed_order_ids],
+        status_overrides, source_filter,
+    )
     return {
         "rows": orders_page_rows,
+        "source_counts": source_counts,
+        "status_counts": status_counts,
         "total": total,
         "page": page,
         "page_count": page_count,
@@ -2055,6 +2089,12 @@ def render_orders_page(
     orders, list_state, selected_order, selected_order_explicit, detail_error="",
     exact_search=None,
 ):
+    source = request.args.get("source", "all")
+    if selected_order and source in {"tictactoy", "wildberries"} and (selected_order.get("source") or "tictactoy") != source:
+        selected_order = None
+        selected_order_explicit = False
+    if selected_order:
+        selected_order = present_order(selected_order, order_ui_status_overrides())
     order_id = (
         (selected_order or {}).get("id")
         or (selected_order or {}).get("ID")
@@ -2140,6 +2180,9 @@ def render_orders_page(
         orders_page_count=list_state["page_count"],
         orders_page_items=list_state.get("page_items", [list_state["page"]]),
         order_kpis=list_state["kpis"],
+        order_source_counts=list_state.get("source_counts", {}),
+        order_status_counts=list_state.get("status_counts", {}),
+        order_status_label=status_label,
         sync_error=detail_error or ORDERS_CACHE.get("error", ""),
         exact_search=exact_search,
         orders_clear_url=url_for(
@@ -7426,6 +7469,7 @@ def _repair_order_label(case):
 def prepare_repair_case(case):
     prepared = dict(case)
     prepared.pop("legacy_snapshot", None)
+    prepared["workflow"] = repair_workflow(case)
     prepared["is_archived"] = bool(prepared.get("archived_at"))
     prepared["can_archive"] = not prepared["is_archived"]
     prepared["archived_at_display"] = _repair_text(
@@ -7833,6 +7877,10 @@ def repair_page():
         "attention": _repair_text(request.args.get("attention")),
         "view": repair_view,
     }
+    queue = _repair_text(request.args.get("queue"))
+    if queue not in QUEUE_LABELS:
+        queue = ""
+    filters["queue"] = queue
     notice = _repair_text(request.args.get("notice"))
     message = _repair_text(request.args.get("message"))
     data_error = ""
@@ -7845,7 +7893,7 @@ def repair_page():
 
     cases = [
         case for case in all_cases
-        if bool(case.get("archived_at")) == (repair_view == "archive")
+        if (bool(case.get("archived_at")) or case.get("status") in {"completed", "cancelled"}) == (repair_view == "archive")
         and repair_case_matches(case, filters)
     ]
     if request.args.get("mine") == "1":
@@ -7853,6 +7901,22 @@ def repair_page():
             "repair", current_auth_user()["id"]
         )
         cases = [case for case in cases if str(case.get("id")) in assigned]
+    workflows = {case["id"]: repair_workflow(case) for case in cases}
+
+    def matches_queue(case, key):
+        workflow = workflows[case["id"]]
+        if not key:
+            return True
+        if key == "attention":
+            return workflow["needs_attention"]
+        return workflow["state"] == key
+
+    queue_counts = {
+        key: sum(matches_queue(case, key) for case in cases)
+        for key in QUEUE_LABELS
+    }
+    if repair_view == "active" and queue:
+        cases = [case for case in cases if matches_queue(case, queue)]
     cases.sort(key=repair_attention_key)
 
     page, per_page = parse_erp_pagination()
@@ -7878,13 +7942,15 @@ def repair_page():
         cases=prepared_cases,
         filters=filters,
         repair_view=repair_view,
+        queue_labels=QUEUE_LABELS, queue_counts=queue_counts,
+        queue_urls={key: url_for("repair_page", **dict({name: value for name, value in request.args.items() if name != "repair_id"}, queue=key, page=1)) for key in QUEUE_LABELS},
         notice=notice,
         message=message,
         data_error=data_error,
         pagination=pagination,
         total=total,
-        active_count=sum(1 for case in all_cases if not case.get("archived_at")),
-        archive_count=sum(1 for case in all_cases if case.get("archived_at")),
+        active_count=sum(1 for case in all_cases if not case.get("archived_at") and case.get("status") not in {"completed", "cancelled"}),
+        archive_count=sum(1 for case in all_cases if case.get("archived_at") or case.get("status") in {"completed", "cancelled"}),
         status_labels=REPAIR_STATUS_LABELS,
         type_labels=REPAIR_TYPE_LABELS,
         location_labels=REPAIR_LOCATION_LABELS,

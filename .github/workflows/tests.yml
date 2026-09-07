@@ -135,11 +135,17 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Orders UX Playwright regression
+        run: pnpm exec playwright test --config playwright.orders.config.ts
+
       - name: Local supplies Playwright regression
         run: pnpm exec playwright test --config playwright.supplies.config.ts
 
       - name: Product lifecycle Playwright regression
         run: pnpm run test:e2e:products
+
+      - name: Repair guided workflow Playwright regression
+        run: pnpm exec playwright test --config playwright.repairs.config.ts
 
       - name: SMS responsive Playwright smoke
         env:

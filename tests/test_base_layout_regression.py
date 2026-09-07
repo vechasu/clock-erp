@@ -120,7 +120,7 @@ class BaseLayoutRegressionTest(unittest.TestCase):
     def test_retired_routes_redirect_while_repair_module_is_restored(self):
         repair = self.client.get("/app/repairs")
         self.assertEqual(repair.status_code, 200)
-        self.assertIn("Учёт ремонтных обращений", repair.get_data(as_text=True))
+        self.assertIn("Рабочая очередь · состояние и следующий шаг", repair.get_data(as_text=True))
         redirects = {
             "/repair": "/app/repairs",
             "/stock-operations": "/app/products",
