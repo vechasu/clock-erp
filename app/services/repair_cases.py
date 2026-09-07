@@ -8,6 +8,9 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
+from app.services.repair_workflow import HINTS, repair_workflow
+
+
 REPAIR_SCHEMA_VERSION = 4
 
 REPAIR_STATUS_LABELS = {
@@ -311,6 +314,8 @@ def available_repair_actions(case):
     if _text(case.get("archived_at")):
         return []
     status = _text(case.get("status"))
+    if repair_workflow(case)["needs_review"]:
+        return []
     return [
         action
         for action, (allowed, _target) in REPAIR_TRANSITIONS.items()
@@ -364,7 +369,14 @@ def apply_repair_action(case, action, payload, actor="Система"):
     allowed, target = REPAIR_TRANSITIONS[action]
     if status not in allowed:
         raise ValueError("Действие недоступно на текущем этапе")
+    if repair_workflow(case)["needs_review"]:
+        raise ValueError("Сначала уточните статус и местонахождение ремонта")
     target = target or status
+
+    if payload.get("guided") is True:
+        payload = dict(payload)
+        payload["next_action"] = HINTS.get(target, "Уточнить данные ремонта")
+        payload["waiting_for"] = REPAIR_RESPONSIBILITY_GROUPS.get(target, "us")
 
     reason = _text(payload.get("reason"))
     old_incoming_waybill = _text(case.get("incoming_waybill"))
@@ -440,6 +452,8 @@ def apply_repair_action(case, action, payload, actor="Система"):
         )
         if result not in COMPLETION_RESULT_LABELS:
             raise ValueError("Выберите результат завершения")
+        if status == "ready_return":
+            case["return_method"] = _text(payload.get("return_method") or case.get("return_method"))
         case["completion_result"] = result
         case["work_result"] = _text(
             payload.get("work_result") or case.get("work_result")
