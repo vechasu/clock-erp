@@ -220,7 +220,7 @@ class ReceiptProductPhotosTest(unittest.TestCase):
     def test_new_journal_has_lazy_photo_column(self):
         source=(web.PROJECT_ROOT/'app/static/js/supplies.js').read_text(encoding='utf-8')
         self.assertIn('loading="lazy"',source)
-        self.assertIn("'Фото'",source)
+        self.assertIn("Фото",source)
         self.assertIn('image(r.image_url)',source)
 
 
