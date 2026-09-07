@@ -10675,6 +10675,12 @@
                     && warehouseAddControl(form, "category_id").value === ""
                 );
 
+                const requestCount = requests.length;
+                await submitWarehouseAddForm({preventDefault() {}}, form);
+                result.manualCreationBlocked = requests.length === requestCount
+                    && !requests.some((item) => item.method === "POST");
+                result.doubleSubmit = failedPatchRequests.length === 1;
+
                 const passed = Object.values(result).every(Boolean);
                 document.documentElement.dataset.warehouseAddUiE2e = passed
                     ? "pass"
