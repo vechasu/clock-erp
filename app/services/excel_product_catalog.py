@@ -1476,7 +1476,7 @@ class ExcelProductCatalog:
             moysklad_product_id=None, actor_id="", actor_name="",
             actor_type="system", model="", local_image_path=None,
             local_image_sha256=None, local_image_source=None,
-            local_image_updated_at=None, collection_ids=None):
+            local_image_updated_at=None, collection_ids=None, local_component=False):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
@@ -1602,6 +1602,8 @@ class ExcelProductCatalog:
                 values,
             )
             product_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            if local_component:
+                connection.execute("INSERT INTO erp_local_components(product_id) VALUES (?)", (product_id,))
             _replace_product_collections(
                 connection, product_id, collection_ids or []
             )
@@ -1642,6 +1644,10 @@ class ExcelProductCatalog:
                 raise ValueError("Товар не найден.")
             if stock is not None:
                 assert_products_unlocked(connection, [product_id])
+                if float(stock) != 0 and connection.execute(
+                    "SELECT 1 FROM erp_product_bundles WHERE product_id=?", (product_id,),
+                ).fetchone():
+                    raise ValueError("Для сборного SKU изменяйте остатки физических компонентов.")
             values = dict(product)
             if name is not None:
                 values["excel_name_raw"] = text(name)

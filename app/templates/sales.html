@@ -6418,13 +6418,17 @@
         saleAvailableQuantity.textContent = "Сначала выберите товар";
     }
 
+    function saleAvailableStock(item) {
+        return item?.is_bundle ? item.available_to_assemble : (item?.stock || 0);
+    }
+
     function validateSaleQuantity() {
         if (manualSaleForm.dataset.editing === "1") {
             saleQuantityInput.setCustomValidity("");
             return true;
         }
         const available = Math.floor(Number(
-            sharedSelectedSaleProduct?.stock || 0
+            saleAvailableStock(sharedSelectedSaleProduct)
         ));
         const quantity = Number(saleQuantityInput.value);
         const valid = Boolean(sharedSelectedSaleProduct)
@@ -6745,19 +6749,19 @@
                 setSaleFieldError(saleProductError);
                 const available = Math.max(
                     1,
-                    Math.floor(Number(item.stock || 0)),
+                    Math.floor(Number(saleAvailableStock(item))),
                 );
                 saleQuantityInput.value = "1";
                 saleQuantityInput.max = String(available);
                 saleAvailableQuantity.textContent =
-                    "Доступно: " + available + " шт.";
+                    (item.is_bundle ? "Доступно к сборке: " : "Доступно: ") + available + " шт.";
                 productNameInput.value = item.name || "";
                 renderSaleProductPhoto(item);
                 productMeta.textContent = [
                     "Бренд: " + (item.brand || "—"),
                     "Категория: " + (item.category || "—"),
                     "Артикул: " + (item.article || "—"),
-                    "Доступно: " + (item.stock_display ?? item.stock ?? 0),
+                    item.is_bundle ? "Доступно к сборке: " + saleAvailableStock(item) : "Доступно: " + (item.stock_display ?? item.stock ?? 0),
                     item.barcode ? "Баркод: " + item.barcode : "",
                 ].filter(Boolean).join(" · ");
                 validateSaleQuantity();
@@ -6933,11 +6937,12 @@
                 const csrf = manualSaleForm.querySelector(
                     'input[name="csrf_token"]'
                 )?.value || "";
-                const updated = await window.assignMissingProductCategory(
+                let updated = await window.assignMissingProductCategory(
                     selectedProduct,
                     csrf,
                 );
                 if (!updated) return;
+                updated = {...selectedProduct, ...updated};
                 sharedSelectedSaleProduct = updated;
                 window.setSharedCatalogComboboxValue(saleCategoryCombobox, {
                     id: updated.category_id,
@@ -6949,7 +6954,7 @@
                     "Бренд: " + (updated.brand || "—"),
                     "Категория: " + (updated.category || "—"),
                     "Артикул: " + (updated.article || "—"),
-                    "Доступно: " + (updated.stock_display ?? updated.stock ?? 0),
+                    updated.is_bundle ? "Доступно к сборке: " + saleAvailableStock(updated) : "Доступно: " + (updated.stock_display ?? updated.stock ?? 0),
                     updated.barcode ? "Баркод: " + updated.barcode : "",
                 ].filter(Boolean).join(" · ");
             } catch (error) {
