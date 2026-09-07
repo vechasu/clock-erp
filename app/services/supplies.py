@@ -56,7 +56,7 @@ class SupplyEngine:
                 'supply:' + key if key else None, actor, 'default', now)
             connection.execute('UPDATE erp_receipts SET number = ?, comment = ? WHERE id = ?',
                 ('П-' + supply_id.split(':')[1][:12].upper(), comment, supply_id))
-            if items:
+            if items is not None:
                 self._replace(connection, supply_id, items, now)
             return self._get(connection, supply_id)
 

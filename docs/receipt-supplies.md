@@ -36,7 +36,7 @@ Excel создаёт тот же локальный черновик. Испол
 - `app/clients/moysklad.py`: общий клиент внешнего API.
 - `app/services/catalog_reader.py`, `shared_catalog.py`, `excel_product_catalog.py`, `product_reconciliation.py`, `product_excel_export.py`: legacy идентификаторы, состояние сопоставления, экспорт.
 - `app/services/receipt_recovery.py`, `brand_inventory.py`, `inventory_lock.py`, `sales_inventory.py`: ссылки/защиты для исторических документов и товаров; наличие этих ссылок не означает новый внешний вызов при поставке.
-- Скрипты импорта/сопоставления каталога остаются отдельными административными инструментами.
+- `scripts/bitrix_catalog_dry_run.py`: прямое использование клиента МойСклад для отдельной диагностики каталога. Поиск прямых импортов/создания `MoySkladClient` в `app/` и `scripts/` нашёл только этот скрипт, `app/web.py` и сам `app/clients/moysklad.py`.
 
 ## Проверки и изменение тестового контракта
 

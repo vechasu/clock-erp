@@ -52,7 +52,7 @@ def register_supply_routes(w):
             p = request.get_json(silent=True) or {}
             if not isinstance(p, dict):
                 raise SupplyError('Некорректные данные поставки.')
-            return jsonify(ok=True, data=engine.create(p.get('title'), p.get('comment'), actor(), key=request.headers.get('Idempotency-Key'))), 201
+            return jsonify(ok=True, data=engine.create(p.get('title'), p.get('comment'), actor(), items=p.get('items'), key=request.headers.get('Idempotency-Key'))), 201
         return jsonify(ok=True, data=engine.list())
 
     @app.route('/api/v1/receipts/supplies/<supply_id>', methods=['GET', 'PATCH', 'DELETE'])
