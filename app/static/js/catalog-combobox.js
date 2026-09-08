@@ -597,7 +597,7 @@
                     meta.textContent = option.meta;
                     details.append(meta, count);
                     copy.append(label, details);
-                    if (option.image) {
+                    if (option.image && combobox.closest("[data-shared-catalog-scope]")?.dataset.catalogProductImages !== "false") {
                         const image = document.createElement("img");
                         image.className = "catalog-combobox-option-image";
                         image.src = option.image;
