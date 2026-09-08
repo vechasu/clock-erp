@@ -23,7 +23,7 @@ test('sale picker cascade, stock validation, write-off and cancellation', async 
   await expect(page.locator('#writeoffCategoryTrigger')).toContainText('Сначала выберите бренд');
   await expect(page.locator('#writeoffProductTrigger')).toBeDisabled();
   await expect(page.locator('#writeoffProductTrigger')).toContainText('Сначала выберите бренд и категорию');
-  await expect(page.locator('#writeoffProductSummary')).toBeHidden();
+  await expect(page.locator('#writeoffProductName')).toHaveText('Выберите товар');
   await choose(page, 'writeoffBrand', 'Vechasu');
   await page.locator('#writeoffCategoryTrigger').click();
   await expect(page.locator('#writeoffCategoryListbox .brand-combobox-option')).toHaveCount(1);
@@ -39,7 +39,7 @@ test('sale picker cascade, stock validation, write-off and cancellation', async 
   await page.locator('#writeoffCategory .brand-combobox-search').fill('Ремешки');
   await page.locator('#writeoffCategory .brand-combobox-search-clear').click();
   await expect(page.locator('#writeoffProductId')).toHaveValue('');
-  await expect(page.locator('#writeoffProductSummary')).toBeHidden();
+  await expect(page.locator('#writeoffProductName')).toHaveText('Выберите товар');
   await expect(page.locator('#writeoffProductTrigger')).toBeDisabled();
   await page.locator('#writeoffCategoryTrigger').click();
   await choose(page, 'writeoffCategory', 'Ремешки');
@@ -47,13 +47,23 @@ test('sale picker cascade, stock validation, write-off and cancellation', async 
   await choose(page, 'writeoffBrand', 'Casio');
   await expect(page.locator('#writeoffForm [name=category_id]')).toHaveValue('');
   await expect(page.locator('#writeoffProductId')).toHaveValue('');
-  await expect(page.locator('#writeoffProductSummary')).toBeHidden();
+  await expect(page.locator('#writeoffProductName')).toHaveText('Выберите товар');
   await expect(page.locator('#writeoffQuantity')).not.toHaveAttribute('max');
   await expect(page.locator('#writeoffProductTrigger')).toBeDisabled();
   await choose(page, 'writeoffCategory', 'Часы');
   await choose(page, 'writeoffProduct', 'GA-2100');
   await expect(page.locator('#writeoffProductName')).toContainText('Casio G-Shock GA-2100');
-  await expect(page.locator('#writeoffProductDetails')).toHaveText(`GA-2100-1A1 · Остаток: ${before} шт.`);
+  await expect(page.locator('#writeoffProductDetails')).toContainText('Артикул: GA-2100-1A1');
+  await expect(page.locator('#writeoffProductDetails')).toContainText(`Остаток: ${before} шт.`);
+  await expect(page.locator('#writeoffProductListbox img')).toHaveCount(0);
+  await expect(page.locator('#writeoffPhoto')).toBeVisible();
+  expect(await page.locator('#writeoffPhoto').evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+  await page.locator('#writeoffPhoto').evaluate((el: HTMLImageElement) => el.dispatchEvent(new Event('error')));
+  await expect(page.locator('#writeoffPhotoPlaceholder')).toBeVisible();
+  await choose(page, 'writeoffCategory', 'Часы');
+  await expect(page.locator('#writeoffProductId')).toHaveValue('');
+  await expect(page.locator('#writeoffProductName')).toHaveText('Выберите товар');
+  await choose(page, 'writeoffProduct', 'GA-2100');
   if (testInfo.project.use.viewport!.width >= 1024) {
     const boxes = await Promise.all(['Brand', 'Category', 'Product'].map(kind => page.locator(`#writeoff${kind}Trigger`).boundingBox()));
     expect(boxes[0]!.y).toBe(boxes[1]!.y);
@@ -63,7 +73,7 @@ test('sale picker cascade, stock validation, write-off and cancellation', async 
   await page.locator('#writeoffReason').selectOption('Брак');
   await page.locator('#writeoffComment').fill('Проверка каскада и точного остатка');
   await page.getByRole('button', { name: 'Списать', exact: true }).click();
-  expect(await page.locator('#writeoffQuantity').evaluate((el: HTMLInputElement) => el.validationMessage)).toContain('Недостаточно товара');
+  expect(await page.locator('#writeoffQuantity').evaluate((el: HTMLInputElement) => el.validationMessage)).toContain('Нельзя списать больше');
   expect(await stock(page)).toBe(before);
   await page.locator('#writeoffQuantity').fill('2');
   await page.screenshot({ path: testInfo.outputPath('writeoff-modal.png'), fullPage: true });

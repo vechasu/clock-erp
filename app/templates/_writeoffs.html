@@ -26,7 +26,7 @@
 <td>{% if row.image_url %}<img src="{{ row.image_url }}" alt="" width="40" height="40" loading="lazy" style="object-fit:contain">{% endif %}{{ row.product_name }}</td>
 <td>{{ row.article or '—' }}</td><td>{{ row.brand or '—' }}</td><td>{{ row.category or '—' }}</td><td>−{{ row.quantity }}</td><td>{{ row.reason }}</td><td>{{ row.created_by_name or row.created_by }}</td><td style="white-space:normal;min-width:160px">{{ row.comment }}</td>
 <td>{% if row.status == 'cancelled' %}<span>Отменено</span><small style="display:block">{{ row.cancelled_by_name }} · {{ render_erp_datetime(row.cancelled_at) }}</small>{% else %}<button type="button" class="button button-secondary" data-cancel-writeoff="{{ row.id }}">Отменить списание</button>{% endif %}</td>
-</tr>{% else %}<tr><td colspan="10">Списаний по выбранным условиям нет.</td></tr>{% endfor %}</tbody></table>
+</tr>{% else %}<tr><td colspan="10" class="writeoff-empty">Списаний по выбранным условиям нет.</td></tr>{% endfor %}</tbody></table>
 </div>{{ render_erp_pagination(pagination, 'Журнал списаний') }}</div>
 </main></div>
 {# Sales and write-offs are mutually exclusive views in sales.html. Reuse the
@@ -38,7 +38,7 @@
             <button type="button" class="modal-close" id="closeWriteoff" aria-label="Закрыть">×</button>
         </div>
         <div class="modal-body sales-form-body erp-modal-body">
-            <form id="writeoffForm" class="sale-form" data-shared-catalog-scope data-catalog-in-stock="true">
+            <form id="writeoffForm" class="sale-form" data-catalog-option-images="false" data-shared-catalog-scope data-catalog-in-stock="true">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <fieldset class="manual-form-grid">
                     <h3 class="erp-form-section-title field-wide sale-section-title">Товар</h3>
@@ -54,19 +54,19 @@
                         <label for="writeoffProductTrigger">Товар</label>
                         {{ render_catalog_combobox('writeoffProduct', 'product_id', [], item_label='товар', disabled=true, prefix_search=true, empty_label='Ничего не найдено', component_class='filter-combobox sales-product-combobox', clear_selection_on_search_clear=true, input_id='writeoffProductId', shared_catalog_kind='product') }}
                     </div>
-                    <div id="writeoffProductSummary" class="field field-wide sale-product-summary" hidden>
+                    <div id="writeoffProductSummary" class="field field-wide sale-product-summary" aria-live="polite">
                         <div class="sale-product-photo">
                             <span class="sale-product-photo-images"><img id="writeoffPhoto" alt="" hidden></span>
                             <span id="writeoffPhotoPlaceholder" class="sale-product-photo-placeholder">Нет фото</span>
                             <div class="sale-product-summary-copy">
-                                <strong id="writeoffProductName"></strong>
-                                <span id="writeoffProductDetails" class="product-meta-preview"></span>
+                                <strong id="writeoffProductName">Выберите товар</strong>
+                                <span id="writeoffProductDetails" class="product-meta-preview">Баркод, артикул и остаток появятся после выбора товара.</span>
                             </div>
                         </div>
                     </div>
                     <div class="field field-wide">
                         <label for="writeoffQuantity">Количество *</label>
-                        <input id="writeoffQuantity" class="control" name="quantity" type="number" min="1" step="1" required value="1">
+                        <input id="writeoffQuantity" class="control" aria-describedby="writeoffError" name="quantity" type="number" min="1" step="1" required value="1">
                     </div>
                     <div class="field field-wide">
                         <label for="writeoffReason">Причина *</label>

@@ -17,33 +17,40 @@
     const reason = document.getElementById('writeoffReason');
     reason.onchange = () => { document.getElementById('writeoffComment').required = reason.value === 'Прочее'; };
     const quantity = document.getElementById('writeoffQuantity');
+    const photo = document.getElementById('writeoffPhoto');
+    const placeholder = document.getElementById('writeoffPhotoPlaceholder');
+    let available = null;
     const validateQuantity = () => {
-        quantity.setCustomValidity(quantity.validity.rangeOverflow ? `Недостаточно товара. Доступно: ${quantity.max} шт.` : '');
+        const value = Number(quantity.value);
+        const message = !Number.isInteger(value) || value < 1
+            ? 'Укажите целое количество не меньше 1.'
+            : available !== null && value > available
+                ? `Нельзя списать больше доступного остатка: ${available} шт.` : '';
+        quantity.setCustomValidity(message);
+        quantity.setAttribute('aria-invalid', String(Boolean(message)));
+        error.textContent = message;
+        return !message;
     };
     quantity.addEventListener('input', validateQuantity);
-    // The shared cascade clears child values synchronously after this event.
-    form.addEventListener('catalog-combobox:change', () => queueMicrotask(() => {
-        if (form.elements.product_id.value) return;
-        document.getElementById('writeoffProductSummary').hidden = true;
-        quantity.removeAttribute('max');
-        quantity.setCustomValidity('');
-        error.textContent = '';
-    }));
-    form.addEventListener('shared-catalog:selected', (event) => {
-        if (event.detail.kind !== 'product') return;
-        const p = event.detail.item;
-        const available = p.is_bundle ? p.available_to_assemble : p.is_physical_component ? p.physical_stock : p.stock;
-        document.getElementById('writeoffProductSummary').hidden = false;
-        document.getElementById('writeoffProductDetails').textContent = [p.article, `Остаток: ${available ?? 0} шт.`].filter(Boolean).join(' · ');
-        document.getElementById('writeoffProductName').textContent = p.name || p.display_name;
-        const photo = document.getElementById('writeoffPhoto');
-        const imageUrl = p.local_image_url || p.image_url || p.thumbnail_url;
-        if (imageUrl) photo.src = imageUrl;
-        else photo.removeAttribute('src');
-        photo.hidden = !imageUrl;
-        document.getElementById('writeoffPhotoPlaceholder').hidden = Boolean(imageUrl);
-        quantity.max = String(available ?? 0);
+    photo.addEventListener('error', () => { photo.hidden = true; placeholder.hidden = false; });
+    const showProduct = (p) => {
+        available = p ? Number(p.is_bundle ? p.available_to_assemble : p.is_physical_component ? p.physical_stock : p.stock) || 0 : null;
+        document.getElementById('writeoffProductName').textContent = p ? p.name || p.display_name : 'Выберите товар';
+        document.getElementById('writeoffProductDetails').textContent = p
+            ? `Артикул: ${p.article || '—'} · Баркод: ${p.barcode || '—'} · Остаток: ${available} шт.`
+            : 'Баркод, артикул и остаток появятся после выбора товара.';
+        const src = p && (p.local_image_url || p.image_url || p.thumbnail_url);
+        if (src) photo.src = src; else photo.removeAttribute('src');
+        photo.hidden = !src;
+        placeholder.hidden = Boolean(src);
+        if (available === null) quantity.removeAttribute('max'); else quantity.max = String(available);
         validateQuantity();
+    };
+    form.addEventListener('catalog-combobox:change', (event) => {
+        if (event.target.matches('[data-shared-catalog-kind]')) showProduct(null);
+    });
+    form.addEventListener('shared-catalog:selected', (event) => {
+        if (event.detail.kind === 'product') showProduct(event.detail.item);
     });
     const post = async (url, payload, requestKey) => {
         const response = await fetch(url, {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':form.elements.csrf_token.value,...(requestKey ? {'Idempotency-Key':requestKey} : {})},body:JSON.stringify(payload)});
@@ -65,7 +72,8 @@
     form.addEventListener('submit',async (event) => {
         event.preventDefault(); error.textContent = '';
         const payload = {product_id:form.elements.product_id.value,quantity:form.elements.quantity.value,reason:reason.value,comment:form.elements.comment.value};
-        if (!payload.product_id) { error.textContent = 'Выберите товар.'; return; }
+        if (!payload.product_id || available === null) { error.textContent = 'Выберите товар.'; return; }
+        if (!validateQuantity()) return;
         const next = JSON.stringify(payload);
         if (signature !== next) { signature = next; key = crypto.randomUUID(); }
         const button = document.getElementById('submitWriteoff'); button.disabled = true;
