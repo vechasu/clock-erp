@@ -186,7 +186,10 @@ class Stage2RepairsApiTest(unittest.TestCase):
             json={},
         )
         self.assertEqual(restored.status_code, 200)
-        self.assertFalse(restored.get_json()["data"]["is_archived"])
+        # Removing the manual archive marker cannot make a completed repair active.
+        self.assertTrue(restored.get_json()["data"]["is_archived"])
+        self.assertEqual(restored.get_json()["data"]["status"], "completed")
+        self.assertEqual(self.client.get("/api/repairs?view=active").get_json()["data"], [])
 
     def test_repair_api_validation_keeps_store_unchanged(self):
         invalid = self.client.post(
