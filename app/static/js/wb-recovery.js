@@ -25,6 +25,7 @@
     async function loadDiagnostics() {
         try {
             const {diagnostics:d} = await request('');
+            document.dispatchEvent(new CustomEvent('orders:wb-diagnostics', {detail:d}));
             const lastSuccess = d.last_success_at ? new Date(d.last_success_at) : null;
             const time = lastSuccess && !Number.isNaN(lastSuccess.getTime())
                 ? new Intl.DateTimeFormat('ru-RU', {dateStyle:'short',timeStyle:'short'}).format(lastSuccess) : '';
@@ -51,6 +52,7 @@
 
         } catch (error) {
             root.querySelector('[data-wb-health]').textContent = 'Диагностика недоступна';
+            document.dispatchEvent(new CustomEvent('orders:wb-diagnostics', {detail:{outcome:'error'}}));
         }
     }
     form.addEventListener('input', () => {confirmation = null; importButton.hidden = true;});
@@ -89,6 +91,7 @@
         } catch (error) {message.textContent = error.message;}
         finally {busy = false; importButton.disabled = false;}
     });
+    document.addEventListener('orders:wb-refresh', loadDiagnostics);
     loadDiagnostics();
     window.setInterval(() => {if (!document.hidden) loadDiagnostics();}, 60000);
 })();

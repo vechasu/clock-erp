@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}">
     <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-progressive-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-reference-v1') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
@@ -52,9 +52,10 @@
     <main class="main" id="main-content" tabindex="-1">
         {% set selected_sync = selected_order.get('sync_state') if selected_order else '' %}
         {% set sync_class = 'error' if sync_error or selected_sync == 'error' else 'partial' if selected_sync == 'partial' else '' %}
-        <form class="orders-command-bar" id="ordersFilters" method="get" action="{{ url_for('orders_page') }}">
+        <section class="orders-command-bar orders-reference-header" aria-label="Управление заказами">
+        <form class="orders-filters" id="ordersFilters" method="get" action="{{ url_for('orders_page') }}">
             <div class="orders-command-primary">
-                <div class="orders-title"><h1>Заказы</h1><span class="orders-title-count" data-orders-title-count>{{ orders_total }} заказов</span></div>
+                <div class="orders-title"><h1>Заказы</h1><span class="orders-title-count" data-orders-title-count>{{ order_source_counts.get('all', orders_total) }} заказов</span></div>
                 <div class="erp-search-wrap orders-live-search">
                     <input class="field field-search erp-search-input" type="search" id="orderSearch" name="q" value="{{ request.args.get('q','') }}" placeholder="Номер заказа, покупатель, товар, артикул..." aria-label="Поиск по всем полям заказов" autocomplete="off">
                     <button class="search-clear" type="button" data-search-clear aria-label="Очистить поиск"{% if not request.args.get('q') %} hidden{% endif %}>×</button>
@@ -65,33 +66,15 @@
                     <button class="view-option" type="button" data-layout-mode="card" role="radio">Карточка</button>
                 </div>
             </div>
-            <nav class="order-source-tabs" aria-label="Источник заказов">
-                {% for key,label in [('all','Все заказы'),('tictactoy','TicTacToy'),('wildberries','Wildberries')] %}
-                <button type="button" class="status-filter{% if request.args.get('source','all') == key %} active{% endif %}" data-source-filter="{{ key }}" aria-pressed="{{ 'true' if request.args.get('source','all') == key else 'false' }}">{{ label }} <strong>{{ order_source_counts.get(key, 0) }}</strong></button>
-                {% endfor %}
-                <input type="hidden" name="source" value="{{ request.args.get('source','all') }}">
-            </nav>
-            <div class="orders-command-secondary">
-                <div class="status-filter-tabs" role="group" aria-label="Фильтр по статусу">
-                    {% set active_status = request.args.get('status','all')|upper %}
-                    <button class="status-filter{% if active_status == 'ALL' %} active{% endif %}" type="button" data-status-filter="all" aria-pressed="{{ 'true' if active_status == 'ALL' else 'false' }}">Все состояния</button>
-                    {% for key,count in order_status_counts.items() %}
-                    <button class="status-filter{% if active_status == key %} active{% endif %}" type="button" data-status-filter="{{ key }}" aria-pressed="{{ 'true' if active_status == key else 'false' }}">{% if request.args.get('source','all') == 'all' %}{{ 'WB · ' if key.startswith('WB_') else 'TTT · ' }}{% endif %}{{ order_status_label(key) }} <strong data-order-status-count="{{ key }}">{{ count }}</strong></button>
-                    {% endfor %}
-                    <input type="hidden" name="status" value="{{ request.args.get('status','all') }}" data-status-input>
-                </div>
-                <div class="orders-compact-selects">
-                    <a class="button button-secondary" href="{{ url_for('orders_page', **dict(orders_query_args, retry='1')) }}">Обновить Tictactoy</a>
-                    <select class="field" name="period" aria-label="Период" data-auto-submit-filter>{% for value,label in [('all','Всё время'),('today','Сегодня'),('7d','7 дней'),('30d','30 дней')] %}<option value="{{ value }}"{% if request.args.get('period','all') == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-                </div>
-            </div>
+            {% include "_orders_filters.html" %}
         </form>
+        {% include "_orders_sync.html" %}
+        </section>
 
         {% if request.args.get('notice') and request.args.get('message') %}
             <div class="notice notice-{{ request.args.get('notice') }}" role="{{ 'alert' if request.args.get('notice') in ['error', 'danger'] else 'status' }}" data-erp-notification-source>{{ request.args.get('message') }}</div>
         {% endif %}
 
-        {% include "_wb_recovery.html" %}
         <div class="workspace" id="ordersWorkspace" data-layout-mode="split">
             <section class="panel orders-list-panel" aria-label="Список заказов">
                 {# Included results provide erp-empty-state, erp-no-results-state and «Сбросить фильтры». #}
@@ -311,7 +294,7 @@
                         </div>
                     </div>
                 </div>
-            {% else %}<div class="empty"><strong>Выберите заказ в списке</strong><br>Полная карточка загрузится отдельным безопасным запросом.</div>{% endif %}
+            {% else %}<div class="empty orders-selection-empty"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="m24 4 18 10v20L24 44 6 34V14Zm0 20L6 14m18 10 18-10M24 24v20M15 9l18 10v9"/></svg><strong>Выберите заказ в списке</strong><p>Полная карточка загрузится отдельным безопасным запросом.</p></div>{% endif %}
             </section>
 {% if not order_detail_only %}
         </div>
@@ -483,7 +466,7 @@
     const searchInput=document.getElementById('orderSearch');
     const filtersForm=searchInput?.form;
     const searchClear=document.querySelector('[data-search-clear]');
-    const statusInput=document.querySelector('[data-status-input]');
+    let statusInput=document.querySelector('[data-status-input]');
         let ordersSearchTimer=null;
         let ordersSearchController=null;
     let ordersSearchRequest=0;
@@ -507,8 +490,9 @@
             const payload=await response.json();if(!response.ok||payload?.ok!==true)throw new Error('Не удалось обновить заказы');
             if(requestId!==ordersSearchRequest)return;
             const current=document.querySelector('[data-orders-results]');current.outerHTML=payload.html;
+            if(payload.filters_html){document.querySelector('.orders-filter-area').outerHTML=payload.filters_html;statusInput=document.querySelector('[data-status-input]');document.dispatchEvent(new Event('orders:filters-updated'));}
             document.querySelectorAll('[data-orders-page-link]').forEach(link=>{const pageUrl=new URL(link.href,window.location.href);pageUrl.pathname=displayUrl.pathname;pageUrl.searchParams.delete('selected_id');link.href=pageUrl.pathname+pageUrl.search;});
-                const titleCount=document.querySelector('[data-orders-title-count]');if(titleCount)titleCount.textContent=payload.exact_search?.status==='external_found'?'1 результат':`${payload.total_filtered} заказов`;
+                const titleCount=document.querySelector('[data-orders-title-count]');if(titleCount)titleCount.textContent=payload.exact_search?.status==='external_found'?'1 результат':`${payload.total_available} заказов`;
             Object.entries(payload.kpis||{}).forEach(([key,value])=>{const node=document.querySelector(`[data-status-count="${key}"]`);if(node)node.textContent=value;});
                 window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
             formatOrdersResults(document.querySelector('[data-orders-results]'));
@@ -517,18 +501,22 @@
         }catch(error){if(error.name!=='AbortError'){window.VechasuNotify?.error(error.message||'Не удалось обновить заказы');}}
         finally{if(ordersSearchController===controller)ordersSearchController=null;}
     }
+    document.addEventListener('orders:sync-complete',()=>loadOrdersResults(new URL(window.location.href)));
     function ordersFilterUrl(){const url=new URL(window.location.href);['q','status','period','source'].forEach(key=>url.searchParams.delete(key));new FormData(filtersForm).forEach((value,key)=>{if(value&&value!=='all')url.searchParams.set(key,value);});url.searchParams.delete('page');const pageSize=document.querySelector('[data-orders-page-size]')?.value||'50';url.searchParams.set('page_size',pageSize);return url;}
     searchInput?.addEventListener('input',()=>{if(searchInput.value&&!(new URL(window.location.href)).searchParams.get('q')){listReturnUrl=new URL(window.location.href);listReturnUrl.searchParams.delete('retry');searchReturnMode=workspace.dataset.layoutMode;}searchClear.hidden=!searchInput.value;window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),250);});
     searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());}});
     function clearOrderSearch(){searchInput.value='';searchClear.hidden=true;window.clearTimeout(ordersSearchTimer);applyMode(searchReturnMode,false);loadOrdersResults(listReturnUrl,{push:true});searchInput.focus();}
         searchClear?.addEventListener('click',clearOrderSearch);
-    document.querySelectorAll('[data-source-filter]').forEach(button=>button.addEventListener('click',()=>{
-        filtersForm.elements.source.value=button.dataset.sourceFilter;
-        statusInput.value='all';
-        const url=ordersFilterUrl();url.pathname='/app/orders';url.searchParams.delete('selected_id');
-        window.location.assign(url.pathname+url.search);
-    }));
-    document.querySelectorAll('[data-status-filter]').forEach(button=>button.addEventListener('click',()=>{statusInput.value=button.dataset.statusFilter;document.querySelectorAll('[data-status-filter]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});loadOrdersResults(ordersFilterUrl(),{push:true});}));
+    filtersForm?.addEventListener('click',event=>{
+        const source=event.target.closest('[data-source-filter]');
+        if(source){filtersForm.elements.source.value=source.dataset.sourceFilter;statusInput.value='all';const url=ordersFilterUrl();url.pathname='/app/orders';url.searchParams.delete('selected_id');window.location.assign(url.pathname+url.search);return;}
+        const button=event.target.closest('[data-status-filter]');
+        if(!button)return;
+        statusInput.value=button.dataset.statusFilter;
+        document.querySelector('[data-status-more]').open=false;
+        document.querySelectorAll('[data-status-filter]').forEach(item=>{const active=item===button;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});
+        loadOrdersResults(ordersFilterUrl(),{push:true});
+    });
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>loadOrdersResults(ordersFilterUrl())));
     document.querySelector('.orders-list-panel')?.addEventListener('change',event=>{if(!event.target.matches('[data-orders-page-size]'))return;loadOrdersResults(ordersFilterUrl());});
         document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const showAll=event.target.closest('[data-show-all-orders]');if(showAll){event.preventDefault();clearOrderSearch();return;}const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
@@ -675,21 +663,6 @@
         row.querySelector('[data-remove-order-mapping]')?.addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{const data=await mappingRequest(row,'DELETE');row.querySelector('[data-order-mapping-summary]').hidden=true;row.querySelector('[data-order-mapping-actions]').hidden=true;const state=row.querySelector('[data-order-mapping-state]');state.textContent='Не удалось определить товар ERP';state.hidden=false;form.hidden=false;window.clearSharedCatalogCombobox?.(form.querySelector('[data-shared-catalog-kind="product"]'));updateOrderMappingState(data.order);}catch(error){mappingError(form,error.message,error);}finally{button.disabled=false;}});
         form.addEventListener('submit',async event=>{event.preventDefault();if(form.dataset.submitting==='1')return;const productBox=form.querySelector('[data-shared-catalog-kind="product"]');const productId=form.querySelector('input[name="product_id"]')?.value?.trim();if(!productId){mappingError(form,'Выберите товар ERP из каталога');return;}const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';button.disabled=true;button.textContent='Выбираем…';try{let data;try{data=await mappingRequest(row,'POST',productId);}catch(error){if(error.code!=='PRODUCT_CATEGORY_REQUIRED')throw error;const product=JSON.parse(productBox?.dataset.sharedCatalogSelectedItem||'{}');const csrf=form.querySelector('input[name="csrf_token"]')?.value||'';const updated=await window.assignMissingProductCategory(product,csrf);if(!updated)return;window.setSharedCatalogComboboxValue?.(productBox,updated);data=await mappingRequest(row,'POST',productId);}if(String(data?.mapping?.product?.id)!==String(productId)){throw new Error('Сервер подтвердил другой товар ERP');}showSavedMapping(row,data);window.VechasuNotify?.success('Товар ERP выбран');}catch(error){mappingError(form,error.message,error);}finally{delete form.dataset.submitting;button.disabled=false;button.textContent='Выбрать товар';}});
     });
-{% if not order_detail_only %}
-    const wbSyncButton=document.querySelector('[data-wb-sync]');
-    wbSyncButton?.addEventListener('click',async()=>{
-        if(wbSyncButton.disabled)return;wbSyncButton.disabled=true;wbSyncButton.setAttribute('aria-busy','true');wbSyncButton.textContent='Обновляем WB…';
-        try{
-            const csrf=document.querySelector('[data-wb-sync-csrf]')?.value||'';
-            const response=await fetch('/api/orders/wildberries/sync',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json','X-CSRF-Token':csrf}});
-            const payload=await response.json().catch(()=>null);
-            if(!response.ok||payload?.ok!==true)throw new Error(payload?.error?.message||`Ошибка синхронизации (${response.status})`);
-            const result=payload.result;if(result.outcome==='partial'){window.VechasuNotify?.warning('WB обновлён частично: проверьте диагностику.');return;}window.VechasuNotify?.success(`WB: получено ${result.received}, добавлено ${result.added}, обновлено ${result.updated}, ошибок ${result.errors}`);
-            window.setTimeout(()=>window.location.reload(),400);
-        }catch(error){window.VechasuNotify?.error(error.message||'Не удалось синхронизировать Wildberries');}
-        finally{wbSyncButton.disabled=false;wbSyncButton.removeAttribute('aria-busy');wbSyncButton.textContent='Обновить WB';}
-    });
-{% endif %}
     const completedStrapStorageKey='order-strap-replacement:{{ detail_id if selected_order else "" }}';
     {% if selected_order and sale_state.sale_completed %}
     try{window.sessionStorage.removeItem(completedStrapStorageKey);}catch(error){}
