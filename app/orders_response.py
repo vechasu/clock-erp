@@ -9,7 +9,9 @@ def register_orders_response(app):
     # Compile before accepting requests, not on the first user's navigation in
     # each worker. This evaluates no template, SQL, session or integration code.
     for name in ('orders.html', '_orders_list_results.html', '_catalog_combobox.html',
-                 '_sidebar.html', '_favicon.html', '_orders_timing.html'):
+                 '_sidebar.html', '_favicon.html', '_orders_timing.html',
+                 '_orders_filters.html', '_orders_sync.html', '_wb_recovery.html',
+                 '_navigation_icons.html'):
         app.jinja_env.get_template(name)
 
     @app.after_request
