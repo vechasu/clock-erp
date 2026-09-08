@@ -34,9 +34,9 @@ def status_label(key):
     return (WB.get(key[3:], WB['UNKNOWN']) if key.startswith('WB_') else TTT.get(key, TTT['UNKNOWN']))[0]
 
 
-def present_order(order, overrides=None):
+def present_order(order, overrides=None, projected_status=None):
     result = dict(order)
-    key = status_key(order, overrides)
+    key = projected_status or status_key(order, overrides)
     label, tone = WB.get(key[3:], WB['UNKNOWN']) if key.startswith('WB_') else TTT.get(key, TTT['UNKNOWN'])
     result.update(ui_status=key, ui_status_label=label, ui_status_tone=tone)
     return result

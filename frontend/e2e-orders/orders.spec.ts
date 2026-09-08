@@ -92,3 +92,26 @@ test('sale submit uses existing endpoint and prevents repeated submit', async ({
   await expect(page.locator('[data-open-sale-dialog]')).toHaveCount(0);
   expect(submits).toBe(1);
 });
+
+test('card selection keeps the list DOM and uses one detail request', async ({ page }) => {
+  await page.goto('/app/orders?source=wildberries');
+  await page.locator('.orders-split-table-scroll').evaluate(el => {
+    el.scrollTop = 350;
+    el.setAttribute('data-preserved-list', 'yes');
+  });
+  const requests: string[] = [];
+  page.on('request', request => requests.push(request.url()));
+  const firstNumber = (await page.locator('.orders-split-table .order-number').nth(4).textContent())!.trim();
+  const secondNumber = (await page.locator('.orders-split-table .order-number').nth(5).textContent())!.trim();
+  await page.locator('.orders-split-table .order-number').nth(4).click();
+  await expect(page.locator('.card-title h2')).toBeVisible();
+  await expect(page.locator('[data-preserved-list]')).toHaveCount(1);
+  expect(await page.locator('[data-preserved-list]').evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  expect(requests.filter(url => /\/order\/wildberries\//.test(url))).toHaveLength(1);
+  expect(requests.filter(url => /\/api\/orders(?:\?|$)|\/static\//.test(url))).toHaveLength(0);
+  await page.locator('.orders-split-table .order-number').nth(5).click();
+  await expect(page.locator('.card-title h2')).toContainText(secondNumber);
+  await page.goBack();
+  await expect(page.locator('.card-title h2')).toContainText(firstNumber);
+  await expect(page.locator('[data-preserved-list]')).toHaveCount(1);
+});
