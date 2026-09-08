@@ -93,9 +93,16 @@ COMPLETION_RESULT_LABELS = {
     "replaced": "Заменено",
     "returned_unrepaired": "Возвращено без ремонта",
     "impossible": "Ремонт невозможен",
-    "customer_declined": "Клиент отказался от ремонта",
+    "customer_declined": "Клиент отказался",
     "other": "Другое",
 }
+
+FINAL_RESULTS = {"repaired", "impossible", "customer_declined"}
+
+
+def is_repair_archived(case):
+    return bool(case.get("archived_at")) or case.get("status") in {"completed", "cancelled"}
+
 
 REPAIR_ACTION_LABELS = {
     "receive_and_start_diagnostics": "Передать мастеру",
@@ -112,7 +119,7 @@ REPAIR_ACTION_LABELS = {
     "start_repair": "Начать ремонт",
     "mark_ready": "Отметить готовность",
     "send_to_customer": "Отправить клиенту",
-    "complete": "Завершить",
+    "complete": "Завершить ремонт",
     "cancel": "Отменить",
     "reopen": "Возобновить",
 }
@@ -135,7 +142,7 @@ REPAIR_TRANSITIONS = {
     "start_repair": ({"waiting_decision"}, "in_repair"),
     "mark_ready": ({"in_repair"}, "ready_return"),
     "send_to_customer": ({"ready_return"}, "outbound_transit"),
-    "complete": ({"ready_return", "outbound_transit"}, "completed"),
+    "complete": ({"diagnostics", "waiting_decision", "ready_return", "outbound_transit"}, "completed"),
     "cancel": (set(REPAIR_STATUS_LABELS) - {"completed", "cancelled"}, "cancelled"),
     "reopen": ({"completed", "cancelled"}, "new"),
 }
@@ -221,6 +228,8 @@ DEFAULT_FIELDS = {
     "parent_repair_id": "",
     "repeat_repair_id": "",
     "completed_at": "",
+    "completed_by": "",
+    "final_cost": "",
     "cancelled_at": "",
     "created_by": "",
     "updated_by": "",
@@ -289,16 +298,21 @@ def append_history_event(case, *args, **kwargs):
 
 
 def normalize_money(value, field_label="Сумма"):
-    text = _text(value).replace(" ", "").replace(",", ".")
+    text = (str(value).strip() if value is not None else "").replace(" ", "").replace(",", ".")
     if not text:
         return ""
     try:
         amount = Decimal(text)
     except InvalidOperation as error:
         raise ValueError(f"{field_label}: укажите корректное число") from error
+    if not amount.is_finite():
+        raise ValueError(f"{field_label}: укажите конечное число")
     if amount < 0:
         raise ValueError(f"{field_label} не может быть отрицательной")
-    return format(amount.quantize(Decimal("0.01")), "f")
+    try:
+        return format(amount.quantize(Decimal("0.01")), "f")
+    except InvalidOperation as error:
+        raise ValueError(f"{field_label}: слишком большое число") from error
 
 
 def normalize_date(value, field_label="Дата"):
@@ -313,7 +327,7 @@ def normalize_date(value, field_label="Дата"):
 
 
 def available_repair_actions(case):
-    if _text(case.get("archived_at")):
+    if is_repair_archived(case):
         return []
     status = _text(case.get("status"))
     if repair_workflow(case)["needs_review"]:
@@ -362,6 +376,8 @@ def apply_repair_action(case, action, payload, actor="Система"):
     if action not in REPAIR_TRANSITIONS:
         raise ValueError("Неизвестное действие ремонта")
     payload = payload if isinstance(payload, dict) else {}
+    if action == "complete" and is_repair_archived(case):
+        raise ValueError("Ремонт уже завершён")
     idempotency_key = _text(payload.get("idempotency_key"))
     if idempotency_key and idempotency_key == _text(
         case.get("last_idempotency_key")
@@ -458,23 +474,29 @@ def apply_repair_action(case, action, payload, actor="Система"):
         case["outgoing_waybill"] = outgoing
 
     if action == "complete":
-        if status == "ready_return" and _text(
-            payload.get("return_method") or case.get("return_method")
-        ) not in {"pickup", "other"}:
-            raise ValueError("Для доставки сначала отметьте отправку клиенту")
-        result = _text(
-            payload.get("completion_result") or case.get("completion_result")
-        )
-        if result not in COMPLETION_RESULT_LABELS:
+        result = _text(payload.get("completion_result"))
+        if result not in FINAL_RESULTS:
             raise ValueError("Выберите результат завершения")
-        if status == "ready_return":
-            case["return_method"] = _text(payload.get("return_method") or case.get("return_method"))
+        if result == "repaired" and status not in {"ready_return", "outbound_transit"}:
+            raise ValueError("Отремонтированный товар ещё не готов к выдаче")
+        return_method = _text(payload.get("return_method") or case.get("return_method"))
+        if status == "ready_return" and return_method not in {"pickup", "other"}:
+            raise ValueError("Для доставки сначала отметьте отправку клиенту")
+        cost = normalize_money(payload.get("final_cost"), "Стоимость ремонта")
+        # Validate before changing the record, including optional fields.
+        normalize_date(payload.get("control_date"), "Контрольная дата")
+        completed_at = datetime.now().astimezone().isoformat(timespec="seconds")
         case["completion_result"] = result
-        case["work_result"] = _text(
-            payload.get("work_result") or case.get("work_result")
-        )
-        case["completion_comment"] = _text(payload.get("comment"))
-        case["completed_at"] = repair_now()
+        if status == "ready_return":
+            case["return_method"] = return_method
+        case["work_result"] = _text(payload.get("work_result") or case.get("work_result"))
+        case["completion_comment"] = _text(payload.get("comment") or payload.get("work_result"))
+        if cost:
+            case["final_cost"] = cost
+        case["completed_at"] = completed_at
+        case["completed_by"] = actor
+        case["archived_at"] = completed_at
+        case["archived_by"] = actor
 
     if action == "cancel":
         if not reason:
@@ -523,6 +545,8 @@ def apply_repair_action(case, action, payload, actor="Система"):
         "send_to_customer": "outbound_transit",
         "complete": "delivered",
     }
+    if action == "complete" and status in {"diagnostics", "waiting_decision"}:
+        action_locations.pop("complete")
     if action in action_locations:
         case["location"] = action_locations[action]
     case["updated_at"] = repair_now()
@@ -591,6 +615,15 @@ def apply_repair_action(case, action, payload, actor="Система"):
             old_value=old_value,
             new_value=new_value,
         )
+    if action == "complete":
+        details = ["Результат: " + COMPLETION_RESULT_LABELS[case["completion_result"]]]
+        if case.get("final_cost") != "" and case.get("final_cost") is not None:
+            details.append("Стоимость: " + str(case["final_cost"]) + " ₽")
+        if case["completion_comment"]:
+            details.append("Комментарий: " + case["completion_comment"])
+        append_history_event(case, "Ремонт завершён", actor=actor,
+                             field="completion_result", new_value=case["completion_result"],
+                             comment="\n".join(details), timestamp=case["completed_at"])
     return True
 
 

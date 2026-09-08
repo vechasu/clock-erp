@@ -31,7 +31,7 @@ ACTION_LABELS = {
     'accept_paid': 'Зафиксировать решение клиента',
     'record_payment': 'Зафиксировать оплату',
     'mark_ready': 'Получили готовый товар',
-    'send_to_customer': 'Оформить возврат клиенту', 'complete': 'Подтвердить выдачу / получение',
+    'send_to_customer': 'Оформить возврат клиенту', 'complete': 'Завершить ремонт',
 }
 HINTS = {
     'new': 'Согласуйте с клиентом передачу товара.',
@@ -58,6 +58,8 @@ def repair_workflow(case, today=None):
     conflict = not rule or (status != 'cancelled' and location not in rule[0])
     migration = case.get('migration') or {}
     notes = migration.get('review_notes', []) if isinstance(migration, dict) else []
+    if closed and case.get('completion_result') in {'impossible', 'customer_declined'}:
+        conflict = False
     conflict = conflict or any('Неизвестный старый статус' in str(note) for note in notes)
     if conflict:
         state, label, action = 'review', 'Требует уточнения', ''
