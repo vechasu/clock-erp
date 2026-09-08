@@ -73,3 +73,47 @@ test('rapid selections send only the first and final card and history stays part
   await expect(page.locator('.order-detail-panel')).toContainText('Выберите заказ');
   expect(documents).toEqual([]);
 });
+
+test('history restores list filters without reloading the unchanged card', async ({ page }) => {
+  await page.goto('/app/orders', { waitUntil: 'domcontentloaded' });
+  await page.locator('.orders-split-table a.order-number').first().click();
+  await expect(page.locator('.order-detail-panel')).toContainText('7001');
+  const panel = await page.locator('.order-detail-panel').elementHandle();
+  let requests = 0;
+  page.on('request', (request) => {
+    if (request.headers()['x-order-detail']) requests++;
+  });
+  await page.locator('[data-status-filter="N"]').click();
+  await expect(page).toHaveURL(/status=N/);
+  await page.locator('[data-status-filter="all"]').click();
+  await expect(page).not.toHaveURL(/status=N/);
+  await page.goBack();
+  await expect(page.locator('[data-status-filter="N"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.orders-split-table a.order-number')).toHaveCount(2);
+  await expect(page.locator('.order-detail-panel')).toContainText('7001');
+  expect(await panel?.evaluate((node) => node.isConnected)).toBe(true);
+  expect(requests).toBe(0);
+});
+
+test('history to the current card cancels an unfinished different selection', async ({ page }) => {
+  await page.goto('/app/orders', { waitUntil: 'domcontentloaded' });
+  const first = page.locator('.orders-split-table a.order-number').first();
+  await first.click();
+  await expect(page.locator('.order-detail-panel')).toContainText('7001');
+  const response = page.waitForResponse((r) => r.request().headers()['x-order-detail'] === '1');
+  await first.click();
+  await response;
+  let started = false;
+  await page.route('**/order/7002*', async (route) => {
+    const result = await route.fetch();
+    started = true;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await route.fulfill({ response: result });
+  });
+  await page.locator('.orders-split-table a.order-number').nth(1).click();
+  await expect.poll(() => started).toBe(true);
+  await page.goBack();
+  await page.waitForTimeout(500);
+  await expect(page).toHaveURL(/\/order\/7001/);
+  await expect(page.locator('.order-detail-panel')).toContainText('7001');
+});
