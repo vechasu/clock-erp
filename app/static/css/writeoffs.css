@@ -24,9 +24,7 @@
 .writeoff-table th:nth-child(10) { width: 220px; }
 .writeoff-table td:nth-child(2), .writeoff-table td:nth-child(9) { white-space: normal; overflow-wrap: anywhere; }
 .writeoff-table img { float: left; margin-right: 8px; }
-#writeoffForm { display: grid; gap: 14px; }
-#writeoffForm .field { display: grid; gap: 6px; }
-#writeoffForm input, #writeoffForm select, #writeoffForm textarea { width: 100%; }
+#writeoffProductSummary[hidden] { display: none; }
 #writeoffError { margin: 0; }
 @media (max-width: 600px) {
     .writeoff-filters label:first-of-type { flex-basis: 100%; }

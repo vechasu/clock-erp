@@ -29,17 +29,61 @@
 </tr>{% else %}<tr><td colspan="10">Списаний по выбранным условиям нет.</td></tr>{% endfor %}</tbody></table>
 </div>{{ render_erp_pagination(pagination, 'Журнал списаний') }}</div>
 </main></div>
-<div id="writeoffModal" class="modal erp-modal" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
-<div class="modal-dialog erp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="writeoffTitle">
-<div class="modal-header"><h2 id="writeoffTitle">Добавить списание</h2><button type="button" class="modal-close" id="closeWriteoff" aria-label="Закрыть">×</button></div>
-<form id="writeoffForm" class="modal-body" data-shared-catalog-scope data-catalog-product-global="true" data-catalog-in-stock="true">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<div class="field"><label for="writeoffProductTrigger">Товар *</label>{{ render_catalog_combobox('writeoffProduct','product_id',[],item_label='товар',shared_catalog_kind='product',input_id='writeoffProductId',clear_selection_on_search_clear=true) }}</div>
-<div id="writeoffProductSummary" hidden><img id="writeoffPhoto" alt="" width="70" height="70" style="object-fit:contain"><p id="writeoffProductDetails"></p></div>
-<div class="field"><label for="writeoffQuantity">Количество *</label><input id="writeoffQuantity" name="quantity" type="number" min="1" step="1" required value="1"></div>
-<div class="field"><label for="writeoffReason">Причина *</label><select id="writeoffReason" name="reason" required><option value="">Выберите причину</option>{% for reason in reasons %}<option>{{ reason }}</option>{% endfor %}</select></div>
-<div class="field"><label for="writeoffComment">Комментарий</label><textarea id="writeoffComment" name="comment" maxlength="2000"></textarea></div>
-<p id="writeoffError" role="alert"></p><button id="submitWriteoff" class="button button-primary" type="submit">Списать</button>
-</form></div></div>
+{# Sales and write-offs are mutually exclusive views in sales.html. Reuse the
+   sale modal shell ID because its shared visual rules are scoped to this ID. #}
+<div id="manualSaleModal" class="modal sales-form-modal erp-modal" role="dialog" aria-modal="true" aria-labelledby="writeoffTitle" aria-hidden="true" data-writeoff-modal data-erp-modal-shell data-erp-modal-lock>
+    <div class="modal-dialog sales-form-dialog erp-modal-dialog">
+        <div class="modal-header erp-modal-header">
+            <h2 id="writeoffTitle">Добавить списание</h2>
+            <button type="button" class="modal-close" id="closeWriteoff" aria-label="Закрыть">×</button>
+        </div>
+        <div class="modal-body sales-form-body erp-modal-body">
+            <form id="writeoffForm" class="sale-form" data-shared-catalog-scope data-catalog-in-stock="true">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <fieldset class="manual-form-grid">
+                    <h3 class="erp-form-section-title field-wide sale-section-title">Товар</h3>
+                    <div class="field sale-catalog-field">
+                        <label for="writeoffBrandTrigger">Бренд</label>
+                        {{ render_catalog_combobox('writeoffBrand', 'product_brand', [], item_label='бренд', prefix_search=true, empty_label='Ничего не найдено', component_class='filter-combobox', clear_selection_on_search_clear=true, shared_catalog_kind='brand', id_input_name='brand_id') }}
+                    </div>
+                    <div class="field sale-catalog-field">
+                        <label for="writeoffCategoryTrigger">Категория</label>
+                        {{ render_catalog_combobox('writeoffCategory', 'product_category', [], item_label='категорию', disabled=true, prefix_search=true, empty_label='Ничего не найдено', component_class='filter-combobox', clear_selection_on_search_clear=true, shared_catalog_kind='category', id_input_name='category_id') }}
+                    </div>
+                    <div class="field sale-catalog-field">
+                        <label for="writeoffProductTrigger">Товар</label>
+                        {{ render_catalog_combobox('writeoffProduct', 'product_id', [], item_label='товар', disabled=true, prefix_search=true, empty_label='Ничего не найдено', component_class='filter-combobox sales-product-combobox', clear_selection_on_search_clear=true, input_id='writeoffProductId', shared_catalog_kind='product') }}
+                    </div>
+                    <div id="writeoffProductSummary" class="field field-wide sale-product-summary" hidden>
+                        <div class="sale-product-photo">
+                            <span class="sale-product-photo-images"><img id="writeoffPhoto" alt="" hidden></span>
+                            <span id="writeoffPhotoPlaceholder" class="sale-product-photo-placeholder">Нет фото</span>
+                            <div class="sale-product-summary-copy">
+                                <strong id="writeoffProductName"></strong>
+                                <span id="writeoffProductDetails" class="product-meta-preview"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="field field-wide">
+                        <label for="writeoffQuantity">Количество *</label>
+                        <input id="writeoffQuantity" class="control" name="quantity" type="number" min="1" step="1" required value="1">
+                    </div>
+                    <div class="field field-wide">
+                        <label for="writeoffReason">Причина *</label>
+                        <select id="writeoffReason" class="control" name="reason" required><option value="">Выберите причину</option>{% for reason in reasons %}<option>{{ reason }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="field field-wide">
+                        <label for="writeoffComment">Комментарий</label>
+                        <textarea id="writeoffComment" class="control" name="comment" maxlength="2000"></textarea>
+                    </div>
+                    <p id="writeoffError" class="field-wide erp-field-error" role="alert"></p>
+                </fieldset>
+                <div class="form-actions sales-form-actions erp-modal-actions">
+                    <button id="submitWriteoff" class="button button-primary" type="submit">Списать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 <script src="{{ url_for('static',filename='js/catalog-combobox.js') }}"></script>
 <script src="{{ url_for('static',filename='js/writeoffs.js') }}"></script>
