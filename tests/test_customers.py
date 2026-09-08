@@ -333,6 +333,16 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         self.assertNotEqual(reused_email["customer_id"], second["customer_id"])
         self.assertEqual(reused_email["reason"], "phone_email_value_conflict")
 
+    def test_personal_external_id_precedes_new_contact_but_never_crosses_customers(self):
+        first = self.add(11, phone="+79000000011", email="first@example.ru", external_customer_id="personal")
+        changed_email = self.add(12, phone="+79000000011", email="new@example.ru", external_customer_id="personal")
+        self.assertEqual(changed_email["customer_id"], first["customer_id"])
+        self.assertEqual(changed_email["matched_by"], "external_id_and_contact")
+        other = self.add(13, phone="+79000000013", email="other@example.ru")
+        conflict = self.add(14, phone="+79000000011", email="other@example.ru", external_customer_id="personal")
+        self.assertNotIn(conflict["customer_id"], {first["customer_id"], other["customer_id"]})
+        self.assertEqual(conflict["reason"], "phone_email_cross_conflict")
+
     def test_more_than_100_server_paginated_customers_and_global_search(self):
         for index in range(1, 126):
             self.add(index, name="Клиент {}".format(index), phone="+1 202 555 {:04d}".format(index))
