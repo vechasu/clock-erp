@@ -253,10 +253,15 @@ class DomainSchemaMigrationTest(unittest.TestCase):
                 "customer_fold TEXT NOT NULL,extra_fold TEXT NOT NULL DEFAULT '',phone_digits TEXT NOT NULL,"
                 "amount_search TEXT NOT NULL,date_search TEXT NOT NULL,created_sort TEXT NOT NULL,status TEXT NOT NULL,"
                 "item_units REAL,detail_loaded INTEGER NOT NULL DEFAULT 0,payload_json TEXT NOT NULL,loaded_at REAL NOT NULL,"
-                "customer_id INTEGER)"
+                "customer_id INTEGER,work_status TEXT NOT NULL DEFAULT 'UNKNOWN')"
             )
             connection.execute("DROP TABLE orders_snapshot_old")
             for name, columns, unique in (
+                ("idx_orders_page", "created_sort,order_id", ""),
+                ("idx_orders_source_page", "source,created_sort,order_id", ""),
+                ("idx_orders_work_status", "work_status,source,created_sort,order_id", ""),
+                ("idx_orders_number", "number_fold", ""),
+                ("idx_orders_external", "external_order_id", ""),
                 ("idx_orders_snapshot_ordering", "source_position,order_id", ""),
                 ("idx_orders_snapshot_status_ordering", "status,source_position,order_id", ""),
                 ("idx_orders_snapshot_created", "created_sort,source_position,order_id", ""),

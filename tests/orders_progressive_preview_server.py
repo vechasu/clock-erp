@@ -16,7 +16,7 @@ web.schedule_order_comment_sync = lambda *args, **kwargs: None
 web.wb_diagnostics = lambda *args: dict(last_success_at='2026-09-07T06:10:00Z',attention=1,errors=[{'error':'Тестовая ошибка API'}],supplies=[],pending=[])
 # Resolve synthetic UI photos without external requests; transactional posting has separate backend tests.
 def mapping(products, **kwargs):
-    return {web.order_product_mapping_key(p): {'state':'mapped', 'mapping_method':'article', 'product':dict(id='1',name=p.get('name','Часы'),article=p.get('article','WATCH'),stock=10,image_url='/__orders-photo')} for p in products if int(p.get('order_item_id') or 0)%2}
+    return {key: {'state':'mapped', 'mapping_method':'article', 'product':dict(id='1',name=p.get('name','Часы'),article=p.get('article','WATCH'),stock=10,image_url='/__orders-photo')} for p, key in zip(products, kwargs.get('result_keys') or [web.order_product_mapping_key(p) for p in products]) if int(p.get('order_item_id') or 0)%2}
 web.build_order_product_mapping_context = mapping
 web.WildberriesSales.find_sale = lambda self, oid: {'id':'test-sale-9001'} if str(oid)=='9001' else None
 original_bulk = web.bulk_conducted_order_sales

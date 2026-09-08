@@ -52,7 +52,7 @@ class OrdersSQLiteCompatibilityTest(unittest.TestCase):
                     return original_connect(*args, **kwargs)
                 with self.subTest(runtime=factory.__name__), mock.patch('sqlite3.connect', side_effect=connect):
                     result = store.query({'source':'tictactoy', 'status':'D'}, status_overrides={'1':'assembled'})
-                self.assertEqual(factory.calls, [{'deterministic':True}, {}])
+                self.assertEqual(factory.calls, [])  # Indexed SQL no longer needs a Python UDF.
                 self.assertEqual(result['total'], 1)
                 self.assertEqual(result['rows'][0]['id'], '1')
                 self.assertEqual(result['rows'][0]['status'], 'C')

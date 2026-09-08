@@ -1,0 +1,733 @@
+{
+  "baseline_commit": "58750c0",
+  "synthetic_orders": 16471,
+  "before": {
+    "/order": {
+      "runs": [
+        {
+          "ms": 2.0,
+          "status": 404,
+          "bytes": 207,
+          "sql_count": 2,
+          "sql_ms": 0.18
+        },
+        {
+          "ms": 0.79,
+          "status": 404,
+          "bytes": 207,
+          "sql_count": 2,
+          "sql_ms": 0.11
+        },
+        {
+          "ms": 0.77,
+          "status": 404,
+          "bytes": 207,
+          "sql_count": 2,
+          "sql_ms": 0.11
+        }
+      ],
+      "slow_sql": [
+        {
+          "sql": "DELETE FROM auth_sessions WHERE session_hash = ?",
+          "ms": 0.10470799999984237
+        },
+        {
+          "sql": "PRAGMA busy_timeout = 15000",
+          "ms": 0.004250000000149967
+        }
+      ]
+    },
+    "/orders": {
+      "runs": [
+        {
+          "ms": 959.85,
+          "status": 200,
+          "bytes": 410604,
+          "sql_count": 1337,
+          "sql_ms": 574.85
+        },
+        {
+          "ms": 718.06,
+          "status": 200,
+          "bytes": 410604,
+          "sql_count": 1334,
+          "sql_ms": 577.41
+        },
+        {
+          "ms": 711.78,
+          "status": 200,
+          "bytes": 410604,
+          "sql_count": 1334,
+          "sql_ms": 573.47
+        }
+      ],
+      "slow_sql": [
+        {
+          "sql": "SELECT source, order_work_status(payload_json) AS status, COUNT(*) AS count FROM orders_snapshot GROUP BY source, order_work_status(payload_json)",
+          "ms": 225.025209
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 32.01587400000028
+        },
+        {
+          "sql": "SELECT source, external_order_id FROM orders_snapshot GROUP BY source, external_order_id HAVING COUNT(*) > 1 LIMIT 1",
+          "ms": 2.138834000000145
+        },
+        {
+          "sql": "SELECT 1 FROM orders_snapshot WHERE trim(source) = '' OR source IS NULL OR external_order_id IS NULL OR trim(external_order_id) = '' LIMIT 1",
+          "ms": 2.0497499999998503
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.7610420000001561
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.7215419999995198
+        },
+        {
+          "sql": "SELECT id, source, external_order_id FROM erp_sales WHERE ((source = 'tictactoy' AND cancelled_at IS NULL AND deleted_at IS NULL) OR source = 'wildberries') AND external_order_id IN (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ORDER BY inserted_at DESC, id DESC",
+          "ms": 0.7204579999999794
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.719667000000257
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.7195829999999681
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.7187499999998792
+        }
+      ]
+    },
+    "/api/orders": {
+      "runs": [
+        {
+          "ms": 711.28,
+          "status": 200,
+          "bytes": 383116,
+          "sql_count": 1328,
+          "sql_ms": 581.85
+        },
+        {
+          "ms": 746.53,
+          "status": 200,
+          "bytes": 383116,
+          "sql_count": 1328,
+          "sql_ms": 589.41
+        },
+        {
+          "ms": 705.26,
+          "status": 200,
+          "bytes": 383116,
+          "sql_count": 1328,
+          "sql_ms": 574.19
+        }
+      ],
+      "slow_sql": [
+        {
+          "sql": "SELECT source, order_work_status(payload_json) AS status, COUNT(*) AS count FROM orders_snapshot GROUP BY source, order_work_status(payload_json)",
+          "ms": 226.60354200000035
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 32.173583000000505
+        },
+        {
+          "sql": "SELECT source, external_order_id FROM orders_snapshot GROUP BY source, external_order_id HAVING COUNT(*) > 1 LIMIT 1",
+          "ms": 2.175582999999648
+        },
+        {
+          "sql": "SELECT 1 FROM orders_snapshot WHERE trim(source) = '' OR source IS NULL OR external_order_id IS NULL OR trim(external_order_id) = '' LIMIT 1",
+          "ms": 2.004541999999887
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.7728339999992784
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.7644999999998348
+        },
+        {
+          "sql": "SELECT p.id, p.excel_name_raw AS name, COALESCE(p.excel_article, '') AS article, COALESCE(cp.barcode, '') AS barcode, COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') AS moysklad_product_id, CASE WHEN COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') = '' THEN 1 ELSE 0 END AS can_create_moysklad, p.brand_id, p.category_id, COALESCE(b.name, '') AS brand, COALESCE(c.name, '') AS category, COALESCE(p.cell, '') AS cell, p.stock, p.active, COALESCE(p.bitrix_thumbnail_url, p.bitrix_primary_image_url, '') AS bitrix_image_url FROM catalog_excel_products p LEFT JOIN erp_brands b ON b.id = p.brand_id LEFT JOIN erp_categories c ON c.id = p.category_id LEFT JOIN catalog_products cp ON cp.id = p.bitrix_catalog_product_id LEFT JOIN catalog_moysklad_mappings mm ON mm.product_id = cp.id AND mm.confirmed = 1 WHERE p.id IN (?)",
+          "ms": 0.7451669999998245
+        },
+        {
+          "sql": "SELECT id, source, external_order_id FROM erp_sales WHERE ((source = 'tictactoy' AND cancelled_at IS NULL AND deleted_at IS NULL) OR source = 'wildberries') AND external_order_id IN (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ORDER BY inserted_at DESC, id DESC",
+          "ms": 0.7356250000007947
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.733957999999646
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.7238330000003401
+        }
+      ]
+    },
+    "/api/orders?status=WB_NEW": {
+      "runs": [
+        {
+          "ms": 1034.72,
+          "status": 200,
+          "bytes": 384072,
+          "sql_count": 1328,
+          "sql_ms": 901.72
+        },
+        {
+          "ms": 1032.92,
+          "status": 200,
+          "bytes": 384072,
+          "sql_count": 1328,
+          "sql_ms": 901.27
+        },
+        {
+          "ms": 1027.98,
+          "status": 200,
+          "bytes": 384072,
+          "sql_count": 1328,
+          "sql_ms": 896.73
+        }
+      ],
+      "slow_sql": [
+        {
+          "sql": "SELECT source, order_work_status(payload_json) AS status, COUNT(*) AS count FROM orders_snapshot GROUP BY source, order_work_status(payload_json)",
+          "ms": 222.09283399999967
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot WHERE order_work_status(payload_json) = ? ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 184.6483750000001
+        },
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot WHERE order_work_status(payload_json) = ?",
+          "ms": 174.75291700000105
+        },
+        {
+          "sql": "SELECT source, external_order_id FROM orders_snapshot GROUP BY source, external_order_id HAVING COUNT(*) > 1 LIMIT 1",
+          "ms": 2.174166999999727
+        },
+        {
+          "sql": "SELECT 1 FROM orders_snapshot WHERE trim(source) = '' OR source IS NULL OR external_order_id IS NULL OR trim(external_order_id) = '' LIMIT 1",
+          "ms": 2.0334169999998153
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.7545830000008635
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.7524160000009772
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.7491660000020772
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.7353339999998099
+        },
+        {
+          "sql": "SELECT p.id, p.excel_name_raw AS name, COALESCE(p.excel_article, '') AS article, COALESCE(cp.barcode, '') AS barcode, COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') AS moysklad_product_id, CASE WHEN COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') = '' THEN 1 ELSE 0 END AS can_create_moysklad, p.brand_id, p.category_id, COALESCE(b.name, '') AS brand, COALESCE(c.name, '') AS category, COALESCE(p.cell, '') AS cell, p.stock, p.active, COALESCE(p.bitrix_thumbnail_url, p.bitrix_primary_image_url, '') AS bitrix_image_url FROM catalog_excel_products p LEFT JOIN erp_brands b ON b.id = p.brand_id LEFT JOIN erp_categories c ON c.id = p.category_id LEFT JOIN catalog_products cp ON cp.id = p.bitrix_catalog_product_id LEFT JOIN catalog_moysklad_mappings mm ON mm.product_id = cp.id AND mm.confirmed = 1 WHERE p.id IN (?)",
+          "ms": 0.7336659999985784
+        }
+      ]
+    },
+    "/order/wildberries/900000": {
+      "runs": [
+        {
+          "ms": 734.76,
+          "status": 200,
+          "bytes": 455181,
+          "sql_count": 1403,
+          "sql_ms": 590.71
+        },
+        {
+          "ms": 727.69,
+          "status": 200,
+          "bytes": 455181,
+          "sql_count": 1403,
+          "sql_ms": 586.76
+        },
+        {
+          "ms": 739.77,
+          "status": 200,
+          "bytes": 455181,
+          "sql_count": 1403,
+          "sql_ms": 594.4
+        }
+      ],
+      "slow_sql": [
+        {
+          "sql": "SELECT source, order_work_status(payload_json) AS status, COUNT(*) AS count FROM orders_snapshot GROUP BY source, order_work_status(payload_json)",
+          "ms": 224.9462910000002
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 33.45770700000017
+        },
+        {
+          "sql": "SELECT source, external_order_id FROM orders_snapshot GROUP BY source, external_order_id HAVING COUNT(*) > 1 LIMIT 1",
+          "ms": 2.2089159999989505
+        },
+        {
+          "sql": "SELECT source, external_order_id FROM orders_snapshot GROUP BY source, external_order_id HAVING COUNT(*) > 1 LIMIT 1",
+          "ms": 2.1719170000000787
+        },
+        {
+          "sql": "SELECT 1 FROM orders_snapshot WHERE trim(source) = '' OR source IS NULL OR external_order_id IS NULL OR trim(external_order_id) = '' LIMIT 1",
+          "ms": 2.0445829999999887
+        },
+        {
+          "sql": "SELECT 1 FROM orders_snapshot WHERE trim(source) = '' OR source IS NULL OR external_order_id IS NULL OR trim(external_order_id) = '' LIMIT 1",
+          "ms": 1.9399999999993867
+        },
+        {
+          "sql": "SELECT p.id, p.excel_name_raw AS name, COALESCE(p.excel_article, '') AS article, COALESCE(cp.barcode, '') AS barcode, COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') AS moysklad_product_id, CASE WHEN COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') = '' THEN 1 ELSE 0 END AS can_create_moysklad, p.brand_id, p.category_id, COALESCE(b.name, '') AS brand, COALESCE(c.name, '') AS category, COALESCE(p.cell, '') AS cell, p.stock, p.active, COALESCE(p.bitrix_thumbnail_url, p.bitrix_primary_image_url, '') AS bitrix_image_url FROM catalog_excel_products p LEFT JOIN erp_brands b ON b.id = p.brand_id LEFT JOIN erp_categories c ON c.id = p.category_id LEFT JOIN catalog_products cp ON cp.id = p.bitrix_catalog_product_id LEFT JOIN catalog_moysklad_mappings mm ON mm.product_id = cp.id AND mm.confirmed = 1 WHERE p.id IN (?)",
+          "ms": 0.8475409999988415
+        },
+        {
+          "sql": "SELECT p.id, p.excel_name_raw AS name, COALESCE(p.excel_article, '') AS article, COALESCE(cp.barcode, '') AS barcode, COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') AS moysklad_product_id, CASE WHEN COALESCE(p.moysklad_product_id, mm.moysklad_product_id, '') = '' THEN 1 ELSE 0 END AS can_create_moysklad, p.brand_id, p.category_id, COALESCE(b.name, '') AS brand, COALESCE(c.name, '') AS category, COALESCE(p.cell, '') AS cell, p.stock, p.active, COALESCE(p.bitrix_thumbnail_url, p.bitrix_primary_image_url, '') AS bitrix_image_url FROM catalog_excel_products p LEFT JOIN erp_brands b ON b.id = p.brand_id LEFT JOIN erp_categories c ON c.id = p.category_id LEFT JOIN catalog_products cp ON cp.id = p.bitrix_catalog_product_id LEFT JOIN catalog_moysklad_mappings mm ON mm.product_id = cp.id AND mm.confirmed = 1 WHERE p.id IN (?)",
+          "ms": 0.8057919999995278
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.785999999997955
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 0.7857510000004453
+        }
+      ]
+    },
+    "/order/7001": {
+      "runs": [
+        {
+          "ms": 731.48,
+          "status": 200,
+          "bytes": 435856,
+          "sql_count": 1379,
+          "sql_ms": 586.04
+        },
+        {
+          "ms": 728.47,
+          "status": 200,
+          "bytes": 435856,
+          "sql_count": 1376,
+          "sql_ms": 586.92
+        },
+        {
+          "ms": 735.79,
+          "status": 200,
+          "bytes": 435856,
+          "sql_count": 1376,
+          "sql_ms": 591.36
+        }
+      ],
+      "slow_sql": [
+        {
+          "sql": "SELECT source, order_work_status(payload_json) AS status, COUNT(*) AS count FROM orders_snapshot GROUP BY source, order_work_status(payload_json)",
+          "ms": 228.9485419999995
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 31.985041999998742
+        },
+        {
+          "sql": "SELECT source, external_order_id FROM orders_snapshot GROUP BY source, external_order_id HAVING COUNT(*) > 1 LIMIT 1",
+          "ms": 2.1519999999988215
+        },
+        {
+          "sql": "SELECT 1 FROM orders_snapshot WHERE trim(source) = '' OR source IS NULL OR external_order_id IS NULL OR trim(external_order_id) = '' LIMIT 1",
+          "ms": 2.0449999999989643
+        },
+        {
+          "sql": "SELECT DISTINCT p.id,p.excel_name_raw name,p.excel_article article,p.stock,p.active FROM catalog_excel_products p LEFT JOIN catalog_products cp ON cp.id=p.bitrix_catalog_product_id WHERE p.deleted_at IS NULL AND (lower(trim(COALESCE(p.excel_article,'')))=lower(?)) ORDER BY p.id LIMIT 2",
+          "ms": 2.002458000001539
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.863207000000088
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.833042000000006
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.8330419999982297
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.8178749999991908
+        },
+        {
+          "sql": "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id",
+          "ms": 0.811667000000682
+        }
+      ]
+    }
+  },
+  "after": {
+    "/order": {
+      "runs": [
+        {
+          "ms": 1.89,
+          "status": 404,
+          "bytes": 207,
+          "sql_count": 2,
+          "sql_selects": 0,
+          "sql_ms": 0.17
+        },
+        {
+          "ms": 0.78,
+          "status": 404,
+          "bytes": 207,
+          "sql_count": 2,
+          "sql_selects": 0,
+          "sql_ms": 0.11
+        },
+        {
+          "ms": 0.78,
+          "status": 404,
+          "bytes": 207,
+          "sql_count": 2,
+          "sql_selects": 0,
+          "sql_ms": 0.11
+        }
+      ],
+      "order_sql": []
+    },
+    "/orders": {
+      "runs": [
+        {
+          "ms": 307.59,
+          "status": 200,
+          "bytes": 332561,
+          "sql_count": 257,
+          "sql_selects": 44,
+          "sql_ms": 32.31
+        },
+        {
+          "ms": 61.19,
+          "status": 200,
+          "bytes": 332561,
+          "sql_count": 259,
+          "sql_selects": 45,
+          "sql_ms": 31.94
+        },
+        {
+          "ms": 61.76,
+          "status": 200,
+          "bytes": 332561,
+          "sql_count": 259,
+          "sql_selects": 45,
+          "sql_ms": 32.06
+        }
+      ],
+      "order_sql": [
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.10299999999974219
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS effective_status FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 0.13291600000009396
+        },
+        {
+          "sql": "SELECT source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS status, COUNT(*) AS count FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id GROUP BY source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END",
+          "ms": 17.987166000000165
+        },
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.09791600000008671
+        }
+      ]
+    },
+    "/api/orders": {
+      "runs": [
+        {
+          "ms": 47.81,
+          "status": 200,
+          "bytes": 340092,
+          "sql_count": 43,
+          "sql_selects": 19,
+          "sql_ms": 27.43
+        },
+        {
+          "ms": 47.71,
+          "status": 200,
+          "bytes": 340092,
+          "sql_count": 43,
+          "sql_selects": 19,
+          "sql_ms": 27.5
+        },
+        {
+          "ms": 49.02,
+          "status": 200,
+          "bytes": 340092,
+          "sql_count": 43,
+          "sql_selects": 19,
+          "sql_ms": 28.52
+        }
+      ],
+      "order_sql": [
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.12287499999974472
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS effective_status FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 0.13329299999975674
+        },
+        {
+          "sql": "SELECT source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS status, COUNT(*) AS count FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id GROUP BY source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END",
+          "ms": 19.040042000000312
+        },
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.09762499999999008
+        }
+      ]
+    },
+    "/api/orders?status=WB_NEW": {
+      "runs": [
+        {
+          "ms": 49.3,
+          "status": 200,
+          "bytes": 341272,
+          "sql_count": 43,
+          "sql_selects": 19,
+          "sql_ms": 27.71
+        },
+        {
+          "ms": 49.18,
+          "status": 200,
+          "bytes": 341272,
+          "sql_count": 43,
+          "sql_selects": 19,
+          "sql_ms": 27.82
+        },
+        {
+          "ms": 48.88,
+          "status": 200,
+          "bytes": 341272,
+          "sql_count": 43,
+          "sql_selects": 19,
+          "sql_ms": 27.72
+        }
+      ],
+      "order_sql": [
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id WHERE work_status = ? AND source = 'wildberries'",
+          "ms": 0.42220800000025704
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS effective_status FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id WHERE work_status = ? AND source = 'wildberries' ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 0.17216700000011187
+        },
+        {
+          "sql": "SELECT source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS status, COUNT(*) AS count FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id GROUP BY source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END",
+          "ms": 18.032042000000192
+        },
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.11016599999980059
+        }
+      ]
+    },
+    "/order/wildberries/900000": {
+      "runs": [
+        {
+          "ms": 79.59,
+          "status": 200,
+          "bytes": 377138,
+          "sql_count": 304,
+          "sql_selects": 64,
+          "sql_ms": 43.89
+        },
+        {
+          "ms": 79.35,
+          "status": 200,
+          "bytes": 377138,
+          "sql_count": 304,
+          "sql_selects": 64,
+          "sql_ms": 43.82
+        },
+        {
+          "ms": 79.55,
+          "status": 200,
+          "bytes": 377138,
+          "sql_count": 304,
+          "sql_selects": 64,
+          "sql_ms": 43.86
+        }
+      ],
+      "order_sql": [
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot WHERE order_id = ?",
+          "ms": 0.07774999999998755
+        },
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.10358399999965684
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS effective_status FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 0.13220799999968946
+        },
+        {
+          "sql": "SELECT source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS status, COUNT(*) AS count FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id GROUP BY source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END",
+          "ms": 18.004708000000313
+        },
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.10245900000027675
+        }
+      ]
+    },
+    "/order/7001": {
+      "runs": [
+        {
+          "ms": 81.88,
+          "status": 200,
+          "bytes": 357813,
+          "sql_count": 310,
+          "sql_selects": 67,
+          "sql_ms": 44.78
+        },
+        {
+          "ms": 79.68,
+          "status": 200,
+          "bytes": 357813,
+          "sql_count": 307,
+          "sql_selects": 65,
+          "sql_ms": 43.41
+        },
+        {
+          "ms": 82.87,
+          "status": 200,
+          "bytes": 357813,
+          "sql_count": 307,
+          "sql_selects": 65,
+          "sql_ms": 44.85
+        }
+      ],
+      "order_sql": [
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.10245799999974992
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS effective_status FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
+          "ms": 0.13583300000030718
+        },
+        {
+          "sql": "SELECT source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END AS status, COUNT(*) AS count FROM orders_snapshot LEFT JOIN (SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses) AS overrides ON source != 'wildberries' AND overrides.override_id = order_id GROUP BY source, CASE overrides.erp_status WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END",
+          "ms": 18.471707999999865
+        },
+        {
+          "sql": "SELECT COUNT(*) FROM orders_snapshot",
+          "ms": 0.09579200000020549
+        },
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot WHERE order_id = ?",
+          "ms": 0.08300000000005525
+        }
+      ]
+    },
+    "/order/wildberries/900000#fragment": {
+      "runs": [
+        {
+          "ms": 23.51,
+          "status": 200,
+          "bytes": 88259,
+          "sql_count": 52,
+          "sql_selects": 21,
+          "sql_ms": 12.81
+        },
+        {
+          "ms": 22.74,
+          "status": 200,
+          "bytes": 88259,
+          "sql_count": 52,
+          "sql_selects": 21,
+          "sql_ms": 12.37
+        },
+        {
+          "ms": 22.78,
+          "status": 200,
+          "bytes": 88259,
+          "sql_count": 52,
+          "sql_selects": 21,
+          "sql_ms": 12.37
+        }
+      ],
+      "order_sql": [
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot WHERE order_id = ?",
+          "ms": 0.07741699999996854
+        }
+      ]
+    },
+    "/order/7001#fragment": {
+      "runs": [
+        {
+          "ms": 23.01,
+          "status": 200,
+          "bytes": 69018,
+          "sql_count": 55,
+          "sql_selects": 22,
+          "sql_ms": 11.74
+        },
+        {
+          "ms": 22.99,
+          "status": 200,
+          "bytes": 69018,
+          "sql_count": 55,
+          "sql_selects": 22,
+          "sql_ms": 11.74
+        },
+        {
+          "ms": 22.99,
+          "status": 200,
+          "bytes": 69018,
+          "sql_count": 55,
+          "sql_selects": 22,
+          "sql_ms": 11.72
+        }
+      ],
+      "order_sql": [
+        {
+          "sql": "SELECT payload_json, item_units, customer_id FROM orders_snapshot WHERE order_id = ?",
+          "ms": 0.07737500000004616
+        }
+      ]
+    },
+    "query_plans": {
+      "SELECT payload_json FROM orders_snapshot ORDER BY created_sort DESC,order_id DESC LIMIT 50": [
+        "SCAN orders_snapshot USING INDEX idx_orders_page"
+      ],
+      "SELECT payload_json FROM orders_snapshot WHERE source='wildberries' ORDER BY created_sort DESC,order_id DESC LIMIT 50": [
+        "SEARCH orders_snapshot USING INDEX idx_orders_source_page (source=?)"
+      ],
+      "SELECT order_id FROM orders_snapshot WHERE number_fold='900001' OR order_id='900001' OR external_order_id='900001'": [
+        "MULTI-INDEX OR",
+        "INDEX 1",
+        "SEARCH orders_snapshot USING INDEX idx_orders_number (number_fold=?)",
+        "INDEX 2",
+        "SEARCH orders_snapshot USING INDEX sqlite_autoindex_orders_snapshot_1 (order_id=?)",
+        "INDEX 3",
+        "SEARCH orders_snapshot USING INDEX idx_orders_external (external_order_id=?)"
+      ],
+      "SELECT source,work_status,COUNT(*) FROM orders_snapshot GROUP BY source,work_status": [
+        "SCAN orders_snapshot USING COVERING INDEX idx_orders_work_status"
+      ]
+    }
+  }
+}
