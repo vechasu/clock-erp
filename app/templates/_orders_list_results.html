@@ -11,8 +11,8 @@
     </div>
     {% endif %}
     {% if orders %}
-    {% for mode in ['list','split'] %}
-    <div class="orders-table-scroll orders-{{ mode }}-table-scroll" tabindex="0" aria-label="Список заказов">
+    {% set mode = 'split' %}
+    <div data-orders-table-scroll class="orders-table-scroll orders-{{ mode }}-table-scroll" tabindex="0" aria-label="Список заказов">
         <table class="orders-table orders-{{ mode }}-table order-work-table">
             <thead><tr><th>Заказ / товар</th><th>Создан</th><th>Количество</th><th>Сумма</th><th>Состояние</th></tr></thead>
             <tbody>{% for order in orders %}
@@ -26,7 +26,7 @@
                 {% set preview = order.get('product_preview') or product %}
                 {% set is_selected = selected_order and selected_order.get('id')|string == oid|string %}
                 {% set total = order.get('order_total') if order.get('order_total') is not none else order.get('price') %}
-                <tr class="{{ 'order-table-row' if mode == 'split' else 'orders-list-row' }}{% if is_selected %} active is-selected{% endif %}" data-order-id="{{ oid }}" data-list-order-id="{{ oid }}" data-order-href="{{ order_url }}" tabindex="0" aria-label="Открыть заказ №{{ number }}"{% if is_selected %} aria-current="true"{% endif %}>
+                <tr class="order-table-row{% if is_selected %} active is-selected{% endif %}" data-order-id="{{ oid }}" data-list-order-id="{{ oid }}" data-order-href="{{ order_url }}" tabindex="0" aria-label="Открыть заказ №{{ number }}"{% if is_selected %} aria-current="true"{% endif %}>
                     <td class="order-identity-cell">
                         <div class="order-row-product">
                             {% if preview.get('image_url') %}<img class="order-row-photo" src="{{ preview.image_url }}" alt="Фото товара" loading="lazy">{% else %}<span class="order-row-photo order-photo-placeholder" role="img" aria-label="Нет фото">◇</span>{% endif %}
@@ -61,7 +61,6 @@
             {% endfor %}</tbody>
         </table>
     </div>
-    {% endfor %}
     {% elif exact_search and exact_search.external_results %}
         <div class="external-order-results">
         {% for order in exact_search.external_results %}

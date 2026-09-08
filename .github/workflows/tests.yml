@@ -138,6 +138,12 @@ jobs:
       - name: Orders UX Playwright regression
         run: pnpm exec playwright test --config playwright.orders.config.ts
 
+      - name: Orders navigation concurrency regression
+        env:
+          ERP_TEST_MODE: "1"
+          ERP_AUTH_ENABLED: "0"
+        run: pnpm exec playwright test e2e/orders-navigation.spec.ts --project desktop-1440
+
       - name: Local supplies Playwright regression
         run: pnpm exec playwright test --config playwright.supplies.config.ts
 
