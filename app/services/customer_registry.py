@@ -85,14 +85,16 @@ def order_number_query(value):
     return match.group(1) if match else ""
 
 
-def validate_database(path):
+def validate_database(path, full_check=True):
     path = Path(path)
     if not path.exists():
         raise sqlite3.OperationalError("customer registry migration required")
     resolved = str(path.resolve())
     stat = path.stat()
-    signature = (getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1000000000)), stat.st_size)
-    if _VALIDATED_DATABASES.get(resolved) == signature:
+    signature = (stat.st_dev, stat.st_ino,
+                 getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1000000000)), stat.st_size)
+    cache_key = (resolved, bool(full_check))
+    if _VALIDATED_DATABASES.get(cache_key) == signature:
         return
     connection = sqlite3.connect("file:{}?mode=ro".format(resolved), uri=True)
     try:
@@ -110,9 +112,9 @@ def validate_database(path):
         ).fetchone()
         if not version or version[0] != SCHEMA_VERSION:
             raise sqlite3.DatabaseError("customer registry version differs")
-        if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+        if full_check and connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise sqlite3.DatabaseError("customer registry quick_check failed")
-        _VALIDATED_DATABASES[resolved] = signature
+        _VALIDATED_DATABASES[cache_key] = signature
     finally:
         connection.close()
 
@@ -133,7 +135,9 @@ class CustomerRegistry:
         self.path = Path(path or os.getenv("CUSTOMERS_DATABASE_PATH") or "instance/customers.db")
 
     def validate(self):
-        validate_database(self.path)
+        # Runtime reads verify schema/version, not every page of the database.
+        # Full integrity verification remains the default for the deploy CLI.
+        validate_database(self.path, full_check=False)
 
     @contextmanager
     def connection(self):
