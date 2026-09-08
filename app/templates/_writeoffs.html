@@ -10,7 +10,7 @@
 {% for tab in source_tabs %}<a class="sales-tab erp-section-tab{% if tab.active %} is-active{% endif %}" href="{{ tab.url }}" {% if tab.active %}aria-current="page"{% endif %}>{{ tab.label }}</a>{% endfor %}
 </div></nav>
 <p id="writeoffNotice" role="status" hidden></p>
-<form method="get" class="writeoff-filters" aria-label="Фильтры списаний">
+<form method="get" class="writeoff-filters erp-toolbar-card" aria-label="Фильтры списаний">
 <input type="hidden" name="source" value="writeoff">
 <label>Поиск <input class="control" type="search" name="q" value="{{ request.args.get('q','') }}" placeholder="Товар, артикул, сотрудник"></label>
 <label>С <input class="control" type="date" name="date_from" value="{{ request.args.get('date_from','') }}"></label>
@@ -29,26 +29,28 @@
 </tr>{% else %}<tr><td colspan="10" class="writeoff-empty">Списаний по выбранным условиям нет.</td></tr>{% endfor %}</tbody></table>
 </div>{{ render_erp_pagination(pagination, 'Журнал списаний') }}</div>
 </main></div>
-<div id="writeoffModal" class="modal erp-modal" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
-<div class="modal-dialog erp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="writeoffTitle">
-<div class="modal-header"><h2 id="writeoffTitle">Добавить списание</h2><button type="button" class="modal-close" id="closeWriteoff" aria-label="Закрыть">×</button></div>
-<form id="writeoffForm" class="modal-body" data-shared-catalog-scope data-catalog-option-images="false" data-catalog-in-stock="true">
+<div id="writeoffModal" class="modal erp-modal sales-form-modal" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
+<div class="modal-dialog erp-modal-dialog sales-form-dialog" role="dialog" aria-modal="true" aria-labelledby="writeoffTitle">
+<div class="modal-header erp-modal-header"><h2 id="writeoffTitle">Добавить списание</h2><button type="button" class="modal-close" id="closeWriteoff" aria-label="Закрыть">×</button></div>
+<form id="writeoffForm" class="modal-body sales-form-body" data-shared-catalog-scope data-catalog-option-images="false" data-catalog-in-stock="true">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<h3 class="erp-form-section-title">Товар</h3>
-<div class="writeoff-catalog-grid">
-<div class="field"><label for="writeoffBrandTrigger">Бренд</label>{{ render_catalog_combobox('writeoffBrand','product_brand',[],item_label='бренд',component_class='filter-combobox',shared_catalog_kind='brand',id_input_name='brand_id',clear_selection_on_search_clear=true) }}</div>
-<div class="field"><label for="writeoffCategoryTrigger">Категория</label>{{ render_catalog_combobox('writeoffCategory','product_category',[],item_label='категорию',component_class='filter-combobox',shared_catalog_kind='category',id_input_name='category_id',disabled=true,clear_selection_on_search_clear=true) }}</div>
-<div class="field"><label for="writeoffProductTrigger">Товар *</label>{{ render_catalog_combobox('writeoffProduct','product_id',[],item_label='товар',component_class='filter-combobox sales-product-combobox',shared_catalog_kind='product',input_id='writeoffProductId',disabled=true,clear_selection_on_search_clear=true) }}</div>
+<div class="manual-form-grid writeoff-form-grid">
+<h3 class="erp-form-section-title field-wide sale-section-title">Товар</h3>
+<div class="field sale-catalog-field"><label for="writeoffBrandTrigger">Бренд</label>{{ render_catalog_combobox('writeoffBrand','product_brand',[],item_label='бренд',component_class='filter-combobox',shared_catalog_kind='brand',id_input_name='brand_id',clear_selection_on_search_clear=true) }}</div>
+<div class="field sale-catalog-field"><label for="writeoffCategoryTrigger">Категория</label>{{ render_catalog_combobox('writeoffCategory','product_category',[],item_label='категорию',component_class='filter-combobox',shared_catalog_kind='category',id_input_name='category_id',disabled=true,clear_selection_on_search_clear=true) }}</div>
+<div class="field sale-catalog-field"><label for="writeoffProductTrigger">Товар *</label>{{ render_catalog_combobox('writeoffProduct','product_id',[],item_label='товар',component_class='filter-combobox sales-product-combobox',shared_catalog_kind='product',input_id='writeoffProductId',disabled=true,required=true,clear_selection_on_search_clear=true) }}</div>
+<div id="writeoffProductSummary" class="field field-wide sale-product-summary" aria-live="polite">
+  <div class="sale-product-photo">
+    <img id="writeoffPhoto" alt="" width="56" height="56" hidden>
+    <span id="writeoffPhotoPlaceholder" class="sale-product-photo-placeholder">Нет фото</span>
+    <div class="sale-product-summary-copy"><strong id="writeoffProductName">Выберите товар</strong><span id="writeoffProductDetails" class="product-meta-preview">Баркод, артикул и остаток появятся после выбора товара.</span></div>
+  </div>
 </div>
-<div id="writeoffProductSummary" class="sale-product-photo" aria-live="polite">
-<img id="writeoffPhoto" alt="" width="52" height="52" hidden>
-<span id="writeoffPhotoPlaceholder" class="sale-product-photo-placeholder">Нет фото</span>
-<div class="sale-product-summary-copy"><strong id="writeoffProductName">Выберите товар</strong><p id="writeoffProductDetails" class="product-meta-preview">Баркод, артикул и остаток появятся после выбора товара.</p></div>
-</div>
-<div class="field"><label for="writeoffQuantity">Количество *</label><input class="control" aria-describedby="writeoffError" id="writeoffQuantity" name="quantity" type="number" min="1" step="1" required value="1"></div>
-<div class="field"><label for="writeoffReason">Причина *</label><select class="control" id="writeoffReason" name="reason" required><option value="">Выберите причину</option>{% for reason in reasons %}<option>{{ reason }}</option>{% endfor %}</select></div>
-<div class="field"><label for="writeoffComment">Комментарий</label><textarea class="control" id="writeoffComment" name="comment" maxlength="2000"></textarea></div>
-<p id="writeoffError" role="alert"></p><button id="submitWriteoff" class="button button-primary" type="submit">Списать</button>
+<h3 class="erp-form-section-title field-wide sale-section-title">Списание</h3>
+<div class="field"><label for="writeoffQuantity">Количество *</label><input id="writeoffQuantity" class="control" aria-describedby="writeoffQuantityError" name="quantity" type="number" min="1" step="1" required value="1"><span id="writeoffQuantityError" class="erp-field-error" role="alert" hidden></span></div>
+<div class="field"><label for="writeoffReason">Причина *</label><select id="writeoffReason" class="control" name="reason" required><option value="">Выберите причину</option>{% for reason in reasons %}<option>{{ reason }}</option>{% endfor %}</select></div>
+<div class="field field-wide"><label for="writeoffComment">Комментарий</label><textarea id="writeoffComment" class="control" name="comment" maxlength="2000"></textarea></div>
+</div><p id="writeoffError" class="erp-field-error" role="alert"></p><div class="sales-form-actions"><button id="submitWriteoff" class="button button-primary" type="submit">Списать</button></div>
 </form></div></div>
 <script src="{{ url_for('static',filename='js/catalog-combobox.js') }}"></script>
 <script src="{{ url_for('static',filename='js/writeoffs.js') }}"></script>

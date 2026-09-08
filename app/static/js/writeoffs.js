@@ -17,6 +17,7 @@
     const reason = document.getElementById('writeoffReason');
     reason.onchange = () => { document.getElementById('writeoffComment').required = reason.value === 'Прочее'; };
     const quantity = document.getElementById('writeoffQuantity');
+    const quantityError = document.getElementById('writeoffQuantityError');
     const photo = document.getElementById('writeoffPhoto');
     const placeholder = document.getElementById('writeoffPhotoPlaceholder');
     let available = null;
@@ -28,7 +29,8 @@
                 ? `Нельзя списать больше доступного остатка: ${available} шт.` : '';
         quantity.setCustomValidity(message);
         quantity.setAttribute('aria-invalid', String(Boolean(message)));
-        error.textContent = message;
+        quantityError.textContent = message;
+        quantityError.hidden = !message;
         return !message;
     };
     quantity.addEventListener('input', validateQuantity);
@@ -39,7 +41,7 @@
         document.getElementById('writeoffProductDetails').textContent = p
             ? `Артикул: ${p.article || '—'} · Баркод: ${p.barcode || '—'} · Остаток: ${available} шт.`
             : 'Баркод, артикул и остаток появятся после выбора товара.';
-        const src = p && (p.local_image_url || p.image_url || p.thumbnail_url);
+        const src = p && (p.local_image_url || window.normalizeCatalogProductImageUrls(p)[0]);
         if (src) photo.src = src; else photo.removeAttribute('src');
         photo.hidden = !src;
         placeholder.hidden = Boolean(src);
