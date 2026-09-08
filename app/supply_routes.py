@@ -69,6 +69,17 @@ def register_supply_routes(w):
             return jsonify(ok=True, data=engine.update(supply_id, p.get('title'), p.get('comment'), p.get('items')))
         return jsonify(ok=True, data=engine.get(supply_id))
 
+    @app.route('/api/v1/receipts/supplies/<supply_id>/items', methods=['POST'])
+    @guarded
+    def add_item(supply_id):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise SupplyError('Некорректные данные товара.')
+        return jsonify(ok=True, data=SupplyEngine().add_item(
+            supply_id, payload.get('product_id'), payload.get('quantity'),
+            request.headers.get('Idempotency-Key'), actor(),
+        ))
+
     @app.route('/api/v1/receipts/supplies/<supply_id>/post', methods=['POST'])
     @guarded
     def post(supply_id):

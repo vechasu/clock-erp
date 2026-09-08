@@ -5,8 +5,12 @@ All mutations share CatalogDatabase.transaction (BEGIN IMMEDIATE) with sales.
 """
 import json
 import math
+import re
 import uuid
 
+from app.services.component_inventory import balance, remember, write_balance
+from app.services.inventory_lock import assert_products_unlocked
+from app.services.audit_journal import AuditJournal
 from app.catalog_db import CatalogDatabase
 from app.services.receipt_inventory import ReceiptInventory, ReceiptInventoryError, utc_now
 from app.services.bitrix_erp_product_sync import BitrixERPProductSync, enrichment_from_product
@@ -78,9 +82,9 @@ class SupplyEngine:
     def _replace(self, connection, supply_id, items, now):
         prepared = self._positions(items)
         for item in prepared:
-            row = connection.execute('SELECT bitrix_external_product_id, bitrix_catalog_product_id FROM catalog_excel_products WHERE id = ? AND active = 1 AND deleted_at IS NULL', (item['product_id'],)).fetchone()
-            if row is None or not (row['bitrix_external_product_id'] or row['bitrix_catalog_product_id']):
-                raise SupplyError('Выберите товар, связанный с Bitrix.')
+            row = connection.execute('SELECT id FROM catalog_excel_products WHERE id = ? AND active = 1 AND deleted_at IS NULL', (item['product_id'],)).fetchone()
+            if row is None:
+                raise SupplyError('Товар не найден в ERP. Сначала добавьте его в каталог.')
         products = ReceiptInventory._load_products(connection, prepared) if prepared else {}
         connection.execute('UPDATE erp_receipt_items SET active = 0 WHERE receipt_id = ?', (supply_id,))
         ReceiptInventory._insert_items(connection, supply_id, prepared, products, now)
@@ -96,6 +100,85 @@ class SupplyEngine:
             meta['title'] = title
             self._replace(connection, supply_id, items, utc_now())
             connection.execute('UPDATE erp_receipts SET comment = ?, metadata_json = ?, updated_at = ? WHERE id = ?', (comment, json.dumps(meta, ensure_ascii=False), utc_now(), supply_id))
+            return self._get(connection, supply_id)
+
+    def add_item(self, supply_id, product_id, quantity, key, actor='', failure_hook=None):
+        """Append once under the same write lock as posting and sales."""
+        prepared = self._positions([{'product_id': product_id, 'quantity': quantity}])
+        if not 0 < product_id <= 9223372036854775807:
+            raise SupplyError('Товар не найден в ERP. Сначала добавьте его в каталог.')
+        if not isinstance(key, str) or not re.fullmatch(r'[A-Za-z0-9._:-]{8,96}', key):
+            raise SupplyError('Укажите корректный идентификатор операции.')
+        with self.database.transaction() as connection:
+            row = self._row(connection, supply_id)
+            if row['status'] not in ('draft', 'posted'):
+                raise SupplyError('В удалённую поставку нельзя добавлять товары.')
+            meta = self._metadata(row)
+            additions = meta.setdefault('additions', {})
+            if not isinstance(additions, dict):
+                raise SupplyError('История дополнений повреждена. Требуется проверка поставки.')
+            previous = additions.get(key)
+            if previous:
+                if previous['product_id'] != product_id or previous['quantity'] != quantity:
+                    raise SupplyError('Идентификатор операции уже использован с другими данными.')
+                return self._get(connection, supply_id)
+            active = connection.execute(
+                'SELECT id FROM catalog_excel_products WHERE id = ? AND active = 1 AND deleted_at IS NULL',
+                (product_id,),
+            ).fetchone()
+            if active is None:
+                raise SupplyError('Товар не найден в ERP. Сначала добавьте его в каталог.')
+            products = ReceiptInventory._load_products(connection, prepared)
+            assert_products_unlocked(connection, [product_id], SupplyError)
+            existing = connection.execute(
+                'SELECT * FROM erp_receipt_items WHERE receipt_id = ? AND product_id = ? AND active = 1 ORDER BY id',
+                (supply_id, product_id),
+            ).fetchall()
+            if len(existing) > 1:
+                raise SupplyError('В поставке найдены дубли товара. Требуется проверка позиций.')
+            before_quantity = existing[0]['quantity'] if existing else 0
+            if before_quantity + quantity > 2147483647:
+                raise SupplyError('Количество превышает допустимое значение.')
+            now = utc_now()
+            if existing:
+                item_id = existing[0]['id']
+                connection.execute('UPDATE erp_receipt_items SET quantity = quantity + ? WHERE id = ?', (quantity, item_id))
+            else:
+                ReceiptInventory._insert_items(connection, supply_id, prepared, products, now)
+                item_id = connection.execute('SELECT last_insert_rowid()').fetchone()[0]
+            if row['status'] == 'posted':
+                # The addition uses today's physical/legacy balance; old movements stay immutable.
+                stock_before = balance(connection, product_id)
+                if not math.isfinite(stock_before) or stock_before < 0:
+                    raise SupplyError('Остаток товара некорректен. Добавление остановлено.')
+                remember(connection, product_id, ('receipt', supply_id))
+                stock_after = stock_before + quantity
+                write_balance(connection, product_id, stock_after, 'receipt', now)
+                connection.execute(
+                    "INSERT INTO catalog_stock_movements "
+                    "(id, product_id, movement_type, quantity_delta, stock_before, stock_after, "
+                    "receipt_id, receipt_item_id, idempotency_key, tenant_id, source_type, "
+                    "source_id, source_line_id, operation_kind, source_number, source, user_name, comment, created_at) "
+                    "VALUES (?, ?, 'receipt', ?, ?, ?, ?, ?, ?, ?, 'supply', ?, ?, 'add', ?, 'Поставка', ?, ?, ?)",
+                    (uuid.uuid4().hex, product_id, quantity, stock_before, stock_after,
+                     supply_id, item_id, 'supply-add:' + supply_id + ':' + key, row['tenant_id'],
+                     supply_id, key, row['number'], actor,
+                     'Дополнение поставки №{}: +{} шт.'.format(row['number'], quantity), now),
+                )
+                meta.setdefault('snapshots', {}).setdefault(str(product_id), self._product(connection, product_id))
+            additions[key] = {'product_id': product_id, 'quantity': quantity, 'created_at': now, 'user_name': actor}
+            connection.execute('UPDATE erp_receipts SET metadata_json = ?, updated_at = ? WHERE id = ?',
+                               (json.dumps(meta, ensure_ascii=False), now, supply_id))
+            AuditJournal(self.database).record(
+                'receipt', supply_id, 'updated', 'Поставка #{}'.format(row['number']),
+                before={'quantity': before_quantity}, after={'quantity': before_quantity + quantity},
+                metadata={'supply_id': supply_id, 'product_id': product_id, 'quantity_delta': quantity,
+                          'number': row['number'], 'text_snapshot': '{} добавил товар {}, +{} шт.'.format(actor, self._product(connection, product_id)['name'], quantity)},
+                actor_id=actor, actor_name=actor, actor_type='user' if actor else 'system',
+                status=row['status'], connection=connection,
+            )
+            if failure_hook:
+                failure_hook(connection)
             return self._get(connection, supply_id)
 
     def delete(self, supply_id):
@@ -136,7 +219,9 @@ class SupplyEngine:
         row = connection.execute("SELECT p.id, p.excel_name_raw AS name, COALESCE(p.excel_article, '') AS article, COALESCE(b.name, p.excel_brand, '') AS brand, COALESCE(c.name, p.excel_category, '') AS category, COALESCE(p.bitrix_thumbnail_url, p.bitrix_primary_image_url, '') AS image_url, p.stock FROM catalog_excel_products p LEFT JOIN erp_brands b ON b.id = p.brand_id LEFT JOIN erp_categories c ON c.id = p.category_id WHERE p.id = ?", (product_id,)).fetchone()
         if row is None:
             raise SupplyError('Товар не найден.')
-        return dict(row)
+        result = dict(row)
+        result['stock'] = balance(connection, product_id, require_initialized=False)
+        return result
 
     def _get(self, connection, supply_id):
         row = self._row(connection, supply_id)
@@ -147,9 +232,9 @@ class SupplyEngine:
         result['items'] = []
         for item in connection.execute('SELECT * FROM erp_receipt_items WHERE receipt_id = ? AND active = 1 ORDER BY id', (supply_id,)):
             product = (meta.get('snapshots') or {}).get(str(item['product_id'])) or self._product(connection, item['product_id'])
-            movement = connection.execute("SELECT stock_before, stock_after FROM catalog_stock_movements WHERE receipt_item_id = ? AND operation_kind = 'post'", (item['id'],)).fetchone()
-            before = movement['stock_before'] if movement else product['stock']
-            after = movement['stock_after'] if movement else before + item['quantity']
+            movements = connection.execute("SELECT stock_before, stock_after FROM catalog_stock_movements WHERE receipt_item_id = ? AND operation_kind IN ('post', 'add') ORDER BY rowid", (item['id'],)).fetchall()
+            before = movements[0]['stock_before'] if movements else product['stock']
+            after = movements[-1]['stock_after'] if movements else before + item['quantity']
             result['items'].append(dict(product, **dict(item), stock_before=before, stock_after=after))
         result['position_count'] = len(result['items'])
         result['total_quantity'] = sum(i['quantity'] for i in result['items'])
