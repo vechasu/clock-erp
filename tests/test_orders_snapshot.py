@@ -540,8 +540,9 @@ class OrdersListIntegrationTest(unittest.TestCase):
                 sync_error="",
             )
 
-        list_table = html.split('class="orders-table orders-list-table order-work-table"', 1)[1].split(
-            'class="orders-table orders-split-table order-work-table"', 1
+        self.assertEqual(html.count('data-orders-table-scroll'), 1)
+        list_table = html.split('class="orders-table orders-split-table order-work-table"', 1)[1].split(
+            '</table>', 1
         )[0]
         expected_headers = (
             "Заказ / товар", "Создан", "Количество", "Сумма", "Состояние",

@@ -7,12 +7,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vechasu ERP — Заказы</title>
     {% include "_orders_timing.html" %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}">
-    <script defer src="{{ url_for('static', filename='js/catalog-combobox.js', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/orders.css', v='orders-progressive-v1') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
+    <link rel="stylesheet" href="{{ static_asset_url('css/themes.css') }}">
+    <link rel="stylesheet" href="{{ static_asset_url('css/erp-components.css') }}">
+    <link rel="stylesheet" href="{{ static_asset_url('css/catalog-combobox.css') }}">
+    <script defer src="{{ static_asset_url('js/catalog-combobox.js') }}"></script>
+    <link rel="stylesheet" href="{{ static_asset_url('css/orders.css') }}">
+    <link rel="stylesheet" href="{{ static_asset_url('css/entity-tasks.css') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
 {% endif %}
@@ -409,6 +409,9 @@
     let selectedOrderId=(()=>{const match=window.location.pathname.match(/^\/order\/(wildberries\/)?([^/]+)$/);return match?(match[1]?'wb:':'')+decodeURIComponent(match[2]):null;})();
     function applyMode(mode,save=true){
         const safe=modes.includes(mode)?mode:'split'; workspace.dataset.layoutMode=safe;
+        const tableMode=safe==='list'?'list':'split';
+        const viewport=workspace.querySelector('[data-orders-table-scroll]');
+        if(viewport){viewport.classList.toggle('orders-list-table-scroll',tableMode==='list');viewport.classList.toggle('orders-split-table-scroll',tableMode==='split');const table=viewport.querySelector('table');table.classList.toggle('orders-list-table',tableMode==='list');table.classList.toggle('orders-split-table',tableMode==='split');table.querySelectorAll('[data-order-href]').forEach(row=>{row.classList.toggle('orders-list-row',tableMode==='list');row.classList.toggle('order-table-row',tableMode==='split');});}
         options.forEach(option=>option.setAttribute('aria-checked',String(option.dataset.layoutMode===safe)));
         if(save){try{localStorage.setItem(storageKey,safe)}catch(error){}}
     }
@@ -460,11 +463,16 @@
         placeholder.setAttribute('role','img');placeholder.setAttribute('aria-label','Нет фото');placeholder.textContent='◇';photo.replaceWith(placeholder);
     },true);
 {% endif %}
-    function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?new Intl.NumberFormat('ru-RU',{minimumFractionDigits:Number.isInteger(number)?0:2,maximumFractionDigits:2}).format(number):'—';}
+    const moneyInteger=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
+    const moneyDecimal=new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const shortDate=new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'});
+    const stackedDate=new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const compactDate=new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?(Number.isInteger(number)?moneyInteger:moneyDecimal).format(number):'—';}
     function parseDate(value){if(!value||value==='None')return null;const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?null:date;}
-    function formatDate(value){const date=parseDate(value);return date?new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(date):(value&&value!=='None'?String(value):'—');}
-    function formatStackedDate(node){const raw=node.dataset.date;const date=parseDate(raw);if(!date){node.textContent=raw&&raw!=='None'?raw:'—';return;}const parts=new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(date);const value=type=>parts.find(part=>part.type===type)?.value||'';node.innerHTML=`<span>${value('day')}.${value('month')}.${value('year')}</span><span class="cell-secondary">${value('hour')}:${value('minute')}</span>`;}
-    function formatCommentDate(node){const date=parseDate(node.dataset.date);node.textContent=date?new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(date):node.dataset.date||'';}
+    function formatDate(value){const date=parseDate(value);return date?shortDate.format(date):(value&&value!=='None'?String(value):'—');}
+    function formatStackedDate(node){const raw=node.dataset.date;const date=parseDate(raw);if(!date){node.textContent=raw&&raw!=='None'?raw:'—';return;}const parts=stackedDate.formatToParts(date);const value=type=>parts.find(part=>part.type===type)?.value||'';node.innerHTML=`<span>${value('day')}.${value('month')}.${value('year')}</span><span class="cell-secondary">${value('hour')}:${value('minute')}</span>`;}
+    function formatCommentDate(node){const date=parseDate(node.dataset.date);node.textContent=date?compactDate.format(date):node.dataset.date||'';}
     const formatRoot={% if order_detail_only %}document.querySelector('.order-detail-panel'){% else %}document{% endif %};
     formatRoot.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));
     formatRoot.querySelectorAll('.date-value').forEach(node=>node.classList.contains('date-stacked')?formatStackedDate(node):node.textContent=formatDate(node.dataset.date));
@@ -488,11 +496,14 @@
         let ordersSearchTimer=null;
         let ordersSearchController=null;
     let ordersSearchRequest=0;
+    let navigationGeneration=0;
     const exactOrderNumber=value=>{const match=String(value||'').match(/^\s*(?:(?:№|#|Nº)\s*)?(\d+)(?:\s*№)?\s*$/iu);return match?match[1]:null;};
     let listReturnUrl=(()=>{const url=new URL(window.location.href);url.searchParams.delete('q');url.searchParams.delete('retry');return url;})();
     let searchReturnMode=initial;
         function formatOrdersResults(scope){scope.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));scope.querySelectorAll('.date-value').forEach(node=>node.classList.contains('date-stacked')?formatStackedDate(node):node.textContent=formatDate(node.dataset.date));scope.querySelectorAll('.comment-date-value').forEach(formatCommentDate);}
-        async function loadOrdersResults(url,{push=false}={}){
+        async function loadOrdersResults(url,{push=false,updateHistory=true,autoSelect=true}={}){
+        const generation=++navigationGeneration;
+        cardController?.abort();
         const timingUrl=new URL(url,location.href);const timing=window.OrdersTiming?.begin(timingUrl.searchParams.get('q')?'search':timingUrl.searchParams.has('page')?'page':'filter');
         const requestId=++ordersSearchRequest;
         ordersSearchController?.abort();
@@ -503,25 +514,28 @@
             const normalizedNumber=exactOrderNumber(target.searchParams.get('q'));
             if(normalizedNumber!==null)displayUrl.searchParams.set('q',normalizedNumber);
             if(selectedOrderId)target.searchParams.set('selected_id',selectedOrderId);else target.searchParams.delete('selected_id');
+            if(timing)timing.url=target.href;
             if(normalizedNumber!==null){const current=document.querySelector('[data-orders-results]');current.innerHTML=`<div class="orders-search-loading" role="status">Ищем заказ №${normalizedNumber} в ERP и подключённых источниках…</div>`;}
         try{
             const response=await fetch(target,{headers:{Accept:'application/json'},signal:controller.signal,credentials:'same-origin'});
             const payload=await response.json();if(!response.ok||payload?.ok!==true)throw new Error('Не удалось обновить заказы');
-            if(requestId!==ordersSearchRequest)return;
-            const current=document.querySelector('[data-orders-results]');current.outerHTML=payload.html;
+            if(requestId!==ordersSearchRequest||generation!==navigationGeneration)return false;
+            const current=document.querySelector('[data-orders-results]');current.outerHTML=payload.html;applyMode(workspace.dataset.layoutMode,false);
             document.querySelectorAll('[data-orders-page-link]').forEach(link=>{const pageUrl=new URL(link.href,window.location.href);pageUrl.pathname=displayUrl.pathname;pageUrl.searchParams.delete('selected_id');link.href=pageUrl.pathname+pageUrl.search;});
                 const titleCount=document.querySelector('[data-orders-title-count]');if(titleCount)titleCount.textContent=payload.exact_search?.status==='external_found'?'1 результат':`${payload.total_filtered} заказов`;
             Object.entries(payload.kpis||{}).forEach(([key,value])=>{const node=document.querySelector(`[data-status-count="${key}"]`);if(node)node.textContent=value;});
-                window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
+                if(updateHistory)window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
+            previousSearch=displayUrl.search;
             formatOrdersResults(document.querySelector('[data-orders-results]'));
-            if(timing)window.OrdersTiming.finish(timing);
-            if(payload.exact_search?.status==='local_found'&&payload.exact_search.local_count===1&&workspace.dataset.layoutMode!=='list'&&payload.exact_search.selected_url){window.location.assign(payload.exact_search.selected_url);}
+            if(autoSelect&&payload.exact_search?.status==='local_found'&&payload.exact_search.local_count===1&&workspace.dataset.layoutMode!=='list'&&payload.exact_search.selected_url){await selectOrder(payload.exact_search.selected_url,{generation});}
             if(payload.exact_search&&(payload.exact_search.status==='external_found'||payload.exact_search.local_count>1)&&workspace.dataset.layoutMode==='card'){applyMode('list',false);}
+            if(timing)window.OrdersTiming.finish(timing);
+            return generation===navigationGeneration;
         }catch(error){if(error.name!=='AbortError'){window.VechasuNotify?.error(error.message||'Не удалось обновить заказы');}}
         finally{if(ordersSearchController===controller)ordersSearchController=null;}
     }
     function ordersFilterUrl(){const url=new URL(window.location.href);['q','status','period','source'].forEach(key=>url.searchParams.delete(key));new FormData(filtersForm).forEach((value,key)=>{if(value&&value!=='all')url.searchParams.set(key,value);});url.searchParams.delete('page');const pageSize=document.querySelector('[data-orders-page-size]')?.value||'50';url.searchParams.set('page_size',pageSize);return url;}
-    searchInput?.addEventListener('input',()=>{if(searchInput.value&&!(new URL(window.location.href)).searchParams.get('q')){listReturnUrl=new URL(window.location.href);listReturnUrl.searchParams.delete('retry');searchReturnMode=workspace.dataset.layoutMode;}searchClear.hidden=!searchInput.value;window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),250);});
+    searchInput?.addEventListener('input',()=>{if(searchInput.value&&!(new URL(window.location.href)).searchParams.get('q')){listReturnUrl=new URL(window.location.href);listReturnUrl.searchParams.delete('retry');searchReturnMode=workspace.dataset.layoutMode;}searchClear.hidden=!searchInput.value;window.clearTimeout(ordersSearchTimer);ordersSearchTimer=window.setTimeout(()=>loadOrdersResults(ordersFilterUrl()),100);});
     searchInput?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();window.clearTimeout(ordersSearchTimer);loadOrdersResults(ordersFilterUrl());}});
     function clearOrderSearch(){searchInput.value='';searchClear.hidden=true;window.clearTimeout(ordersSearchTimer);applyMode(searchReturnMode,false);loadOrdersResults(listReturnUrl,{push:true});searchInput.focus();}
         searchClear?.addEventListener('click',clearOrderSearch);
@@ -536,16 +550,26 @@
     document.querySelector('.orders-list-panel')?.addEventListener('change',event=>{if(!event.target.matches('[data-orders-page-size]'))return;loadOrdersResults(ordersFilterUrl());});
         document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const showAll=event.target.closest('[data-show-all-orders]');if(showAll){event.preventDefault();clearOrderSearch();return;}const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
     let cardController=null;
+    let cardFetch=null;
     const listSearch=()=>new URL(window.location.href).search;
-    async function selectOrder(href,{push=true}={}){
+    async function selectOrder(href,{push=true,generation=++navigationGeneration}={}){
+        window.clearTimeout(ordersSearchTimer);ordersSearchController?.abort();
         const timing=window.OrdersTiming?.begin(!push?'back':href.includes('/wildberries/')?'card_wb':'card_tictactoy');
         const target=new URL(href,window.location.href);
-        cardController?.abort();const controller=new AbortController();cardController=controller;
+        if(timing)timing.url=target.href;
+        const controller=new AbortController();cardController=controller;
         try{
-            const response=await fetch(target,{headers:{'X-Order-Detail':'1'},credentials:'same-origin',signal:controller.signal});
+            // Aborting a browser fetch does not cancel synchronous Flask work.
+            // Let one request drain, then fetch only the latest queued selection.
+            if(cardFetch)await cardFetch.catch(()=>null);
+            if(generation!==navigationGeneration)return;
+            const pending=fetch(target,{headers:{'X-Order-Detail':'1'},credentials:'same-origin',signal:controller.signal}).then(async response=>({ok:response.ok,html:await response.text()}));
+            cardFetch=pending;
+            let response;try{response=await pending;}finally{if(cardFetch===pending)cardFetch=null;}
+            if(cardController!==controller||generation!==navigationGeneration)return;
             if(!response.ok)throw new Error('Не удалось открыть заказ');
-            const parsed=new DOMParser().parseFromString(await response.text(),'text/html');
-            if(cardController!==controller)return;
+            const parsed=new DOMParser().parseFromString(response.html,'text/html');
+            if(cardController!==controller||generation!==navigationGeneration)return;
             const panel=parsed.querySelector('.order-detail-panel');
             const source=parsed.querySelector('script[data-order-controller]');
             if(!panel||!source)throw new Error('Некорректный ответ карточки');
@@ -577,7 +601,17 @@
     });
     document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea,details')||!['Enter',' '].includes(event.key))return;event.preventDefault();selectOrder(row.dataset.orderHref);});
     let previousSearch=listSearch();
-    window.addEventListener('popstate',()=>{if(listSearch()!==previousSearch){window.location.reload();return;}selectOrder(window.location.href,{push:false});});
+    window.addEventListener('popstate',async()=>{
+        const target=window.location.href;const url=new URL(target);
+        if(listSearch()!==previousSearch){
+            searchInput.value=url.searchParams.get('q')||'';searchClear.hidden=!searchInput.value;
+            statusInput.value=url.searchParams.get('status')||'all';
+            const period=filtersForm.elements.period;if(period)period.value=url.searchParams.get('period')||'all';
+            document.querySelectorAll('[data-status-filter]').forEach(item=>{const active=item.dataset.statusFilter===statusInput.value;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});
+            if(!await loadOrdersResults(url,{updateHistory:false,autoSelect:false})||window.location.href!==target)return;
+        }
+        selectOrder(target,{push:false});
+    });
 {% endif %}
     function setPending(form,label){
         if(form.dataset.submitting==='1')return false;
@@ -797,7 +831,7 @@
 })();
 </script>
 {% if not order_detail_only %}
-<script src="{{ url_for('static', filename='js/entity-tasks.js', v='task-soft-delete-v1') }}"></script>
+<script src="{{ static_asset_url('js/entity-tasks.js') }}"></script>
 </body>
 </html>
 

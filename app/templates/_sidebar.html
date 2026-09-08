@@ -1,22 +1,22 @@
 {% from "_navigation_icons.html" import navigation_icon %}
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/sidebar.css') }}"
+    href="{{ static_asset_url('css/sidebar.css') }}"
 >
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/themes.css') }}"
+    href="{{ static_asset_url('css/themes.css') }}"
 >
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/notifications.css') }}"
+    href="{{ static_asset_url('css/notifications.css') }}"
 >
-<link rel="stylesheet" href="{{ url_for('static', filename='css/event-notifications.css') }}">
+<link rel="stylesheet" href="{{ static_asset_url('css/event-notifications.css') }}">
 <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/erp-states.css') }}"
+    href="{{ static_asset_url('css/erp-states.css') }}"
 >
-<link rel="stylesheet" href="{{ url_for('static', filename='css/collaboration.css') }}">
+<link rel="stylesheet" href="{{ static_asset_url('css/collaboration.css') }}">
 <script>
 window.COLLABORATION_BOOTSTRAP={csrf:{{ csrf_token()|tojson }},users:{{ collaboration_users|tojson }}};
 window.ERP_NOTIFICATION_CONTEXT={
@@ -27,7 +27,7 @@ window.ERP_NOTIFICATION_CONTEXT={
     section:{{ (session.get('current_section', '') or 'ERP')|tojson }}
 };
 </script>
-<script async src="{{ url_for('static', filename='js/collaboration.js') }}"></script>
+<script async src="{{ static_asset_url('js/collaboration.js') }}"></script>
 <a class="erp-skip-link" href="#main-content">
     Перейти к основному содержимому
 </a>
@@ -44,7 +44,7 @@ window.ERP_NOTIFICATION_CONTEXT={
             title="{{ sidebar_brand.title }}"
         >
             <span class="sidebar-logo-mark" aria-hidden="true">
-                <img src="{{ url_for('static', filename='img/tictactoy-logo.svg') }}" alt="" width="42" height="14">
+                <img src="{{ static_asset_url('img/tictactoy-logo.svg') }}" alt="" width="42" height="14">
             </span>
         </a>
 
@@ -308,11 +308,11 @@ window.ERP_EVENT_NOTIFICATIONS={csrf:{{ csrf_token()|tojson }}};
     {% endfor %}
 </div>
 
-<script async src="{{ url_for('static', filename='js/theme.js') }}"></script>
-<script async src="{{ url_for('static', filename='js/erp-states.js') }}"></script>
-<script async src="{{ url_for('static', filename='js/notifications.js') }}"></script>
-{% if current_user %}<script async src="{{ url_for('static', filename='js/event-notifications.js') }}"></script>{% endif %}
-<script async src="{{ url_for('static', filename='js/sidebar.js') }}"></script>
+<script async src="{{ static_asset_url('js/theme.js') }}"></script>
+<script async src="{{ static_asset_url('js/erp-states.js') }}"></script>
+<script async src="{{ static_asset_url('js/notifications.js') }}"></script>
+{% if current_user %}<script async src="{{ static_asset_url('js/event-notifications.js') }}"></script>{% endif %}
+<script async src="{{ static_asset_url('js/sidebar.js') }}"></script>
 {% if current_user %}
 <script>
 (() => {

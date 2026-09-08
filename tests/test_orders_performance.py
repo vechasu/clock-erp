@@ -46,7 +46,7 @@ class OrdersPerformanceTest(unittest.TestCase):
                 self.assertEqual(loads.call_count, size)
                 self.assertEqual(result['total'], 16471)
                 counts.append(sum(sql.startswith('SELECT') for sql in statements))
-        self.assertEqual(counts, [4, 4, 4])
+        self.assertEqual(counts, [3, 3, 3])
 
     def test_page_and_exact_identity_plans_use_indexes(self):
         with self.store.connection() as connection:

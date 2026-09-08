@@ -705,7 +705,7 @@ class OrdersSnapshotStore:
         parameters = []
         if exact_number is not None:
             clauses.append(
-                "(number_fold = ? OR order_id = ? OR external_order_id = ?)"
+                "(number_fold = ? OR order_id = ? OR orders_snapshot.external_order_id = ?)"
             )
             parameters.extend([exact_number.casefold(), exact_number, exact_number])
             page = 1
@@ -755,16 +755,17 @@ class OrdersSnapshotStore:
         with self.connection() as connection:
             from_sql = "orders_snapshot"
             effective_status = "work_status"
+            override_table = None
             if catalog_path is not None or status_overrides:
                 if catalog_path is not None:
                     connection.execute("ATTACH DATABASE ? AS order_catalog", (str(catalog_path),))
-                    override_table = "(SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses)"
-                    override_column = "override_id"
+                    override_table = "order_catalog.erp_order_statuses"
+                    override_column = "external_order_id"
                 else:
                     connection.execute("CREATE TEMP TABLE order_status_overrides (external_order_id TEXT PRIMARY KEY, erp_status TEXT)")
                     connection.executemany("INSERT INTO order_status_overrides VALUES (?, ?)", list(status_overrides.items()))
-                    override_table = "(SELECT external_order_id AS override_id, erp_status FROM temp.order_status_overrides)"
-                    override_column = "override_id"
+                    override_table = "temp.order_status_overrides"
+                    override_column = "external_order_id"
                 from_sql += " LEFT JOIN {} AS overrides ON source != 'wildberries' AND overrides.{} = order_id".format(override_table, override_column)
                 effective_status = ("CASE overrides.erp_status "
                     "WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' "
@@ -786,8 +787,9 @@ class OrdersSnapshotStore:
                     "order_id IN (SELECT order_id FROM temp.allowed_order_ids)"
                 )
                 where_sql = (" WHERE " + " AND ".join(clauses)).replace("{effective_status}", filter_status)
+            count_from = (from_sql if exact_number is None and status != "ALL" and not status.startswith("WB_") else "orders_snapshot")
             total = int(connection.execute(
-                "SELECT COUNT(*) FROM " + (from_sql if where_sql else "orders_snapshot") + where_sql,
+                "SELECT COUNT(*) FROM " + count_from + where_sql,
                 parameters,
             ).fetchone()[0])
             effective_page_size = max(total, 1) if page_size == "all" else page_size
@@ -799,14 +801,30 @@ class OrdersSnapshotStore:
                 + " ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
                 parameters + [effective_page_size, (page - 1) * effective_page_size],
             ).fetchall()
-            status_rows = connection.execute(
-                "SELECT source, " + effective_status + " AS status, COUNT(*) AS count FROM " + from_sql + " "
-                + ("WHERE order_id IN (SELECT order_id FROM temp.allowed_order_ids) " if allowed_order_ids is not None else "")
-                + "GROUP BY source, " + effective_status
-            ).fetchall()
-            physical_total = int(connection.execute(
-                "SELECT COUNT(*) FROM orders_snapshot"
-            ).fetchone()[0])
+            # Group in index order. SQLite 3.7 cannot reorder GROUP BY to
+            # match (work_status, source), and materializes joined subqueries.
+            allowed = (" WHERE order_id IN (SELECT order_id FROM temp.allowed_order_ids)"
+                       if allowed_order_ids is not None else "")
+            counts_sql = ("SELECT source,work_status AS status,COUNT(*) AS count "
+                          "FROM orders_snapshot" + allowed + " GROUP BY work_status,source")
+            if override_table:
+                # Correct only locally overridden rows; never join all 16k
+                # orders just to compute nine status totals. CROSS JOIN keeps
+                # the small overrides table outermost on legacy SQLite.
+                corrections = (override_table + " AS overrides CROSS JOIN orders_snapshot "
+                    "WHERE order_id=overrides.external_order_id AND source!='wildberries' "
+                    "AND overrides.erp_status IN ('unconfirmed','confirmed','assembled','refused')")
+                if allowed_order_ids is not None:
+                    corrections += " AND order_id IN (SELECT order_id FROM temp.allowed_order_ids)"
+                counts_sql = ("SELECT source,status,SUM(count) AS count FROM (" + counts_sql
+                    + " UNION ALL SELECT source,work_status,-COUNT(*) FROM " + corrections
+                    + " GROUP BY work_status,source UNION ALL SELECT source," + effective_status
+                    + ",COUNT(*) FROM " + corrections + " GROUP BY source," + effective_status
+                    + ") GROUP BY source,status HAVING SUM(count)>0")
+            status_rows = connection.execute(counts_sql).fetchall()
+            physical_total = (sum(int(row["count"]) for row in status_rows)
+                              if allowed_order_ids is None else int(connection.execute(
+                                  "SELECT COUNT(*) FROM orders_snapshot").fetchone()[0]))
         result_rows = []
         for row in rows:
             payload = json.loads(row["payload_json"])
