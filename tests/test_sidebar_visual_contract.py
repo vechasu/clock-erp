@@ -66,7 +66,10 @@ class SidebarVisualContractTest(unittest.TestCase):
             "flex: 0 0 auto",
             "height: 80px",
             "height: 122px",
-            "overflow: clip",
+            "justify-content: space-between",
+            "gap: 8px",
+            ".sidebar-brand-actions::before",
+            "flex: 0 0 32px",
             ".app.sidebar-collapsed .sidebar-toggle",
             "order: -1",
         ):
