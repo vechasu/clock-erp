@@ -118,6 +118,15 @@ test('Bitrix picker results, selection, taxonomy, duplicate actions, errors and 
   );
   await expect(search).toHaveValue('');
   await expect(page.locator('#bitrixSelectionEmpty')).toBeVisible();
+  await page.route(/\/api\/v1\/bitrix-products\/\d+$/, (route) =>
+    route.fulfill({ status: 503, json: { message: 'Карточка недоступна' } }),
+  );
+  await search.fill('preview-error');
+  await page.locator('#bitrixProductResults .picker-result').first().click();
+  await expect(page.locator('#bitrixImportError')).toHaveText('Карточка недоступна');
+  await expect(page.locator('#bitrixProductStatus')).not.toContainText('Загружаем');
+  await expect(page.locator('#bitrixImportProduct')).toBeHidden();
+
   await images(page);
   await page.route('**/api/v1/bitrix-products/search?*', (route) =>
     route.fulfill({ status: 503, json: { message: 'Bitrix недоступен' } }),

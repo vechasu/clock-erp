@@ -8077,6 +8077,7 @@
             document.getElementById("bitrixProductStatus").textContent = "Показано товаров: " + document.getElementById("bitrixProductResults").children.length;
         } catch (error) {
             if (error.name === "AbortError" || requestVersion !== bitrixRequestVersion) return;
+            document.getElementById("bitrixProductStatus").textContent = "";
             bitrixImportMessage(error.message);
         } finally {
             if (bitrixPreviewController === controller) bitrixPreviewController = null;
