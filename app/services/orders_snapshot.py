@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import logging
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -13,8 +14,7 @@ from pathlib import Path
 
 from app.domain_schema_migrations import validate_orders_database
 from app.services.customer_identity import link_order_safely
-from app.services.order_presentation import sqlite_status
-from app.sqlite_compat import register_deterministic_function
+from app.services.order_presentation import status_key
 
 
 PAGE_SIZES = (20, 50, 100, 200)
@@ -160,6 +160,9 @@ def _extra_search(order):
 
 
 class OrdersSnapshotStore:
+    _schema_cache = {}
+    _schema_lock = threading.Lock()
+
     def __init__(self, path=None):
         configured = path or os.getenv("ORDERS_DATABASE_PATH")
         self.path = Path(configured) if configured else Path("instance/orders.db")
@@ -185,8 +188,27 @@ class OrdersSnapshotStore:
             connection.close()
 
     def initialize(self):
-        if not self._schema_validated:
-            validate_orders_database(self.path)
+        if self._schema_validated:
+            return self
+        path = self.path.resolve()
+        with self._schema_lock:
+            # Schema/ledger changes or database replacement invalidate validation;
+            # ordinary order writes do not trigger another full data audit.
+            if not path.exists():
+                validate_orders_database(path)
+            stat = path.stat()
+            connection = sqlite3.connect("file:{}?mode=ro".format(path), uri=True)
+            try:
+                version = connection.execute("PRAGMA schema_version").fetchone()[0]
+                ledger = tuple(connection.execute(
+                    "SELECT migration_id, checksum, state FROM erp_migration_ledger ORDER BY migration_id"
+                ).fetchall())
+            finally:
+                connection.close()
+            identity = (stat.st_dev, stat.st_ino, version, ledger)
+            if self._schema_cache.get(str(path)) != identity:
+                validate_orders_database(path)
+                self._schema_cache[str(path)] = identity
             self._schema_validated = True
         return self
 
@@ -339,6 +361,8 @@ class OrdersSnapshotStore:
                     (order_id, order_id) + values,
                 )
                 result["added"] += 1
+            connection.execute("UPDATE orders_snapshot SET work_status=? WHERE order_id=?",
+                               (status_key(order), order_id))
         return result
 
     def upsert_bitrix(
@@ -475,6 +499,8 @@ class OrdersSnapshotStore:
                     if on_insert:
                         on_insert(connection, order)
                     added += 1
+                connection.execute("UPDATE orders_snapshot SET work_status=? WHERE order_id=?",
+                                   (status_key(order), order_id))
         return {"added": added, "updated": updated}
 
     def ensure(self, orders, loaded_at):
@@ -539,11 +565,15 @@ class OrdersSnapshotStore:
                 "created_at", "date", "updated_at", "status", "status_name",
                 "source", "source_name", "payment", "payment_system", "paid",
                 "delivery", "address", "delivery_address", "comment", "items",
-                "products", "products_count",
+                "products", "products_count", "delivery_price", "products_total",
+                "discount", "total", "tracking", "track_number", "location_id",
+                "calculation_complete", "calculation_consistent", "paid_name",
             ):
                 value = detail.get(field)
                 if value not in (None, ""):
                     payload[field] = value
+            connection.execute("UPDATE orders_snapshot SET work_status=? WHERE order_id=?",
+                               (status_key(payload), order_id))
             units = order_item_units(detail)
             created = payload.get("created_at") or payload.get("date")
             total = (
@@ -591,7 +621,7 @@ class OrdersSnapshotStore:
             ).fetchall()
         return [row["order_id"] for row in rows]
 
-    def query(self, args, now=None, allowed_order_ids=None, status_overrides=None):
+    def query(self, args, now=None, allowed_order_ids=None, status_overrides=None, catalog_path=None):
         self.initialize()
         query = _text(args.get("q"))
         exact_candidate = normalize_exact_order_number_query(query)
@@ -659,11 +689,13 @@ class OrdersSnapshotStore:
             clauses.append("(" + " OR ".join(search_clauses) + ")")
             parameters.extend(search_parameters)
         if exact_number is None and status != "ALL":
-            clauses.append("order_work_status(payload_json) = ?")
+            clauses.append("{effective_status} = ?")
             parameters.append(status)
         if source in {"tictactoy", "wildberries"}:
             clauses.append("source = ?")
             parameters.append(source)
+        elif exact_number is None and status.startswith("WB_"):
+            clauses.append("source = 'wildberries'")
         if exact_number is None and period in {"today", "7d", "30d"}:
             reference = now or datetime.now()
             days = 0 if period == "today" else 7 if period == "7d" else 30
@@ -673,8 +705,25 @@ class OrdersSnapshotStore:
         where_sql = " WHERE " + " AND ".join(clauses) if clauses else ""
 
         with self.connection() as connection:
-            register_deterministic_function(connection, "order_work_status", 1,
-                                            lambda value: sqlite_status(value, status_overrides))
+            from_sql = "orders_snapshot"
+            effective_status = "work_status"
+            if catalog_path is not None or status_overrides:
+                if catalog_path is not None:
+                    connection.execute("ATTACH DATABASE ? AS order_catalog", (str(catalog_path),))
+                    override_table = "(SELECT external_order_id AS override_id, erp_status FROM order_catalog.erp_order_statuses)"
+                    override_column = "override_id"
+                else:
+                    connection.execute("CREATE TEMP TABLE order_status_overrides (external_order_id TEXT PRIMARY KEY, erp_status TEXT)")
+                    connection.executemany("INSERT INTO order_status_overrides VALUES (?, ?)", list(status_overrides.items()))
+                    override_table = "(SELECT external_order_id AS override_id, erp_status FROM temp.order_status_overrides)"
+                    override_column = "override_id"
+                from_sql += " LEFT JOIN {} AS overrides ON source != 'wildberries' AND overrides.{} = order_id".format(override_table, override_column)
+                effective_status = ("CASE overrides.erp_status "
+                    "WHEN 'unconfirmed' THEN 'N' WHEN 'confirmed' THEN 'A' "
+                    "WHEN 'assembled' THEN 'D' WHEN 'refused' THEN 'C' ELSE work_status END")
+            # WB status is source-owned and can use the projection index directly.
+            filter_status = "work_status" if status.startswith("WB_") else effective_status
+            where_sql = where_sql.replace("{effective_status}", filter_status)
             if allowed_order_ids is not None:
                 connection.execute(
                     "CREATE TEMP TABLE IF NOT EXISTS allowed_order_ids "
@@ -688,24 +737,24 @@ class OrdersSnapshotStore:
                 clauses.append(
                     "order_id IN (SELECT order_id FROM temp.allowed_order_ids)"
                 )
-                where_sql = " WHERE " + " AND ".join(clauses)
+                where_sql = (" WHERE " + " AND ".join(clauses)).replace("{effective_status}", filter_status)
             total = int(connection.execute(
-                "SELECT COUNT(*) FROM orders_snapshot" + where_sql,
+                "SELECT COUNT(*) FROM " + (from_sql if where_sql else "orders_snapshot") + where_sql,
                 parameters,
             ).fetchone()[0])
             effective_page_size = max(total, 1) if page_size == "all" else page_size
             page_count = max(1, int(math.ceil(float(total) / effective_page_size)))
             page = min(page, page_count)
             rows = connection.execute(
-                "SELECT payload_json, item_units, customer_id FROM orders_snapshot"
+                "SELECT payload_json, item_units, customer_id, " + effective_status + " AS effective_status FROM " + from_sql
                 + where_sql
                 + " ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
                 parameters + [effective_page_size, (page - 1) * effective_page_size],
             ).fetchall()
             status_rows = connection.execute(
-                "SELECT source, order_work_status(payload_json) AS status, COUNT(*) AS count FROM orders_snapshot "
+                "SELECT source, " + effective_status + " AS status, COUNT(*) AS count FROM " + from_sql + " "
                 + ("WHERE order_id IN (SELECT order_id FROM temp.allowed_order_ids) " if allowed_order_ids is not None else "")
-                + "GROUP BY source, order_work_status(payload_json)"
+                + "GROUP BY source, " + effective_status
             ).fetchall()
             physical_total = int(connection.execute(
                 "SELECT COUNT(*) FROM orders_snapshot"
@@ -715,6 +764,7 @@ class OrdersSnapshotStore:
             payload = json.loads(row["payload_json"])
             payload["item_units"] = row["item_units"]
             payload["customer_id"] = row["customer_id"]
+            payload["ui_status"] = row["effective_status"]
             result_rows.append(payload)
         counts = {}
         source_counts = {"all": 0, "tictactoy": 0, "wildberries": 0}

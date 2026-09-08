@@ -521,6 +521,20 @@ ORDERS_MIGRATION = {
         + ORDERS_UPGRADE_STATEMENTS
     ),
 }
+ORDERS_PERFORMANCE_STATEMENTS = (
+    "ALTER TABLE orders_snapshot ADD COLUMN work_status TEXT NOT NULL DEFAULT 'UNKNOWN'",
+    "CREATE INDEX idx_orders_page ON orders_snapshot(created_sort, order_id)",
+    "CREATE INDEX idx_orders_source_page ON orders_snapshot(source, created_sort, order_id)",
+    "CREATE INDEX idx_orders_work_status ON orders_snapshot(work_status, source, created_sort, order_id)",
+    "CREATE INDEX idx_orders_number ON orders_snapshot(number_fold)",
+    "CREATE INDEX idx_orders_external ON orders_snapshot(external_order_id)",
+)
+ORDERS_PERFORMANCE_MIGRATION = {
+    "id": "2026-09-08-orders-query-v2",
+    "name": "Indexed orders presentation projection",
+    "checksum": _digest(ORDERS_PERFORMANCE_STATEMENTS + ("status_key-v1",)),
+}
+
 TASKS_MIGRATION = {
     "id": TASKS_MIGRATION_ID,
     "name": "Internal tasks schema",
@@ -842,6 +856,13 @@ def _verify_ledger(connection, migration):
     rows = connection.execute(
         "SELECT migration_id, name, checksum, state FROM " + LEDGER_TABLE
     ).fetchall()
+    if migration is ORDERS_MIGRATION:
+        performance = [row for row in rows if row[0] == ORDERS_PERFORMANCE_MIGRATION["id"]]
+        if performance:
+            expected = ORDERS_PERFORMANCE_MIGRATION
+            if len(performance) != 1 or tuple(performance[0][1:]) != (expected["name"], expected["checksum"], "applied"):
+                raise DomainMigrationError("orders performance migration checksum mismatch or invalid state")
+            rows = [row for row in rows if row not in performance]
     if len(rows) != 1:
         raise DomainMigrationError("unexpected domain migration ledger length")
     row = rows[0]
@@ -1026,8 +1047,22 @@ def verify_orders_schema(connection, require_ledger=True):
         raise DomainMigrationError("orders schema contract: unexpected table set")
     if require_ledger:
         _verify_ledger_columns(connection)
-    _verify_columns(connection, ORDERS_EXPECTED_COLUMNS)
-    _verify_indexes(connection, ORDERS_INDEXES, ORDERS_EXPECTED_COLUMNS)
+    expected_columns = dict(ORDERS_EXPECTED_COLUMNS)
+    expected_indexes = dict(ORDERS_INDEXES)
+    has_performance_ledger = LEDGER_TABLE in _tables(connection) and connection.execute(
+        "SELECT 1 FROM erp_migration_ledger WHERE migration_id=?", (ORDERS_PERFORMANCE_MIGRATION["id"],)
+    ).fetchone()
+    if has_performance_ledger or any(row[0] == "work_status" for row in _columns(connection, "orders_snapshot")):
+        expected_columns["orders_snapshot"] += (("work_status", "TEXT", 1, "'UNKNOWN'", 0),)
+        expected_indexes.update({
+            "idx_orders_page": (0, ("created_sort", "order_id")),
+            "idx_orders_source_page": (0, ("source", "created_sort", "order_id")),
+            "idx_orders_work_status": (0, ("work_status", "source", "created_sort", "order_id")),
+            "idx_orders_number": (0, ("number_fold",)),
+            "idx_orders_external": (0, ("external_order_id",)),
+        })
+    _verify_columns(connection, expected_columns)
+    _verify_indexes(connection, expected_indexes, expected_columns)
     if any(connection.execute(
         "PRAGMA foreign_key_list({})".format(table)
     ).fetchall() for table in ORDERS_EXPECTED_COLUMNS):
@@ -1532,7 +1567,7 @@ def _apply_tasks(connection, state, observer):
     verify_tasks_schema(connection)
 
 
-def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
+def _apply_domain_baseline(database_path, kind, app_commit="", observer=None):
     if kind not in DOMAIN_MIGRATIONS:
         raise DomainMigrationError("unknown domain database: {}".format(kind))
     path = Path(database_path).resolve()
@@ -1607,6 +1642,47 @@ def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
             connection.close()
 
 
+def apply_domain_migrations(database_path, kind, app_commit="", observer=None):
+    result = _apply_domain_baseline(database_path, kind, app_commit, observer)
+    if kind != "orders":
+        return result
+    from app.services.order_presentation import status_key
+    with DomainMigrationLock(database_path, kind):
+        connection = sqlite3.connect(str(database_path), timeout=30, isolation_level=None)
+        try:
+            _verify_ledger(connection, ORDERS_MIGRATION)
+            if connection.execute(
+                "SELECT 1 FROM erp_migration_ledger WHERE migration_id=?",
+                (ORDERS_PERFORMANCE_MIGRATION["id"],),
+            ).fetchone():
+                return migration_report(connection, kind)
+            verify_orders_schema(connection)
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                for statement in ORDERS_PERFORMANCE_STATEMENTS:
+                    _execute(connection, statement, observer)
+                # Deployment-only backfill; runtime never parses the entire history.
+                rows = connection.execute("SELECT order_id, payload_json FROM orders_snapshot")
+                while True:
+                    batch = rows.fetchmany(200)
+                    if not batch:
+                        break
+                    connection.executemany(
+                        "UPDATE orders_snapshot SET work_status=? WHERE order_id=?",
+                        [(status_key(json.loads(payload)), order_id) for order_id, payload in batch],
+                    )
+                _insert_applied_migration(connection, ORDERS_PERFORMANCE_MIGRATION, app_commit, "baseline")
+                verify_orders_schema(connection)
+                _require_integrity(connection, "orders-query-v2")
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            return migration_report(connection, kind)
+        finally:
+            connection.close()
+
+
 def _runtime_connection(database_path):
     path = Path(database_path).resolve()
     if not path.exists():
@@ -1634,6 +1710,9 @@ def validate_orders_database(database_path):
     try:
         _verify_ledger(connection, ORDERS_MIGRATION)
         verify_orders_schema(connection)
+        if not connection.execute("SELECT 1 FROM erp_migration_ledger WHERE migration_id=?",
+                                  (ORDERS_PERFORMANCE_MIGRATION["id"],)).fetchone():
+            raise MigrationRequiredError("migration required: orders query projection")
     finally:
         connection.close()
     return True

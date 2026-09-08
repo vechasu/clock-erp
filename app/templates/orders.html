@@ -1,3 +1,4 @@
+{% if not order_detail_only %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -13,6 +14,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity-tasks.css', v='task-soft-delete-v1') }}">
 </head>
 <body class="orders-page" data-has-selected-order="{{ 1 if selected_order_explicit|default(false) else 0 }}">
+{% endif %}
 {% from "_catalog_combobox.html" import render_catalog_combobox %}
 {% macro status_badge(code, label) -%}
     {% set normalized = code|string|upper %}
@@ -44,6 +46,7 @@
     <div class="strap-picker-selected" data-picker-selected hidden></div>
 </div>
 {%- endmacro %}
+{% if not order_detail_only %}
 <div class="app">
     {% include "_sidebar.html" %}
     <main class="main" id="main-content" tabindex="-1">
@@ -94,6 +97,7 @@
                 {% include "_orders_list_results.html" %}
             </section>
 
+{% endif %}
             <section class="panel order-detail-panel" aria-label="Карточка заказа">
             {% if selected_order %}
                 {% set detail_id = selected_order.get('id') or selected_order.get('ID') %}
@@ -306,9 +310,11 @@
                 </div>
             {% else %}<div class="empty"><strong>Выберите заказ в списке</strong><br>Полная карточка загрузится отдельным безопасным запросом.</div>{% endif %}
             </section>
+{% if not order_detail_only %}
         </div>
     </main>
 </div>
+{% endif %}
 
 {% if selected_order and sale_state.can_create_sale %}
 <div class="order-sale-modal" id="orderSaleModal" role="dialog" aria-modal="true" aria-labelledby="orderSaleTitle" aria-hidden="true" data-auto-open="{{ '1' if request.args.get('open_sale') == '1' else '0' }}">
@@ -384,14 +390,19 @@
 </div>
 {% endif %}
 
-<script>
+<script data-order-controller>
 (() => {
+    window.orderDetailListeners?.abort();
+    const detailListeners=new AbortController();window.orderDetailListeners=detailListeners;
+    const onDocument=(type,listener,options={})=>document.addEventListener(type,listener,{...options,signal:detailListeners.signal});
+    const onWindow=(type,listener,options={})=>window.addEventListener(type,listener,{...options,signal:detailListeners.signal});
+{% if not order_detail_only %}
     const workspace=document.getElementById('ordersWorkspace');
     const switcher=document.getElementById('ordersLayoutSwitch');
     const options=Array.from(document.querySelectorAll('[data-layout-mode]')).filter(el=>el.closest('#ordersLayoutSwitch'));
     const modes=['list','split','card'];
     const storageKey='vechasu:orders:view:v2';
-    const selectedOrderId=(()=>{const match=window.location.pathname.match(/^\/order\/(wildberries\/)?([^/]+)$/);return match?(match[1]?'wb:':'')+decodeURIComponent(match[2]):null;})();
+    let selectedOrderId=(()=>{const match=window.location.pathname.match(/^\/order\/(wildberries\/)?([^/]+)$/);return match?(match[1]?'wb:':'')+decodeURIComponent(match[2]):null;})();
     function applyMode(mode,save=true){
         const safe=modes.includes(mode)?mode:'split'; workspace.dataset.layoutMode=safe;
         options.forEach(option=>option.setAttribute('aria-checked',String(option.dataset.layoutMode===safe)));
@@ -444,14 +455,16 @@
         const placeholder=document.createElement('span');placeholder.className=photo.className+' order-photo-placeholder';
         placeholder.setAttribute('role','img');placeholder.setAttribute('aria-label','Нет фото');placeholder.textContent='◇';photo.replaceWith(placeholder);
     },true);
+{% endif %}
     function formatMoney(value){const number=Number(String(value??'').replace(',','.'));return Number.isFinite(number)?new Intl.NumberFormat('ru-RU',{minimumFractionDigits:Number.isInteger(number)?0:2,maximumFractionDigits:2}).format(number):'—';}
     function parseDate(value){if(!value||value==='None')return null;const date=new Date(String(value).replace(' ','T'));return Number.isNaN(date.getTime())?null:date;}
     function formatDate(value){const date=parseDate(value);return date?new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(date):(value&&value!=='None'?String(value):'—');}
     function formatStackedDate(node){const raw=node.dataset.date;const date=parseDate(raw);if(!date){node.textContent=raw&&raw!=='None'?raw:'—';return;}const parts=new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(date);const value=type=>parts.find(part=>part.type===type)?.value||'';node.innerHTML=`<span>${value('day')}.${value('month')}.${value('year')}</span><span class="cell-secondary">${value('hour')}:${value('minute')}</span>`;}
     function formatCommentDate(node){const date=parseDate(node.dataset.date);node.textContent=date?new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(date):node.dataset.date||'';}
-    document.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));
-    document.querySelectorAll('.date-value').forEach(node=>node.classList.contains('date-stacked')?formatStackedDate(node):node.textContent=formatDate(node.dataset.date));
-    document.querySelectorAll('.comment-date-value').forEach(formatCommentDate);
+    const formatRoot={% if order_detail_only %}document.querySelector('.order-detail-panel'){% else %}document{% endif %};
+    formatRoot.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));
+    formatRoot.querySelectorAll('.date-value').forEach(node=>node.classList.contains('date-stacked')?formatStackedDate(node):node.textContent=formatDate(node.dataset.date));
+    formatRoot.querySelectorAll('.comment-date-value').forEach(formatCommentDate);
     document.querySelectorAll('[data-sync-time]').forEach(node=>{const raw=Number(node.dataset.syncTime);const date=new Date(raw?raw*1000:node.dataset.syncTime);node.textContent=Number.isNaN(date.getTime())?'—':new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(date);node.dateTime=date.toISOString?.()||'';});
 
     const historyPanel=document.getElementById('orderLifecyclePanel');
@@ -463,6 +476,7 @@
         historyButton?.addEventListener('click',toggleHistory);
     }
 
+{% if not order_detail_only %}
     const searchInput=document.getElementById('orderSearch');
     const filtersForm=searchInput?.form;
     const searchClear=document.querySelector('[data-search-clear]');
@@ -515,9 +529,48 @@
     document.querySelectorAll('[data-auto-submit-filter]').forEach(filter=>filter.addEventListener('change',()=>loadOrdersResults(ordersFilterUrl())));
     document.querySelector('.orders-list-panel')?.addEventListener('change',event=>{if(!event.target.matches('[data-orders-page-size]'))return;loadOrdersResults(ordersFilterUrl());});
         document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const showAll=event.target.closest('[data-show-all-orders]');if(showAll){event.preventDefault();clearOrderSearch();return;}const link=event.target.closest('[data-orders-page-link]');if(!link)return;event.preventDefault();loadOrdersResults(link.href,{push:true});});
-    document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea,details'))return;window.location.assign(row.dataset.orderHref);});
-    document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea,details')||!['Enter',' '].includes(event.key))return;event.preventDefault();window.location.assign(row.dataset.orderHref);});
-        window.addEventListener('popstate',()=>window.location.reload());
+    let cardController=null;
+    const listSearch=()=>new URL(window.location.href).search;
+    async function selectOrder(href,{push=true}={}){
+        const target=new URL(href,window.location.href);
+        cardController?.abort();const controller=new AbortController();cardController=controller;
+        try{
+            const response=await fetch(target,{headers:{'X-Order-Detail':'1'},credentials:'same-origin',signal:controller.signal});
+            if(!response.ok)throw new Error('Не удалось открыть заказ');
+            const parsed=new DOMParser().parseFromString(await response.text(),'text/html');
+            if(cardController!==controller)return;
+            const panel=parsed.querySelector('.order-detail-panel');
+            const source=parsed.querySelector('script[data-order-controller]');
+            if(!panel||!source)throw new Error('Некорректный ответ карточки');
+            window.orderDetailListeners?.abort();
+            document.querySelector('.order-detail-panel').replaceWith(panel);
+            document.getElementById('orderSaleModal')?.remove();
+            document.body.classList.remove('has-open-sale-dialog');
+            const modal=parsed.getElementById('orderSaleModal');if(modal)document.body.append(modal);
+            if(push)window.history.pushState({},'',target.pathname+target.search);
+            previousSearch=target.search;
+            const match=target.pathname.match(/^\/order\/(wildberries\/)?([^/]+)$/);
+            selectedOrderId=match?(match[1]?'wb:':'')+decodeURIComponent(match[2]):null;
+            document.body.dataset.hasSelectedOrder=selectedOrderId?'1':'0';
+            document.querySelectorAll('[data-list-order-id]').forEach(row=>{const active=row.dataset.listOrderId===selectedOrderId;row.classList.toggle('active',active);row.classList.toggle('is-selected',active);if(active)row.setAttribute('aria-current','true');else row.removeAttribute('aria-current');});
+            window.initializeBrandComboboxes?.(panel);
+            if(modal){window.initializeBrandComboboxes?.(modal);window.initializeSharedCatalogCascades?.(modal);}
+            const script=document.createElement('script');script.textContent=source.textContent;document.body.append(script);script.remove();
+            window.initializeSharedCatalogCascades?.(panel);
+            window.VechasuEntityTasksInit?.(panel);
+        }catch(error){if(error.name!=='AbortError')window.VechasuNotify?.error(error.message);}
+    }
+    document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{
+        if(event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+        const row=event.target.closest('[data-order-href]');
+        if(!row||event.target.closest('button,input,select,textarea,details'))return;
+        const link=event.target.closest('a');if(link&&new URL(link.href).pathname!==new URL(row.dataset.orderHref,location.href).pathname)return;
+        event.preventDefault();selectOrder(row.dataset.orderHref);
+    });
+    document.querySelector('.orders-list-panel')?.addEventListener('keydown',event=>{const row=event.target.closest('[data-order-href]');if(!row||event.target.closest('a,button,input,select,textarea,details')||!['Enter',' '].includes(event.key))return;event.preventDefault();selectOrder(row.dataset.orderHref);});
+    let previousSearch=listSearch();
+    window.addEventListener('popstate',()=>{if(listSearch()!==previousSearch){window.location.reload();return;}selectOrder(window.location.href,{push:false});});
+{% endif %}
     function setPending(form,label){
         if(form.dataset.submitting==='1')return false;
         const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';
@@ -590,9 +643,9 @@
         trigger.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();open(event.key==='ArrowDown'?0:-1);}});
         menu.addEventListener('click',event=>{if(event.target.closest('[role="menuitem"]'))close();});
         menu.addEventListener('keydown',event=>{const links=items();const index=links.indexOf(document.activeElement);if(event.key==='Escape'){event.preventDefault();close(true);return;}if(event.key==='Tab'){close();return;}const next=event.key==='ArrowDown'?index+1:event.key==='ArrowUp'?index-1:event.key==='Home'?0:event.key==='End'?links.length-1:null;if(next!==null){event.preventDefault();links[(next+links.length)%links.length]?.focus();}});
-        document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!orderActions.contains(event.target))close();});
-        document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.hidden){event.preventDefault();close(true);}});
-        window.addEventListener('resize',()=>{if(!menu.hidden)place();});
+        onDocument('pointerdown',event=>{if(!menu.hidden&&!orderActions.contains(event.target))close();});
+        onDocument('keydown',event=>{if(event.key==='Escape'&&!menu.hidden){event.preventDefault();close(true);}});
+        onWindow('resize',()=>{if(!menu.hidden)place();});
         document.querySelector('.detail-scroll')?.addEventListener('scroll',()=>{if(!menu.hidden)place();},{passive:true});
     }
     const mappingEndpoint=row=>`/api/orders/${encodeURIComponent(row.dataset.orderId)}/items/${encodeURIComponent(row.dataset.orderItemId)}/mapping`;
@@ -619,6 +672,7 @@
         row.querySelector('[data-remove-order-mapping]')?.addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{const data=await mappingRequest(row,'DELETE');row.querySelector('[data-order-mapping-summary]').hidden=true;row.querySelector('[data-order-mapping-actions]').hidden=true;const state=row.querySelector('[data-order-mapping-state]');state.textContent='Не удалось определить товар ERP';state.hidden=false;form.hidden=false;window.clearSharedCatalogCombobox?.(form.querySelector('[data-shared-catalog-kind="product"]'));updateOrderMappingState(data.order);}catch(error){mappingError(form,error.message,error);}finally{button.disabled=false;}});
         form.addEventListener('submit',async event=>{event.preventDefault();if(form.dataset.submitting==='1')return;const productBox=form.querySelector('[data-shared-catalog-kind="product"]');const productId=form.querySelector('input[name="product_id"]')?.value?.trim();if(!productId){mappingError(form,'Выберите товар ERP из каталога');return;}const button=form.querySelector('button[type="submit"]');form.dataset.submitting='1';button.disabled=true;button.textContent='Выбираем…';try{let data;try{data=await mappingRequest(row,'POST',productId);}catch(error){if(error.code!=='PRODUCT_CATEGORY_REQUIRED')throw error;const product=JSON.parse(productBox?.dataset.sharedCatalogSelectedItem||'{}');const csrf=form.querySelector('input[name="csrf_token"]')?.value||'';const updated=await window.assignMissingProductCategory(product,csrf);if(!updated)return;window.setSharedCatalogComboboxValue?.(productBox,updated);data=await mappingRequest(row,'POST',productId);}if(String(data?.mapping?.product?.id)!==String(productId)){throw new Error('Сервер подтвердил другой товар ERP');}showSavedMapping(row,data);window.VechasuNotify?.success('Товар ERP выбран');}catch(error){mappingError(form,error.message,error);}finally{delete form.dataset.submitting;button.disabled=false;button.textContent='Выбрать товар';}});
     });
+{% if not order_detail_only %}
     const wbSyncButton=document.querySelector('[data-wb-sync]');
     wbSyncButton?.addEventListener('click',async()=>{
         if(wbSyncButton.disabled)return;wbSyncButton.disabled=true;wbSyncButton.setAttribute('aria-busy','true');wbSyncButton.textContent='Обновляем WB…';
@@ -632,11 +686,13 @@
         }catch(error){window.VechasuNotify?.error(error.message||'Не удалось синхронизировать Wildberries');}
         finally{wbSyncButton.disabled=false;wbSyncButton.removeAttribute('aria-busy');wbSyncButton.textContent='Обновить WB';}
     });
+{% endif %}
     const completedStrapStorageKey='order-strap-replacement:{{ detail_id if selected_order else "" }}';
     {% if selected_order and sale_state.sale_completed %}
     try{window.sessionStorage.removeItem(completedStrapStorageKey);}catch(error){}
     {% endif %}
     const modal=document.getElementById('orderSaleModal'); if(!modal)return;
+    modal.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));
     const tracking=modal.querySelector('[data-order-sale-tracking]'); const trackingStorageKey='order-sale-tracking:{{ detail_id if selected_order else "" }}';
     if(tracking){try{const saved=window.sessionStorage.getItem(trackingStorageKey);if(saved!==null)tracking.value=saved;tracking.addEventListener('input',()=>window.sessionStorage.setItem(trackingStorageKey,tracking.value));}catch(error){}}
     function initializeOrderSaleLocations(){
@@ -653,7 +709,7 @@
         countryBox?.addEventListener('catalog-combobox:change',()=>updateRegions('',''));
         regionBox?.addEventListener('catalog-combobox:change',()=>updateCities(''));
     }
-    document.addEventListener('DOMContentLoaded',initializeOrderSaleLocations,{once:true});
+    if(document.readyState==='loading')onDocument('DOMContentLoaded',initializeOrderSaleLocations,{once:true});else initializeOrderSaleLocations();
     const saleAction=document.querySelector('[data-order-sale-action]'); let saleDialogReturnFocus=null;
     const focusableElements=()=>Array.from(modal.querySelectorAll('button:not([disabled]),input:not([type="hidden"]):not([disabled]),[href],[tabindex]:not([tabindex="-1"])')).filter(element=>!element.hidden&&element.getAttribute('aria-hidden')!=='true');
     const open=()=>{saleDialogReturnFocus=document.activeElement;modal.classList.add('is-open');document.body.classList.add('has-open-sale-dialog');modal.setAttribute('aria-hidden','false');modal.querySelector('[data-close-sale-dialog]')?.focus();};
@@ -661,7 +717,7 @@
     saleAction?.addEventListener('click',event=>{if(event.currentTarget.hasAttribute('data-open-sale-dialog')){open();return;}const reason=document.getElementById('saleBlockReason')||document.querySelector('[data-order-readiness-warning]');reason?.scrollIntoView({behavior:'smooth',block:'center'});reason?.focus();});
     modal.querySelectorAll('[data-close-sale-dialog]').forEach(button=>button.addEventListener('click',close));
     modal.addEventListener('click',event=>{if(event.target===modal)close();});
-    document.addEventListener('keydown',event=>{if(!modal.classList.contains('is-open'))return;if(event.key==='Escape'){event.preventDefault();close();return;}if(event.key==='Tab'){const focusable=focusableElements();if(!focusable.length){event.preventDefault();return;}const first=focusable[0];const last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
+    onDocument('keydown',event=>{if(!modal.classList.contains('is-open'))return;if(event.key==='Escape'){event.preventDefault();close();return;}if(event.key==='Tab'){const focusable=focusableElements();if(!focusable.length){event.preventDefault();return;}const first=focusable[0];const last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
     const saleForm=modal.querySelector('[data-order-sale-form]');
     const strapSection=modal.querySelector('[data-strap-replacement]');
     const operationMode=modal.querySelector('[data-operation-mode]');
@@ -732,6 +788,9 @@
     if(modal.dataset.autoOpen==='1')open();
 })();
 </script>
+{% if not order_detail_only %}
 <script src="{{ url_for('static', filename='js/entity-tasks.js', v='task-soft-delete-v1') }}"></script>
 </body>
 </html>
+
+{% endif %}
