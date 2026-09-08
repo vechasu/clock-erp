@@ -67,8 +67,11 @@
     } catch {
       throw new Error("Не удалось получить ответ сервера. Обновите страницу.");
     }
-    if (!response.ok || data.ok === false)
-      throw new Error(data.message || "Операция отклонена сервером.");
+    if (!response.ok || data.ok === false) {
+      const error = new Error(data.message || "Операция отклонена сервером.");
+      error.status = response.status;
+      throw error;
+    }
     return data.data;
   }
   function message(text, dialog = false) {
@@ -326,6 +329,8 @@
   }
   function renderItems() {
     const posted = current?.status === "posted";
+    $("add-item").hidden =
+      !current || !["draft", "posted"].includes(current.status);
     $("title").disabled = posted;
     $("comment").disabled = posted;
     $("draft-actions").hidden = posted;
@@ -452,6 +457,120 @@
     if (b) {
       items.splice(Number(b.dataset.remove), 1);
       renderItems();
+    }
+  };
+  let addition = null;
+  function selectedProduct() {
+    return JSON.parse(
+      $("supply-product").dataset.sharedCatalogSelectedItem || "null",
+    );
+  }
+  function updateAddition() {
+    $("add-quantity").disabled = Boolean(addition);
+    $("supply-productTrigger").disabled = Boolean(addition);
+    if (addition) {
+      $("selected-product").textContent =
+        `${addition.name}: +${addition.payload.quantity} шт.`;
+      $("duplicate-confirmation").textContent =
+        "Проверка результата предыдущей операции.";
+      return;
+    }
+    const p = selectedProduct(),
+      q = Number($("add-quantity").value);
+    $("selected-product").textContent = p
+      ? `${p.name} · ${p.article || ""} · Остаток: ${number(p.is_physical_component ? p.physical_stock : p.stock)}`
+      : "";
+    const existing = items.find((i) => Number(i.product_id) === Number(p?.id));
+    $("duplicate-confirmation").textContent = existing
+      ? `Этот товар уже есть в поставке. Сейчас: ${number(existing.quantity)} шт. Добавить ещё ${number(q)} шт.?`
+      : current?.status === "draft"
+        ? "Товар добавится в черновик. Остаток изменится при проведении."
+        : "";
+  }
+  $("supply-product").addEventListener(
+    "catalog-combobox:change",
+    updateAddition,
+  );
+  $("add-quantity").oninput = updateAddition;
+  $("add-item").onclick = () => {
+    // Persist an uncertain request across refresh. Retrying keeps its original payload and key.
+    if (
+      current.status === "draft" &&
+      (JSON.stringify(items) !== JSON.stringify(current.items) ||
+        $("title").value !== current.title ||
+        $("comment").value !== current.comment)
+    ) {
+      message("Сначала сохраните изменения черновика.", true);
+      return;
+    }
+    const saved = sessionStorage.getItem("supply-add:" + current.id);
+    addition = saved ? JSON.parse(saved) : null;
+    $("add-item-message").hidden = !addition;
+    $("add-item-message").textContent = addition
+      ? "Повторите подтверждение предыдущей операции. Повторный приход исключён."
+      : "";
+    $("confirm-add-item").textContent = addition
+      ? "Проверить предыдущую операцию"
+      : "Подтвердить добавление";
+    $("add-quantity").value = addition?.payload.quantity || 1;
+    updateAddition();
+    $("add-item-dialog").showModal();
+  };
+  $("close-add-item").onclick = () => $("add-item-dialog").close();
+  $("add-item-form").onsubmit = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    busy = true;
+    $("confirm-add-item").disabled = true;
+    try {
+      const p = selectedProduct();
+      if (!addition) {
+        const quantity = Number($("add-quantity").value);
+        if (!p) throw new Error("Выберите товар из каталога ERP.");
+        if (
+          !Number.isInteger(quantity) ||
+          quantity <= 0 ||
+          quantity > 2147483647
+        )
+          throw new Error("Количество должно быть целым положительным числом.");
+        addition = {
+          key: crypto.randomUUID(),
+          name: p.name,
+          payload: { product_id: Number(p.id), quantity },
+        };
+        sessionStorage.setItem(
+          "supply-add:" + current.id,
+          JSON.stringify(addition),
+        );
+      }
+      const result = await api(
+        "supplies/" + encodeURIComponent(current.id) + "/items",
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": addition.key },
+          body: JSON.stringify(addition.payload),
+        },
+      );
+      const success = `${addition.name} добавлен в поставку ${result.number}: +${addition.payload.quantity} шт.${result.status === "draft" ? " Остаток изменится при проведении." : ""}`;
+      sessionStorage.removeItem("supply-add:" + current.id);
+      addition = null;
+      current = result;
+      items = result.items.map((item) => ({ ...item }));
+      $("add-item-dialog").close();
+      renderItems();
+      message(success, true);
+      await load();
+    } catch (error) {
+      if ([403, 422].includes(error.status)) {
+        sessionStorage.removeItem("supply-add:" + current.id);
+        addition = null;
+      }
+      updateAddition();
+      $("add-item-message").textContent = error.message;
+      $("add-item-message").hidden = false;
+    } finally {
+      busy = false;
+      $("confirm-add-item").disabled = false;
     }
   };
   $("add-bitrix").onclick = () => {
