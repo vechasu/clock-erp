@@ -239,6 +239,7 @@ from app.services.repair_cases import (
     SHIPMENT_DIRECTION_LABELS,
     RepairDataError,
     apply_repair_action,
+    is_repair_archived,
     append_history_event,
     available_repair_actions,
     latest_repair_event,
@@ -7464,7 +7465,7 @@ def prepare_repair_case(case):
     prepared = dict(case)
     prepared.pop("legacy_snapshot", None)
     prepared["workflow"] = repair_workflow(case)
-    prepared["is_archived"] = bool(prepared.get("archived_at"))
+    prepared["is_archived"] = is_repair_archived(prepared)
     prepared["can_archive"] = not prepared["is_archived"]
     prepared["archived_at_display"] = _repair_text(
         prepared.get("archived_at")
@@ -7497,7 +7498,8 @@ def prepare_repair_case(case):
         prepared.get("return_method"), "—"
     )
     prepared["completion_result_label"] = COMPLETION_RESULT_LABELS.get(
-        prepared.get("completion_result"), "—"
+        prepared.get("completion_result"),
+        "Завершён" if prepared["workflow"]["closed"] else ("В архиве" if prepared["is_archived"] else "—")
     )
     prepared["available_actions"] = available_repair_actions(prepared)
     prepared["available_action_labels"] = {
@@ -22908,8 +22910,8 @@ def api_repair_stats(cases):
         ),
         "completed": sum(1 for case in cases if case.get("status") == "completed"),
         "cancelled": sum(1 for case in cases if case.get("status") == "cancelled"),
-        "archived": sum(1 for case in cases if case.get("archived_at")),
-        "active_records": sum(1 for case in cases if not case.get("archived_at")),
+        "archived": sum(1 for case in cases if is_repair_archived(case)),
+        "active_records": sum(1 for case in cases if not is_repair_archived(case)),
     }
 
 
@@ -23182,9 +23184,11 @@ def api_repairs_collection():
         "view": view,
     }
     if view == "archive":
-        cases = [case for case in all_cases if case.get("archived_at")]
+        cases = [case for case in all_cases if is_repair_archived(case)]
+    elif view == "active":
+        cases = [case for case in all_cases if not is_repair_archived(case)]
     else:
-        cases = [case for case in all_cases if not case.get("archived_at")]
+        cases = list(all_cases)
     cases = [case for case in cases if repair_case_matches(case, filters)]
     sort_by = (request.args.get("sort_by") or "attention").strip()
     sort_dir = (request.args.get("sort_dir") or "desc").strip()
