@@ -19746,7 +19746,26 @@ def api_bitrix_product_preview(bitrix_id):
 def api_bitrix_product_import(bitrix_id):
     require_csrf_when_authenticated()
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return api_error("BITRIX_IMPORT_INVALID", "Некорректные данные товара.", 422)
     action = str(payload.get("action") or "create").strip()
+    supply_id = payload.get("supply_id")
+    if "supply_id" in payload and (not isinstance(supply_id, str) or not supply_id.strip()):
+        return api_error("SUPPLY_INVALID", "Укажите текущую поставку.", 422)
+    if action not in ("create", "update"):
+        return api_error("BITRIX_IMPORT_INVALID", "Неподдерживаемое действие импорта.", 422)
+    if supply_id:
+        from app.services.supplies import SupplyEngine, SupplyError
+        user = current_auth_user() or {}
+        if auth_is_enabled() and user.get("role") in ("viewer", "readonly", "read_only"):
+            abort(403)
+        try:
+            supply = SupplyEngine().get(str(supply_id))
+            if supply["status"] not in ("draft", "posted"):
+                raise SupplyError("В удалённую поставку нельзя добавлять товары.")
+        except SupplyError as error:
+            return api_error("SUPPLY_INVALID", str(error), 422)
+        action = "resolve"
     database = CatalogDatabase()
     store = ProductImageStore(database)
     prepared = None
@@ -19756,6 +19775,15 @@ def api_bitrix_product_import(bitrix_id):
         product = client.get_product(bitrix_id)
         if product is None:
             return api_error("BITRIX_PRODUCT_NOT_FOUND", "Товар Bitrix не найден.", 404)
+        if supply_id:
+            # Import only the card; supply posting remains the sole stock operation.
+            product = dict(product, stock=0)
+            preview = BitrixERPProductSync(database).preview_single(product)
+            if preview["duplicate"]:
+                result = BitrixERPProductSync(database).apply_single(product, "resolve")
+                return api_success({**result, "product": serialize_api_product(
+                    ExcelProductCatalog(database).get_product(result["erp_product_id"])
+                )})
         source = _bitrix_single_source_payload(product, database)
         brand_id = payload.get("brand_id") or source.get("brand_id")
         category_id = payload.get("category_id") or source.get("category_id")
@@ -19807,6 +19835,9 @@ def api_bitrix_product_import(bitrix_id):
             product, action, brand_id=brand_id, category_id=category_id,
             prepared_image=prepared, actor=current_audit_actor(),
         )
+        if result["status"] == "duplicate":
+            store.discard_prepared(prepared)
+            prepared = None
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
         if previous_path and previous_path != (prepared or {}).get("path"):

@@ -135,10 +135,11 @@
 </footer>
 </dialog>
 <dialog id="add-item-dialog" class="product-picker" aria-labelledby="add-item-heading">
-<header><div><h2 id="add-item-heading">Добавить товар в поставку</h2><p class="picker-subtitle">Выберите существующий товар из каталога ERP</p></div><button id="close-add-item" class="button" aria-label="Закрыть добавление">×</button></header>
+<header><div><h2 id="add-item-heading">Добавить товар в поставку</h2><p class="picker-subtitle">Выберите товар ERP или импортируйте карточку из Bitrix</p></div><button id="close-add-item" class="button" aria-label="Закрыть добавление">×</button></header>
 <form id="add-item-form" class="picker-form">
 <div class="picker-search">
-<input id="supply-product-search" type="search" placeholder="Поиск товара по названию или артикулу" aria-label="Поиск товара по названию или артикулу" autocomplete="off">
+<label for="supply-product-source">Источник</label><select id="supply-product-source"><option value="erp">ERP</option><option value="bitrix">Bitrix</option></select>
+<input id="supply-product-search" type="search" placeholder="Поиск товара по названию, артикулу или Bitrix ID" aria-label="Поиск товара по названию, артикулу или Bitrix ID" autocomplete="off">
 <div id="supply-search-status" class="picker-status" role="status" aria-live="polite"></div>
 </div>
 <div class="picker-columns">
@@ -147,6 +148,10 @@
 <div id="supply-selection-empty" class="picker-empty">Выберите товар из результатов слева</div>
 <div id="selected-product" class="picker-preview"></div>
 <div id="supply-selection-controls" hidden>
+<div id="supply-taxonomy" hidden>
+<label for="supply-brand">Бренд</label><select id="supply-brand"></select>
+<label for="supply-category">Категория</label><select id="supply-category"></select>
+</div>
 <label for="add-quantity">Количество</label>
 <div class="picker-quantity"><button id="quantity-minus" class="button" type="button" aria-label="Уменьшить количество">−</button><input id="add-quantity" type="number" min="1" max="2147483647" step="1" value="1" required><button id="quantity-plus" class="button" type="button" aria-label="Увеличить количество">+</button></div>
 <p id="duplicate-confirmation" class="picker-note" role="status"></p>
