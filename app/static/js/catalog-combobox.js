@@ -1710,6 +1710,9 @@
                     kind,
                     globalCategoryOptions
                 );
+                if (scope?.dataset.catalogOptionImages === "false") {
+                    option.image = "";
+                }
                 if (groupCategories) {
                     option.group = item.used_by_brand
                         ? "Категории этого бренда"
