@@ -14,6 +14,7 @@ from pathlib import Path
 
 from app.domain_schema_migrations import validate_orders_database
 from app.services.customer_identity import link_order_safely
+from app.services.customer_order_sync import publish_orders
 from app.services.order_presentation import status_key
 
 
@@ -259,13 +260,16 @@ class OrdersSnapshotStore:
             ):
                 continue
             value = incoming[field]
+            if field in {"external_customer_id", "customer", "phone", "email"} and not _text(value):
+                continue
             if field in {"items", "products"} and not value and merged.get(field):
                 continue
             merged[field] = value
         return merged
 
     def _upsert_bitrix_in_connection(
-        self, connection, orders, loaded_at, preserve_existing_local=False
+        self, connection, orders, loaded_at, preserve_existing_local=False,
+        published_orders=None,
     ):
         result = {"added": 0, "updated": 0, "skipped": 0}
         for position, incoming in enumerate(orders):
@@ -291,6 +295,8 @@ class OrdersSnapshotStore:
             order["external_id"] = order_id
             order["source"] = "tictactoy"
             order["source_name"] = order.get("source_name") or "Tictactoy"
+            if published_orders is not None:
+                published_orders.append(order)
             incoming_has_items = bool(incoming.get("items") or incoming.get("products"))
             item_units = order_item_units(order)
             if existing and not incoming_has_items:
@@ -371,11 +377,13 @@ class OrdersSnapshotStore:
     ):
         """Commit one idempotent history batch and its resume cursor together."""
         self.initialize()
+        published_orders = []
         loaded_at = float(loaded_at or 0)
         with self.connection() as connection:
             result = self._upsert_bitrix_in_connection(
                 connection, orders, loaded_at,
                 preserve_existing_local=preserve_existing_local,
+                published_orders=published_orders,
             )
             connection.execute(
                 "INSERT OR REPLACE INTO orders_snapshot_meta (key, value) "
@@ -392,6 +400,7 @@ class OrdersSnapshotStore:
                     "VALUES ('bitrix_history_checkpoint', ?)",
                     (json.dumps(checkpoint, sort_keys=True),),
                 )
+        publish_orders(self.path, published_orders)
         return result
 
     def history_checkpoint(self):
@@ -599,7 +608,7 @@ class OrdersSnapshotStore:
                 return False
             payload = json.loads(row["payload_json"])
             for field in (
-                "number", "customer", "phone", "email", "country", "region", "city", "order_total", "price",
+                "number", "external_customer_id", "customer", "phone", "email", "country", "region", "city", "order_total", "price",
                 "created_at", "date", "updated_at", "status", "status_name",
                 "source", "source_name", "payment", "payment_system", "paid",
                 "delivery", "address", "delivery_address", "comment", "items",
@@ -646,6 +655,7 @@ class OrdersSnapshotStore:
                     "UPDATE orders_snapshot SET customer_id = COALESCE(customer_id, ?) "
                     "WHERE order_id = ?", (customer_id, order_id)
                 )
+        publish_orders(self.path, [payload])
         return cursor.rowcount > 0
 
     def missing_detail_ids(self, limit=200):

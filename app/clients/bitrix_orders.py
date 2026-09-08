@@ -428,6 +428,7 @@ def normalize_order(order):
     return {
         "external_id": str(first_value(order, "id", "ID") or ""),
         "external_source": "bitrix",
+        "external_customer_id": first_value(order, "external_customer_id", "user_id", "USER_ID") or first_value(user, "id", "ID"),
         "number": str(
             first_value(order, "number", "ACCOUNT_NUMBER", "account_number") or ""
         ),
