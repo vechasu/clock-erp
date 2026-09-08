@@ -222,7 +222,7 @@ class CustomerRegistry:
                 candidates = set()
                 reason = "phone_email_value_conflict"
                 matched_by = "conflict"
-            elif len(phone_ids | email_ids) == 1 and len(external_ids & (phone_ids | email_ids)) == 1:
+            elif len(external_ids & (phone_ids | email_ids)) == 1 and external_owners <= external_ids:
                 candidates = external_ids & (phone_ids | email_ids)
                 matched_by = "external_id_and_contact"
             elif len(phone_ids) > 1 or len(email_ids) > 1:
