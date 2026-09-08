@@ -1389,3 +1389,70 @@ html[data-theme] .orders-page .order-table-row.active:focus { background:#e5f0ff
 .orders-page details.order-diagnostics.panel {min-height:0!important;height:auto!important;}
 .orders-page .order-wb-history {order:2!important;}
 .orders-page .order-technical {order:20!important;}
+
+/* Approved compact Orders header; all integration controls share one surface. */
+.orders-page .orders-reference-header {display:grid;grid-template-columns:minmax(0,1fr) minmax(345px,35%);gap:12px 16px;padding:16px;margin-bottom:12px;overflow:visible;}
+.orders-filters {display:contents;}
+.orders-reference-header .orders-command-primary {grid-column:1 / -1;display:grid;grid-template-columns:auto minmax(180px,1fr) auto;gap:20px;flex-wrap:nowrap;}
+.orders-reference-header .orders-title {white-space:nowrap;}
+.orders-reference-header .orders-live-search {width:100%;min-width:0;max-width:none;margin-left:0;order:0;}
+.orders-filter-area {min-width:0;display:flex;flex-direction:column;justify-content:space-around;gap:12px;}
+.orders-page .orders-reference-header .order-source-tabs {flex-wrap:nowrap;border:0;padding:0;gap:8px;}
+.orders-page .orders-reference-header .status-filter {white-space:nowrap;font-size:12px;padding:7px 9px;}
+.orders-page .orders-reference-header .status-filter-tabs {width:100%;flex-wrap:nowrap;overflow:visible;gap:6px;min-width:0;}
+.status-caption {font-size:12px;color:var(--muted);}
+[data-primary-statuses] {display:flex;gap:6px;min-width:0;}
+.orders-status-more {position:relative;flex-shrink:0;}
+.orders-status-more > summary {list-style:none;cursor:pointer;}
+.orders-status-more.has-active > summary {border-color:var(--blue);color:var(--blue);}
+.orders-status-menu {position:absolute;top:calc(100% + 6px);right:0;z-index:30;display:grid;gap:5px;padding:8px;max-height:50vh;overflow:auto;background:var(--theme-surface,#fff);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px #1720331a;}
+.orders-status-menu button {text-align:left;}
+.orders-sync {position:relative;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--theme-surface,#fff);font-size:12px;}
+.orders-sync header {display:flex;align-items:center;gap:6px;padding:8px 10px;}
+.orders-sync header > strong {margin-right:auto;font-size:13px;}
+.orders-sync .button {min-height:28px;padding:3px 7px;font-size:11px;white-space:nowrap;}
+.orders-sync-row {display:grid;grid-template-columns:8px 85px minmax(90px,1fr) auto 28px;align-items:center;gap:7px;padding:5px 10px;border-top:1px solid var(--line);}
+.sync-state-label {border:0;padding:0;text-align:left;background:transparent;color:var(--theme-success,#15803d);font-size:11px;cursor:pointer;}
+.orders-sync-row time {font-size:10px;color:var(--muted);white-space:nowrap;}
+.orders-sync-row[data-state="attention"] .sync-dot {background:var(--theme-warning,#d97706);}
+.orders-sync-row[data-state="attention"] .sync-state-label {color:var(--theme-warning,#b45309);}
+.orders-sync-row[data-state="error"] .sync-dot {background:var(--danger);}
+.orders-sync-row[data-state="error"] .sync-state-label {color:var(--danger);}
+.orders-sync-row[data-state="running"] .sync-dot {background:transparent;border:2px solid var(--line);border-top-color:var(--blue);animation:orders-sync-spin .8s linear infinite;}
+.orders-sync-row[data-state="running"] .sync-state-label {color:var(--blue);}
+@keyframes orders-sync-spin {to {transform:rotate(360deg);}}
+.orders-sync footer {text-align:center;padding:5px;border-top:1px solid var(--line);font-size:10px;color:var(--muted);}
+.orders-sync-details {position:absolute;right:0;top:calc(100% + 6px);z-index:35;width:min(600px,80vw);max-height:65vh;overflow:auto;padding:12px;background:var(--theme-surface,#fff);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #1720331a;}
+.orders-sync-details > p {padding:10px 0;overflow-wrap:anywhere;}
+.orders-sync-details .order-diagnostics {margin:0;padding:8px;max-height:none;}
+.orders-page .orders-selection-empty {display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px;padding:24px;}
+.orders-selection-empty svg {width:48px;height:48px;fill:none;stroke:var(--muted);stroke-width:2;stroke-linejoin:round;margin-bottom:14px;}
+.orders-selection-empty strong {font-size:17px;}
+.orders-page .orders-split-table tr {padding:12px 16px;gap:5px 14px;}
+.orders-page .orders-split-table td:nth-child(n+3) {border-left:1px solid var(--line)!important;padding-left:14px!important;}
+.orders-page .list-footer {gap:6px;flex-wrap:wrap;}
+@media(min-width:1101px){.orders-page .workspace[data-layout-mode="split"] {grid-template-columns:minmax(0,48fr) minmax(0,52fr);}}
+@media(max-width:1450px) and (min-width:781px){
+    .orders-page .orders-reference-header {grid-template-columns:minmax(0,1fr) 350px;gap:10px;padding:12px;}
+    .orders-reference-header .orders-command-primary {gap:12px;}
+    .orders-reference-header .orders-title-count {font-size:11px;}
+    .orders-reference-header .orders-title h1 {font-size:24px;}
+    .orders-page .orders-reference-header .status-filter {padding:6px;font-size:11px;}
+    .orders-sync-row {grid-template-columns:8px 74px minmax(84px,1fr) auto 26px;gap:5px;padding:5px 8px;}
+    .orders-sync header {padding:7px 8px;}
+    .orders-sync header > strong {font-size:12px;}
+}
+@media(max-width:780px){
+    .orders-page .orders-reference-header {grid-template-columns:minmax(0,1fr);padding:10px;}
+    .orders-reference-header .orders-command-primary {grid-template-columns:1fr auto;gap:8px;}
+    .orders-reference-header .orders-live-search {grid-row:2;grid-column:1 / -1;}
+    .orders-reference-header .orders-title-count {display:none;}
+    .orders-page .orders-reference-header .order-source-tabs {gap:4px;}
+    .orders-page .orders-reference-header .status-filter {font-size:10px;padding:6px;}
+    .orders-sync-details {width:min(600px,85vw);}
+}
+.orders-page .orders-sync .button {height:28px;min-height:28px;line-height:1.2;}
+.orders-page .orders-sync-row {padding-top:3px;padding-bottom:3px;}
+.orders-page .orders-sync header {padding-top:6px;padding-bottom:6px;}
+.orders-page .orders-reference-header .orders-filter-area {justify-content:space-evenly;}
+.orders-page .orders-reference-header .view-option[aria-checked="true"] {background:var(--theme-active,#eff6ff)!important;color:var(--blue)!important;box-shadow:inset 0 0 0 1px var(--blue);}

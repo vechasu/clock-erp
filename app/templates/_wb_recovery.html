@@ -1,7 +1,7 @@
 <details class="panel order-diagnostics" data-wb-recovery>
-    <summary>WB · <span data-wb-health>Загрузка диагностики…</span></summary>
+    <summary>Диагностика Wildberries · <span data-wb-health>Загрузка диагностики…</span></summary>
     <h2>Диагностика Wildberries</h2>
-    <button class="button button-secondary wb-refresh" type="button" data-wb-sync>Обновить WB</button>
+    {% if not unified_orders_sync|default(false) %}<button class="button button-secondary wb-refresh" type="button" data-wb-sync>Обновить WB</button>{% endif %}
     <input type="hidden" value="{{ csrf_token() }}" data-wb-sync-csrf>
     <p data-wb-diagnostic role="status"></p>
     <p class="warning" data-wb-missing hidden></p>
@@ -16,4 +16,4 @@
     <button class="button button-primary" type="button" data-wb-import hidden>Импортировать недостающие заказы</button>
     <input type="hidden" data-wb-recovery-csrf value="{{ csrf_token() }}">
 </details>
-<script src="{{ url_for('static', filename='js/wb-recovery.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/wb-recovery.js', v='orders-reference-v1') }}" defer></script>

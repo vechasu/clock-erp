@@ -327,6 +327,9 @@ class OrderStatusFrontendContractTests(unittest.TestCase):
             Path(__file__).resolve().parents[1]
             / "app/static/css/orders.css"
         ).read_text(encoding="utf-8")
+        template += (
+            Path(__file__).resolve().parents[1] / "app/templates/_orders_filters.html"
+        ).read_text(encoding="utf-8")
         self.assertIn('data-status-filter="{{ key }}"', template)
         self.assertIn('order_status_counts.items()', template)
         self.assertIn('order_status_label(key)', template)
