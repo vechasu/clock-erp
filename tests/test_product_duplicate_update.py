@@ -77,8 +77,8 @@ class ProductDuplicateUpdateTest(unittest.TestCase):
     def test_import_duplicate_bitrix_id_is_not_created_again(self):
         service = BitrixERPProductSync(self.catalog().database)
         source = bitrix_product()
-        created = service.apply_single(source, 'create')
-        duplicate = service.apply_single(source, 'create')
+        created = service.apply_single(source, 'create', quantity=2)
+        duplicate = service.apply_single(source, 'create', quantity=2)
         self.assertEqual(created['status'], 'created')
-        self.assertEqual(duplicate['status'], 'duplicate')
+        self.assertEqual(duplicate['status'], 'stock_added')
         self.assertEqual(duplicate['erp_product_id'], created['erp_product_id'])
