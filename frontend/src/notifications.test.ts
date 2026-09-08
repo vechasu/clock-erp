@@ -112,3 +112,15 @@ declare global {
     };
   }
 }
+
+
+test('successful product retry removes only that product’s stale error', async () => {
+  const fetchMock = install(response({message: 'Такой товар уже существует'}, 409));
+  await window.fetch('/api/products/42', {method: 'PATCH'});
+  await window.fetch('/api/products/43', {method: 'PATCH'});
+  expect(document.querySelectorAll('.erp-toast[data-kind="error"]')).toHaveLength(2);
+  fetchMock.mockResolvedValueOnce(response({data: {id: 42, name: 'Watch'}, meta: {changed: true}}));
+  await window.fetch('/api/v1/products/42', {method: 'PATCH'});
+  expect(document.querySelectorAll('.erp-toast[data-kind="error"]')).toHaveLength(1);
+  expect(document.querySelectorAll('.erp-toast[data-kind="success"]')).toHaveLength(1);
+});

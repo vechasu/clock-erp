@@ -227,6 +227,7 @@
         if (!Object.prototype.hasOwnProperty.call(changes, "duration")) {
             next.duration = changes.kind ? DEFAULT_LIFETIME[next.kind] : current.duration;
         }
+        next.productSaveKey = current.productSaveKey;
         const wasVisible = Boolean(current.element);
         if (current.timer) global.clearTimeout(current.timer);
         if (current.element) current.element.remove();
@@ -464,6 +465,14 @@
                     operationId,
                 }
             );
+            // A successful retry of this product save resolves its earlier errors.
+            const productSavePath = new URL(rawUrl, global.location.href).pathname
+                .replace(/^\/api\/v1\//, "/api/");
+            const productSaveKey = method === "PATCH" && /^\/api\/products\/\d+$/.test(productSavePath)
+                ? productSavePath : null;
+            if (productSaveKey && notificationId && items.has(notificationId)) {
+                items.get(notificationId).productSaveKey = productSaveKey;
+            }
             let response;
             let timeoutId = null;
             let requestSettings = Object.assign({}, settings, {headers});
@@ -482,6 +491,11 @@
                     payload && payload.meta && payload.meta.request_id,
                     response.headers && response.headers.get("X-Operation-ID") || operationId
                 );
+                if (productSaveKey && response.ok && response.status !== 207 && !(payload && payload.error)) {
+                    Array.from(items.values()).forEach(function (item) {
+                        if (item.kind === "error" && item.productSaveKey === productSaveKey) dismiss(item.id);
+                    });
+                }
                 if (notifyMode === "background") {
                     if (response.ok && !(payload && payload.error)) backgroundResult(resolved, payload, responseOperationId);
                     else show("error", failureTitle(method, rawUrl), {

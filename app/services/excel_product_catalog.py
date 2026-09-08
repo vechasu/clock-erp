@@ -1720,32 +1720,40 @@ class ExcelProductCatalog:
                 values["excel_category"] = (
                     category_row["name"] if category_row else None
                 )
-            duplicate = connection.execute(
-                "SELECT id, excel_name_raw FROM catalog_excel_products "
-                "WHERE active = 1 AND normalized_name = ? AND id <> ? "
-                "AND COALESCE(brand_id, 0) = COALESCE(?, 0) "
-                "AND COALESCE(category_id, 0) = COALESCE(?, 0) "
-                "ORDER BY id LIMIT 1",
-                (
-                    values["normalized_name"],
-                    int(product_id),
-                    values.get("brand_id"),
-                    values.get("category_id"),
-                ),
-            ).fetchone()
-            if duplicate is not None:
-                raise DuplicateCatalogValueError(
-                    "Такой товар уже существует: {} (ID {}).".format(
-                        duplicate["excel_name_raw"], duplicate["id"]
+            # Imports can legitimately retain identical names for different SKUs.
+            # Revalidate the name/taxonomy key only when this update changes it;
+            # unrelated edits must not be blocked by an existing imported pair.
+            name_key_changed = any(
+                (values.get(field) or 0) != (product[field] or 0)
+                for field in ("normalized_name", "brand_id", "category_id")
+            )
+            if name_key_changed:
+                duplicate = connection.execute(
+                    "SELECT id, excel_name_raw FROM catalog_excel_products "
+                    "WHERE active = 1 AND normalized_name = ? AND id <> ? "
+                    "AND COALESCE(brand_id, 0) = COALESCE(?, 0) "
+                    "AND COALESCE(category_id, 0) = COALESCE(?, 0) "
+                    "ORDER BY id LIMIT 1",
+                    (
+                        values["normalized_name"],
+                        int(product_id),
+                        values.get("brand_id"),
+                        values.get("category_id"),
                     ),
-                    {
-                        "id": str(duplicate["id"]),
-                        "product_id": str(duplicate["id"]),
-                        "name": duplicate["excel_name_raw"],
-                        "brand_id": values.get("brand_id"),
-                        "category_id": values.get("category_id"),
-                    },
-                )
+                ).fetchone()
+                if duplicate is not None:
+                    raise DuplicateCatalogValueError(
+                        "Такой товар уже существует: {} (ID {}).".format(
+                            duplicate["excel_name_raw"], duplicate["id"]
+                        ),
+                        {
+                            "id": str(duplicate["id"]),
+                            "product_id": str(duplicate["id"]),
+                            "name": duplicate["excel_name_raw"],
+                            "brand_id": values.get("brand_id"),
+                            "category_id": values.get("category_id"),
+                        },
+                    )
             if cell is not None:
                 values["cell"] = text(cell) or None
             if price is not UNSET:
