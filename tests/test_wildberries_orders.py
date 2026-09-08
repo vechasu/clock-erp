@@ -132,8 +132,8 @@ class WildberriesStorageTest(unittest.TestCase):
         first = self.sync([raw_order(200, "same"), raw_order(201, "same")])
         second = self.sync([raw_order(200, "same"), raw_order(201, "same")])
 
-        self.assertEqual(first, {"received": 2, "added": 2, "updated": 0, "errors": 0})
-        self.assertEqual(second, {"received": 2, "added": 0, "updated": 2, "errors": 0})
+        self.assertEqual(first, {"received": 2, "added": 2, "updated": 0, "errors": 0, "statuses_updated": 0})
+        self.assertEqual(second, {"received": 2, "added": 0, "updated": 2, "errors": 0, "statuses_updated": 0})
         self.assertEqual(self.store.count(), 3)
         self.assertEqual(self.store.get("wb:200")["order_uid"], "same")
         self.assertEqual(self.store.get("wb:201")["order_uid"], "same")
