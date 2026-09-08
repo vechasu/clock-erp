@@ -30,14 +30,18 @@
                     <td class="order-identity-cell">
                         <div class="order-row-product">
                             {% if preview.get('image_url') %}<img class="order-row-photo" src="{{ preview.image_url }}" alt="Фото товара" loading="lazy">{% else %}<span class="order-row-photo order-photo-placeholder" role="img" aria-label="Нет фото">◇</span>{% endif %}
-                            <div class="order-row-copy"><a class="order-number" href="{{ order_url }}">№{{ number }}</a>
+                            <div class="order-row-copy"><div class="order-row-identity"><a class="order-number" href="{{ order_url }}">№{{ number }}</a>
                                 <span class="source-label{% if is_wb %} source-label-wb{% endif %}">{{ 'Wildberries' if is_wb else 'TicTacToy' }}</span>
-                                <strong class="list-product-name">{{ preview.get('name') or product.get('name') or product.get('NAME') or 'Состав не загружен' }}</strong>
-                                {% set article = preview.get('article') or product.get('article') or product.get('sku') %}{% if article %}<span class="cell-secondary">Артикул: {{ article }}</span>{% endif %}
+                                {% if order.get('customer') %}<span class="order-row-customer" title="{{ order.customer }}">{{ order.customer }}</span>{% endif %}
+                                </div><div class="order-row-description">
+                                <strong class="list-product-name" title="{{ preview.get('name') or product.get('name') or product.get('NAME') or '' }}">{{ preview.get('name') or product.get('name') or product.get('NAME') or 'Состав не загружен' }}</strong>
+                                {% set article = preview.get('article') or product.get('article') or product.get('sku') %}{% if article %}<span class="cell-secondary order-row-article" title="Артикул: {{ article }}">Артикул: {{ article }}</span>{% endif %}
                                 {% if products|length > 1 %}<span class="cell-secondary">Ещё позиций: {{ products|length - 1 }}</span>{% endif %}
+                                {% if mode == 'split' %}<span class="date-value order-row-date" data-date="{{ order.get('created_at') or order.get('date') }}">—</span>{% endif %}
+                                </div>
                             </div>
                         </div>
-                        <details class="order-row-secondary"><summary>Подробнее</summary>
+                        <details class="order-row-secondary"><summary aria-label="Подробнее о заказе №{{ number }}" title="Подробнее"><span class="order-disclosure-label">Подробнее</span></summary>
                             {% if not is_wb and order.get('customer') %}<p>{{ order.customer }}{% if order.get('phone') %} · {{ order.phone }}{% endif %}{% if order.get('email') %} · {{ order.email }}{% endif %}</p>{% endif %}
                             {% for item in products %}<p>{{ item.get('name') or item.get('NAME') }} · {{ item.get('quantity', item.get('QUANTITY', 1)) }} шт.{% if item.get('model') %} · {{ item.model }}{% endif %}{% if item.get('article') or item.get('sku') %} · Артикул: {{ item.get('article') or item.get('sku') }}{% endif %}</p>{% endfor %}
                             {% set address = [order.get('country'), order.get('region'), order.get('city'), order.get('address') or order.get('delivery_address')]|select|unique|join(' · ') %}{% if order.get('delivery') or address %}<p>Доставка: {{ order.get('delivery') or '' }} {{ address }}</p>{% endif %}
@@ -51,7 +55,7 @@
                     </td>
                     <td><span class="date-value date-stacked" data-date="{{ order.get('created_at') or order.get('date') }}">—</span></td>
                     <td class="order-units">{% if order.get('item_units') is not none %}{{ order.item_units }} шт.{% else %}Не загружено{% endif %}</td>
-                    <td class="money-cell">{% if total is not none %}<strong><span class="money-value" data-amount="{{ total }}"></span> ₽</strong>{% else %}Сумма не передана{% endif %}</td>
+                    <td class="money-cell">{% if total is not none %}<strong><span class="money-value" data-amount="{{ total }}"></span> ₽</strong>{% else %}Сумма не передана{% endif %}{% if mode == 'split' %}<span class="order-inline-units">{% if order.get('item_units') is not none %}{{ order.item_units }} шт.{% else %}Не загружено{% endif %}</span>{% endif %}</td>
                     <td class="status-cell"><span class="badge order-status-{{ order.get('ui_status_tone','neutral') }}">{{ order.get('ui_status_label') or 'Статус не определён' }}</span><span class="sale-state {{ 'is-done' if order.get('sale_completed') else '' }}">{{ 'Продажа проведена' if order.get('sale_completed') else 'Продажа не проведена' }}</span></td>
                 </tr>
             {% endfor %}</tbody>

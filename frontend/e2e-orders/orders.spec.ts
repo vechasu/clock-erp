@@ -187,3 +187,40 @@ test('page size, modes and synchronization work after lazy card selection', asyn
     await expect(page.locator(`#ordersLayoutSwitch [data-layout-mode="${mode}"]`)).toHaveAttribute('aria-checked','true');
   }
 });
+
+test('compact rows retain density, disclosure and independent scrolling', async ({ page }) => {
+  for (const width of [1920, 1440, 1376, 1280, 1024, 390]) {
+    await page.setViewportSize({ width, height: width === 1376 ? 717 : 900 });
+    await page.goto('/app/orders?source=wildberries');
+    const row = page.locator('.orders-split-table tbody tr').first();
+    await expect(row).toBeVisible();
+    if (width >= 1280) {
+      const density = await page.locator('.orders-split-table-scroll').evaluate(el => {
+        const viewport = el.getBoundingClientRect();
+        return [...el.querySelectorAll('tbody tr')].filter(row => {
+          const box = row.getBoundingClientRect();
+          return box.top >= viewport.top && box.bottom <= viewport.bottom;
+        }).length;
+      });
+      expect(density).toBeGreaterThanOrEqual(5);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const before = await row.boundingBox();
+    await row.locator('summary').click();
+    await expect(row.locator('details')).toHaveAttribute('open', '');
+    await expect(row.locator('details').getByRole('link', {name:'Открыть карточку'})).toBeVisible();
+    await expect(page.locator('.card-title h2')).toHaveCount(0);
+    await row.locator('summary').click();
+    await row.locator('.list-product-name').evaluate(el => { el.textContent = 'Очень длинное название товара '.repeat(20); });
+    await row.locator('.order-row-customer').evaluate(el => { el.textContent = 'Длинное имя покупателя '.repeat(10); });
+    const after = await row.boundingBox();
+    expect(after!.height).toBeLessThanOrEqual(before!.height + 30);
+    if (width >= 1280) {
+      const panel = await page.locator('.order-detail-panel').boundingBox();
+      await page.locator('.orders-split-table-scroll').evaluate(el => { el.scrollTop = el.scrollHeight; });
+      expect(await page.locator('.order-detail-panel').boundingBox()).toEqual(panel);
+      await expect(page.locator('.list-footer')).toBeInViewport();
+    }
+    await page.screenshot({path: '/tmp/orders-compact-' + width + '.png', fullPage: true});
+  }
+});
