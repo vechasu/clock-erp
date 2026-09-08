@@ -25,6 +25,7 @@ from app.services.customer_registry import (
     order_number_query,
 )
 from scripts.backfill_customers import order_operation, read_sales
+from scripts.reconcile_customer_order_links import audit as audit_links, repair as repair_links
 
 
 def order(order_id, name="Иван Иванов", phone="+7 921 123-45-67", email="ivan@example.ru", **values):
@@ -286,6 +287,27 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
             self.registry.get(1)
         self.assertEqual(connect.call_count, 3)
 
+    def test_repair_requires_two_unique_contacts_and_preserves_existing_operations(self):
+        owner = self.add(1, phone="+79211234567", email="ivan@example.ru")
+        rows = {("tictactoy", "2"): order(2),
+                ("tictactoy", "3"): order(3, email="different@example.ru")}
+        with self.registry.connection() as connection:
+            before = [tuple(r) for r in connection.execute("SELECT * FROM customer_operations")]
+            report = audit_links(connection, rows)
+        self.assertEqual(report["missing_proven_links"], [
+            {"source": "tictactoy", "order_id": "2", "customer_id": owner["customer_id"]}])
+        backup = repair_links(self.registry, rows, report["missing_proven_links"], self.path.parent)
+        self.assertTrue(Path(backup).is_file())
+        with self.registry.connection() as connection:
+            after = [tuple(r) for r in connection.execute("SELECT * FROM customer_operations WHERE external_id='1'")]
+            self.assertEqual(before, after)
+            self.assertEqual(audit_links(connection, rows)["missing_proven_links"], [])
+
+    def test_repair_rolls_back_when_evidence_changes(self):
+        self.add(1, phone="+79211234567", email="ivan@example.ru")
+        with self.assertRaisesRegex(RuntimeError, "evidence changed"):
+            repair_links(self.registry, {("tictactoy", "2"): order(2)}, [], self.path.parent)
+
     def test_conflict_idempotency_cancellation_and_blank_preservation(self):
         phone_customer = self.add(1, name="Полное имя", phone="+7 900 000-00-01", email="one@example.ru", external_customer_id="u1")
         email_customer = self.add(2, phone="+7 900 000-00-02", email="two@example.ru")
@@ -310,6 +332,16 @@ class CanonicalCustomerRegistryTest(unittest.TestCase):
         reused_email = self.add(14, phone="+7 900 000-00-14", email="second@example.ru")
         self.assertNotEqual(reused_email["customer_id"], second["customer_id"])
         self.assertEqual(reused_email["reason"], "phone_email_value_conflict")
+
+    def test_personal_external_id_precedes_new_contact_but_never_crosses_customers(self):
+        first = self.add(11, phone="+79000000011", email="first@example.ru", external_customer_id="personal")
+        changed_email = self.add(12, phone="+79000000011", email="new@example.ru", external_customer_id="personal")
+        self.assertEqual(changed_email["customer_id"], first["customer_id"])
+        self.assertEqual(changed_email["matched_by"], "external_id_and_contact")
+        other = self.add(13, phone="+79000000013", email="other@example.ru")
+        conflict = self.add(14, phone="+79000000011", email="other@example.ru", external_customer_id="personal")
+        self.assertNotIn(conflict["customer_id"], {first["customer_id"], other["customer_id"]})
+        self.assertEqual(conflict["reason"], "phone_email_cross_conflict")
 
     def test_more_than_100_server_paginated_customers_and_global_search(self):
         for index in range(1, 126):
@@ -478,6 +510,69 @@ class CustomerRoutesTest(unittest.TestCase):
                            "ERP_AUTH_ENABLED": "0"}, clear=False
         )
         self.environment.start()
+
+    def test_import_new_order_appears_in_existing_customer_orders_tab(self):
+        registry = CustomerRegistry(self.customers_path)
+        customer_id = registry.list(query="ivan@example.ru")["rows"][0]["id"]
+        snapshot = OrdersSnapshotStore(self.path)
+        snapshot.upsert_bitrix([order(21139, phone="8 (921) 123-45-67",
+                                      email=" IVAN@EXAMPLE.RU ", external_customer_id="59239")], 2)
+        snapshot.upsert_bitrix([order(21139, customer=None, phone=None, email=None,
+                                      external_customer_id=None)], 3)
+        response = self.client.get("/app/customers/{}?tab=orders".format(customer_id))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Заказ · №21139", response.get_data(as_text=True))
+        self.assertIn("Заказ · №1", response.get_data(as_text=True))
+        self.assertEqual(registry.operations(customer_id, "order")["total"], 2)
+        persisted = snapshot.get("21139")
+        self.assertEqual(persisted["phone"], "8 (921) 123-45-67")
+        self.assertEqual(persisted["email"], " IVAN@EXAMPLE.RU ")
+        self.assertEqual(persisted["external_customer_id"], "59239")
+
+    def test_detail_import_publishes_contactless_summary_and_keeps_foreign_order_out(self):
+        snapshot = OrdersSnapshotStore(self.path)
+        registry = CustomerRegistry(self.customers_path)
+        owner = registry.list(query="ivan@example.ru")["rows"][0]["id"]
+        snapshot.upsert_bitrix([order(21139, name="", phone="", email="")], 2)
+        self.assertEqual(registry.operations(owner, "order")["total"], 1)
+        snapshot.enrich_from_detail("21139", order(21139, external_customer_id="59239"))
+        snapshot.upsert_bitrix([order(21140, phone="+79000000000", email="other@example.ru")], 3)
+        response = self.client.get("/app/customers/{}?tab=orders".format(owner))
+        self.assertIn("Заказ · №21139", response.get_data(as_text=True))
+        self.assertNotIn("Заказ · №21140", response.get_data(as_text=True))
+
+    def test_registry_failure_retries_unchanged_snapshot_without_duplicate(self):
+        snapshot = OrdersSnapshotStore(self.path)
+        with mock.patch("app.services.customer_order_sync.CustomerRegistry.connection",
+                        side_effect=sqlite3.OperationalError("locked")):
+            snapshot.upsert_bitrix([order(21139)], 2)
+        self.assertIsNotNone(snapshot.get("21139"))
+        snapshot.upsert_bitrix([order(21139)], 2)
+        snapshot.upsert_bitrix([order(21139)], 2)
+        registry = CustomerRegistry(self.customers_path)
+        owner = registry.list(query="ivan@example.ru")["rows"][0]["id"]
+        self.assertEqual(registry.operations(owner, "order")["total"], 2)
+
+    def test_external_identity_is_retained_but_shared_contactless_ids_are_deferred(self):
+        snapshot = OrdersSnapshotStore(self.path)
+        snapshot.upsert_bitrix([order(21143, name="", phone="", email="",
+                                      external_customer_id="unknown")], 1)
+        with CustomerRegistry(self.customers_path).connection() as connection:
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM customer_operations WHERE external_id='21143'").fetchone())
+        snapshot.upsert_bitrix([order(21139, external_customer_id="stable")], 2)
+        normalized = web.normalize_order({"id": "21140", "USER_ID": "stable", "status": "N"})
+        snapshot.upsert_bitrix([normalized], 3)
+        registry = CustomerRegistry(self.customers_path)
+        owner = registry.list(query="ivan@example.ru")["rows"][0]["id"]
+        self.assertEqual(registry.operations(owner, "order")["total"], 3)
+        snapshot.upsert_bitrix([order(21141, phone="+79000000000", email="other@example.ru",
+                                      external_customer_id="stable")], 4)
+        snapshot.upsert_bitrix([order(21142, name="", phone="", email="",
+                                      external_customer_id="stable")], 5)
+        with registry.connection() as connection:
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM customer_operations WHERE external_id='21142'").fetchone())
 
     def tearDown(self):
         self.environment.stop()
