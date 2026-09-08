@@ -13343,6 +13343,8 @@ def build_wb_fbs_assembly_rows(store=None, catalog=None):
 @app.route("/sales")
 @app.route("/app/sales")
 def sales_page():
+    if request.args.get("source") == "writeoff":
+        return writeoff_page()
     wb_assembly_mode = request.args.get("view") == "assembly"
     wb_assembly_error = ""
     wb_assembly_orders = []
@@ -13494,6 +13496,7 @@ def sales_page():
         }
         for tab in SALES_SOURCE_TABS
     ]
+    source_tabs.append({"key": "writeoff", "label": "Списание", "url": source_url("writeoff"), "active": False})
     today_query = {
         key: value for key, value in preserved_filters.items()
         if value and key != "today"
@@ -24904,6 +24907,65 @@ def react_application(react_path):
 from app.supply_routes import register_supply_routes
 import sys as _supply_sys
 register_supply_routes(_supply_sys.modules[__name__])
+
+
+# Write-offs share the warehouse balance, never the sale entity.
+from app.services.writeoffs import Writeoffs, REASONS as WRITEOFF_REASONS
+
+
+def writeoff_permission():
+    if auth_is_enabled() and (current_auth_user() or {}).get("role") not in {"admin", "employee"}:
+        abort(403)
+
+
+def writeoff_page():
+    writeoff_permission()
+    try:
+        result = Writeoffs().list(request.args)
+    except ValueError:
+        abort(400)
+    products = SharedCatalog().products_by_ids([str(r["product_id"]) for r in result["rows"]], include_archived=True)
+    for row in result["rows"]:
+        product = products.get(str(row["product_id"]), {})
+        row["image_url"] = product.get("local_image_url") or product.get("thumbnail_url") or product.get("image_url") or ""
+    return render_template("sales.html", writeoff_mode=True, writeoffs=result["rows"],
+        reasons=WRITEOFF_REASONS, active_source="writeoff",
+        pagination=build_erp_pagination("sales_page",result["total"],result["page"],result["per_page"]),
+        source_tabs=[dict(tab, url=url_for("sales_page",source=tab["key"]),active=False) for tab in SALES_SOURCE_TABS]+[
+            {"key":"writeoff","label":"Списание","url":url_for("sales_page",source="writeoff"),"active":True}])
+
+
+@app.route("/api/v1/writeoffs", methods=["GET", "POST"])
+@app.route("/api/writeoffs", methods=["GET", "POST"])
+def api_writeoffs():
+    writeoff_permission()
+    try:
+        if request.method == "GET":
+            return api_success(Writeoffs().list(request.args))
+        require_csrf_when_authenticated()
+        result = Writeoffs().create(api_json_payload(),current_audit_actor(),request.headers.get("Idempotency-Key") or "")
+        return api_success(result,201)
+    except InsufficientStockError as error:
+        return api_error("INSUFFICIENT_STOCK",str(error),409)
+    except ValueError as error:
+        return api_error("WRITEOFF_VALIDATION_FAILED",str(error),422)
+    except Exception:
+        app.logger.exception("Write-off transaction failed")
+        return api_error("WRITEOFF_FAILED","Списание не выполнено. Остаток не изменён.",500)
+
+
+@app.route("/api/v1/writeoffs/<writeoff_id>/cancel", methods=["POST"])
+@app.route("/api/writeoffs/<writeoff_id>/cancel", methods=["POST"])
+def api_cancel_writeoff(writeoff_id):
+    writeoff_permission()
+    require_csrf_when_authenticated()
+    try:
+        return api_success(Writeoffs().cancel(writeoff_id,current_audit_actor()))
+    except ValueError as error:
+        return api_error("WRITEOFF_VALIDATION_FAILED",str(error),422)
+    except Exception:
+        app.logger.exception("Write-off cancellation failed")
+        return api_error("WRITEOFF_CANCEL_FAILED","Отмена не выполнена. Остаток не изменён.",500)
 
 
 if __name__ == "__main__":
