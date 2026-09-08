@@ -480,31 +480,84 @@
     const parameters = new URLSearchParams({ type: "product", limit: "200" });
     const query = $("supply-product-search").value.trim();
     if (query) parameters.set("q", query);
-    $("supply-search-status").textContent = "Ищем в каталоге ERP…";
+    $("supply-search-status").textContent =
+      "Ищем в " + $("supply-product-source").value.toUpperCase() + "…";
     try {
-      const response = await fetch("/api/v1/catalog/options?" + parameters, {
-        credentials: "same-origin",
-        signal: controller.signal,
-        headers: { Accept: "application/json" },
-      });
-      const payload = await response.json();
+      const bitrix = $("supply-product-source").value === "bitrix";
+      const products = bitrix
+        ? await window.ERPProductPicker.bitrix.search(query, controller.signal)
+        : await window.ERPProductPicker.request(
+            "/api/v1/catalog/options?" + parameters,
+            { signal: controller.signal },
+          );
       if (version !== searchVersion || controller.signal.aborted) return;
-      if (!response.ok)
-        throw new Error(payload.message || "Не удалось загрузить каталог ERP.");
-      const products = Array.isArray(payload.data) ? payload.data : [];
       window.ERPProductPicker.results(
         $("supply-product-results"),
-        products,
-        (p) => {
+        products.map((p) => ({
+          ...p,
+          source_label: bitrix ? "Bitrix" : "Уже в ERP",
+        })),
+        async (p) => {
           if (busy || addition) return;
-          pickerProduct = p;
-          window.ERPProductPicker.highlight($("supply-product-results"), p.id);
+          cancelSearch();
+          const selectionVersion = searchVersion;
+          pickerProduct = null;
           updateAddition();
+          try {
+            if (bitrix) {
+              p = await window.ERPProductPicker.bitrix.preview(p.bitrix_id);
+              if (selectionVersion !== searchVersion) return;
+              if (p.ambiguous)
+                throw new Error(
+                  "Найдено несколько карточек ERP. Требуется ручное сопоставление.",
+                );
+              p = {
+                ...p,
+                stock: undefined,
+                source_label: p.existing ? "Уже в ERP" : "Bitrix",
+                id: p.existing?.id,
+              };
+              for (const kind of ["brand", "category"]) {
+                const select = $("supply-" + kind);
+                select.replaceChildren(new Option("Выберите значение", ""));
+                if (!p.existing && p[kind] && !p[kind + "_id"]) {
+                  const options = await window.ERPProductPicker.request(
+                    "/api/v1/catalog/options?type=" + kind + "&limit=200",
+                  );
+                  if (selectionVersion !== searchVersion) return;
+                  options.forEach((option) =>
+                    select.add(new Option(option.name, option.id)),
+                  );
+                }
+                select.hidden = Boolean(
+                  p.existing || !p[kind] || p[kind + "_id"],
+                );
+                document.querySelector(
+                  'label[for="supply-' + kind + '"]',
+                ).hidden = select.hidden;
+              }
+            }
+            if (selectionVersion !== searchVersion) return;
+            pickerProduct = p;
+            window.ERPProductPicker.highlight(
+              $("supply-product-results"),
+              bitrix ? p.bitrix_id : p.id,
+            );
+            $("supply-search-status").textContent = p.source_label;
+            $("add-item-message").hidden = true;
+            updateAddition();
+          } catch (error) {
+            if (selectionVersion === searchVersion)
+              $("supply-search-status").textContent = error.message;
+          }
         },
+        bitrix ? "bitrix_id" : "id",
       );
       $("supply-search-status").textContent = products.length
         ? "Показано товаров: " + products.length
-        : "Товар не найден в ERP. Сначала добавьте его в каталог.";
+        : bitrix
+          ? "Товары не найдены. Введите название, артикул или Bitrix ID."
+          : "Товар не найден в ERP. Выберите источник Bitrix для поиска и импорта.";
     } catch (error) {
       if (error.name === "AbortError" || version !== searchVersion) return;
       $("supply-search-status").textContent = error.message;
@@ -515,16 +568,23 @@
     pickerProduct = null;
     $("supply-product-results").replaceChildren();
     updateAddition();
-    $("supply-search-status").textContent = "Ищем в каталоге ERP…";
+    $("supply-search-status").textContent =
+      "Ищем в " + $("supply-product-source").value.toUpperCase() + "…";
     searchTimer = setTimeout(searchProducts, 300);
   };
+  $("supply-product-source").onchange = $("supply-product-search").oninput;
   function updateAddition() {
-    $("add-quantity").disabled = Boolean(addition);
-    $("supply-product-search").disabled = Boolean(addition);
+    $("supply-product-source").disabled = busy || Boolean(addition);
+    $("supply-taxonomy").hidden =
+      !pickerProduct?.bitrix_id || Boolean(pickerProduct?.existing);
+    $("add-quantity").disabled = busy || Boolean(addition);
+    $("supply-product-search").disabled = busy || Boolean(addition);
     $("quantity-minus").disabled =
-      Boolean(addition) || Number($("add-quantity").value) <= 1;
+      busy || Boolean(addition) || Number($("add-quantity").value) <= 1;
     $("quantity-plus").disabled =
-      Boolean(addition) || Number($("add-quantity").value) >= 2147483647;
+      busy ||
+      Boolean(addition) ||
+      Number($("add-quantity").value) >= 2147483647;
     $("supply-selection-empty").hidden = Boolean(selectedProduct() || addition);
     $("supply-selection-controls").hidden = !selectedProduct() && !addition;
     $("confirm-add-item").disabled =
@@ -532,7 +592,9 @@
       (!addition && (!selectedProduct() || !$("add-quantity").validity.valid));
     $("confirm-add-item").textContent = addition
       ? "Проверить предыдущую операцию"
-      : "Добавить в поставку";
+      : pickerProduct?.bitrix_id && !pickerProduct?.id
+        ? "Импортировать и добавить"
+        : "Добавить в поставку";
     if (addition) {
       $("selected-product").textContent =
         `${addition.name}: +${addition.payload.quantity} шт.`;
@@ -608,6 +670,7 @@
     event.preventDefault();
     if (busy) return;
     busy = true;
+    updateAddition();
     $("confirm-add-item").disabled = true;
     try {
       const p = selectedProduct();
@@ -620,7 +683,21 @@
           quantity > 2147483647
         )
           throw new Error("Количество должно быть целым положительным числом.");
+        if (p.bitrix_id) {
+          updateAddition();
+          const imported = await window.ERPProductPicker.bitrix.import(
+            p.bitrix_id,
+            {
+              supply_id: current.id,
+              brand_id: p.brand_id || $("supply-brand").value || null,
+              category_id: p.category_id || $("supply-category").value || null,
+            },
+          );
+          p.id = imported.erp_product_id;
+          p.cardResolved = true;
+        }
         addition = {
+          cardResolved: Boolean(p.cardResolved),
           key:
             crypto.randomUUID?.() ||
             Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
@@ -653,12 +730,17 @@
       message(success, true);
       await load();
     } catch (error) {
+      const cardResolved =
+        addition?.cardResolved || pickerProduct?.cardResolved;
       if ([403, 422].includes(error.status)) {
         sessionStorage.removeItem("supply-add:" + current.id);
         addition = null;
       }
       updateAddition();
-      $("add-item-message").textContent = error.message;
+      $("add-item-message").textContent =
+        (cardResolved
+          ? "Товар сохранён в ERP, но добавление в поставку не подтверждено. "
+          : "") + error.message;
       $("add-item-message").hidden = false;
     } finally {
       busy = false;
