@@ -93,7 +93,9 @@ body[class] {
     min-height: 40px;
     height: 40px;
     flex: 0 0 auto;
-    overflow: clip;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     transition: none;
 }
 
@@ -102,18 +104,12 @@ body[class] {
 }
 
 .sidebar-brand-link {
-    position: absolute;
-    top: 2px;
-    left: 0;
     min-width: 0;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     color: #f8fafc;
     text-decoration: none;
-    transition:
-        top 0.2s ease,
-        left 0.2s ease;
 }
 
 .sidebar-brand-link:hover {
@@ -137,18 +133,38 @@ body[class] {
 }
 
 .sidebar-brand-actions {
-    position: absolute;
-    top: 2px;
-    right: 0;
-    min-width: 0;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 6px;
-    transform: translateX(0);
-    transition:
-        top 0.2s ease,
-        right 0.2s ease,
-        transform 0.2s ease;
+    gap: 8px;
+}
+
+.sidebar-brand-actions::before {
+    content: "";
+    width: 1px;
+    height: 18px;
+    background: rgba(197, 219, 240, 0.18);
+}
+
+.sidebar-brand-actions > button {
+    box-sizing: border-box;
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border-radius: 10px;
+}
+
+.sidebar-brand-actions > .notification-bell {
+    background: #fff;
+    color: var(--sidebar-bg);
+}
+
+.sidebar-brand-actions > .notification-bell:hover {
+    background: var(--sidebar-bg-hover);
+    color: #fff;
 }
 
 .sidebar-toggle {
@@ -172,8 +188,7 @@ body[class] {
 
 .sidebar-toggle::before {
     position: absolute;
-    width: 36px;
-    height: 36px;
+    inset: 0;
     border: 1px solid rgba(197, 219, 240, 0.14);
     border-radius: 9px;
     content: "";
@@ -492,6 +507,9 @@ body[class] {
 
 .app.sidebar-collapsed .sidebar-brand {
     height: 80px;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
 }
 
 .app.sidebar-collapsed .sidebar-brand.has-notifications {
@@ -499,17 +517,17 @@ body[class] {
 }
 
 .app.sidebar-collapsed .sidebar-brand-link {
-    top: 0;
-    left: 2px;
+    flex: 0 0 36px;
 }
 
 .app.sidebar-collapsed .sidebar-brand-actions {
-    top: 44px;
-    right: 50%;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    transform: translateX(50%);
+    gap: 8px;
+}
+
+.app.sidebar-collapsed .sidebar-brand-actions::before {
+    display: none;
 }
 
 .app.sidebar-collapsed .sidebar-toggle {
