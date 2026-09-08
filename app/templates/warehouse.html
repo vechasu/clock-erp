@@ -4179,6 +4179,8 @@
     {% if config.TESTING and request.args.get("datetime_e2e") == "1" %}
         <script defer src="{{ url_for('static', filename='js/datetime-cell-e2e.js') }}"></script>
     {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/product-picker.css') }}">
+    <script defer src="{{ url_for('static', filename='js/product-picker.js') }}"></script>
 </head>
 <body class="warehouse-page">
     {% from "_catalog_combobox.html" import render_catalog_combobox, render_catalog_create_modal %}
@@ -4803,41 +4805,53 @@
             </div>
 
             <div id="bitrixImportModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="bitrixImportTitle" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
-                <div class="modal-dialog erp-modal-dialog bitrix-import-dialog">
+                <div class="modal-dialog erp-modal-dialog bitrix-import-dialog product-picker">
                     <div class="modal-header">
                         <div><div class="add-title" id="bitrixImportTitle">Добавить товар из Bitrix</div><p class="warehouse-add-subtitle">Импортируется только выбранный товар</p></div>
                         <button class="modal-close" type="button" aria-label="Закрыть" onclick="closeBitrixImportModal()">×</button>
                     </div>
-                    <div class="bitrix-import-body">
-                        <div class="bitrix-search-row">
-                            <input id="bitrixProductSearch" type="search" autocomplete="off" placeholder="Название, артикул или Bitrix ID" aria-label="Поиск товара в Bitrix">
-                        </div>
-                        <div id="bitrixProductStatus" class="bitrix-muted" role="status" aria-live="polite">Введите минимум 2 символа или Bitrix ID</div>
-                        <div id="bitrixProductResults" class="bitrix-results"></div>
-                        <section id="bitrixProductPreview" class="bitrix-preview" hidden>
-                            <div><img id="bitrixPreviewPhoto" class="bitrix-preview-photo" alt="Фото товара" hidden><span id="bitrixPreviewNoPhoto" class="bitrix-preview-photo">Нет фото</span></div>
-                            <div>
-                                <h3 id="bitrixPreviewName"></h3>
-                                <div class="bitrix-preview-fields">
-                                    <span>Артикул: <strong id="bitrixPreviewArticle">—</strong></span>
-                                    <span>Bitrix ID: <strong id="bitrixPreviewId">—</strong></span>
-                                    <span>Бренд: <strong id="bitrixPreviewBrand">—</strong></span>
-                                    <span>Категория: <strong id="bitrixPreviewCategory">—</strong></span>
-                                    <span>Цена: <strong id="bitrixPreviewPrice">—</strong></span>
-                                    <span>Остаток: <strong id="bitrixPreviewStock">—</strong></span>
-                                </div>
+                    <div class="picker-form">
+                        <div class="picker-search">
+                            <div class="bitrix-search-row">
+                                <input id="bitrixProductSearch" type="search" autocomplete="off" placeholder="Название, артикул или Bitrix ID" aria-label="Поиск товара в Bitrix">
                             </div>
-                        </section>
-                        <div id="bitrixDuplicateNotice" hidden>
-                            <strong>Товар уже есть в ERP.</strong> <span id="bitrixDuplicateText"></span>
-                            <div id="bitrixChanges" class="bitrix-muted"></div>
+                            <div id="bitrixProductStatus" class="picker-status" role="status" aria-live="polite">Введите минимум 2 символа или Bitrix ID</div>
                         </div>
-                        <div id="bitrixTaxonomy" class="bitrix-taxonomy" hidden>
-                            <label>Бренд<select id="bitrixBrandSelect"><option value="">Выберите бренд</option>{% for item in brand_groups %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
-                            <label>Категория<select id="bitrixCategorySelect"><option value="">Выберите категорию</option>{% for item in category_groups %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
+                        <div class="picker-columns">
+                            <section class="picker-results-panel">
+                                <h3>Результаты поиска</h3>
+                                <div id="bitrixProductResults" class="picker-results"></div>
+                            </section>
+                            <section class="picker-selected-panel">
+                                <h3>Выбранный товар</h3>
+                                <div id="bitrixSelectionEmpty" class="picker-empty">Выберите товар из результатов слева</div>
+                                <section id="bitrixProductPreview" class="bitrix-preview picker-preview" hidden>
+                                    <div class="picker-photo picker-photo-large"><img id="bitrixPreviewPhoto" class="bitrix-preview-photo" alt="Фото товара" hidden><span id="bitrixPreviewNoPhoto" class="bitrix-preview-photo">Нет фото</span></div>
+                                    <div>
+                                        <h3 id="bitrixPreviewName"></h3>
+                                        <div class="bitrix-preview-fields picker-details">
+                                            <span>Артикул: <strong id="bitrixPreviewArticle">—</strong></span>
+                                            <span>Bitrix ID: <strong id="bitrixPreviewId">—</strong></span>
+                                            <span>Бренд: <strong id="bitrixPreviewBrand">—</strong></span>
+                                            <span>Категория: <strong id="bitrixPreviewCategory">—</strong></span>
+                                            <span>Цена: <strong id="bitrixPreviewPrice">—</strong></span>
+                                            <span>Остаток: <strong id="bitrixPreviewStock">—</strong></span>
+                                        </div>
+                                    </div>
+                                </section>
+                                <div id="bitrixDuplicateNotice" hidden>
+                                    <strong>Товар уже есть в ERP.</strong> <span id="bitrixDuplicateText"></span>
+                                    <div id="bitrixChanges" class="bitrix-muted"></div>
+                                </div>
+                                <div id="bitrixTaxonomy" class="bitrix-taxonomy picker-taxonomy" hidden>
+                                    <label>Бренд<select id="bitrixBrandSelect"><option value="">Выберите бренд</option>{% for item in brand_groups %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
+                                    <label>Категория<select id="bitrixCategorySelect"><option value="">Выберите категорию</option>{% for item in category_groups %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></label>
+                                </div>
+                            </section>
                         </div>
-                        <div id="bitrixImportError" class="bitrix-import-error" role="alert"></div>
-                        <div class="bitrix-import-actions">
+                        <div id="bitrixImportError" class="picker-error" role="alert"></div>
+                        <div class="picker-footer">
+                            <button class="products-workspace-button" type="button" onclick="closeBitrixImportModal()">Отмена</button>
                             <a id="bitrixOpenExisting" class="products-workspace-button" href="#" hidden>Открыть товар</a>
                             <button id="bitrixUpdateProduct" class="products-workspace-button" type="button" hidden>Обновить из Bitrix</button>
                             <button id="bitrixImportProduct" class="products-workspace-button is-primary" type="button" hidden>Добавить товар в ERP</button>
@@ -7927,6 +7941,15 @@
     }
 
     function closeBitrixImportModal() {
+        if (bitrixSubmitting) return;
+        clearTimeout(bitrixSearchTimer);
+        bitrixRequestVersion += 1;
+        cancelBitrixRequests();
+        resetBitrixSelection();
+        renderBitrixResults([]);
+        document.getElementById("bitrixProductSearch").value = "";
+        document.getElementById("bitrixProductStatus").textContent = "Введите минимум 2 символа или Bitrix ID";
+        bitrixImportMessage("");
         const modal = document.getElementById("bitrixImportModal");
         modal?.classList.remove("is-open");
         modal?.setAttribute("aria-hidden", "true");
@@ -7938,6 +7961,8 @@
 
     function resetBitrixSelection() {
         bitrixSelectedProduct = null;
+        document.getElementById("bitrixSelectionEmpty").hidden = false;
+        window.ERPProductPicker.highlight(document.getElementById("bitrixProductResults"), "");
         document.getElementById("bitrixProductPreview").hidden = true;
         document.getElementById("bitrixDuplicateNotice").hidden = true;
         document.getElementById("bitrixTaxonomy").hidden = true;
@@ -7960,36 +7985,9 @@
     }
 
     function renderBitrixResults(products) {
-        const results = document.getElementById("bitrixProductResults");
-        results.replaceChildren();
-        products.forEach(function(product) {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "bitrix-result";
-            if (product.image_url) {
-                const image = document.createElement("img");
-                image.src = product.image_url;
-                image.alt = "";
-                button.appendChild(image);
-            } else {
-                const empty = document.createElement("span");
-                empty.textContent = "Нет фото";
-                button.appendChild(empty);
-            }
-            const label = document.createElement("span");
-            const strong = document.createElement("strong");
-            strong.textContent = product.name;
-            const small = document.createElement("small");
-            small.textContent = "Артикул: " + (product.article || "—");
-            label.append(strong, document.createElement("br"), small);
-            const id = document.createElement("small");
-            id.textContent = "ID " + product.bitrix_id;
-            button.append(label, id);
-            button.addEventListener("click", function() {
-                loadBitrixProduct(product.bitrix_id);
-            });
-            results.appendChild(button);
-        });
+        window.ERPProductPicker.results(document.getElementById("bitrixProductResults"), products, function(product) {
+            if (!bitrixSubmitting) loadBitrixProduct(product.bitrix_id);
+        }, "bitrix_id");
     }
 
     async function searchBitrixProducts(query, requestVersion) {
@@ -8023,6 +8021,8 @@
 
     function showBitrixPreview(product) {
         bitrixSelectedProduct = product;
+        document.getElementById("bitrixSelectionEmpty").hidden = true;
+        window.ERPProductPicker.highlight(document.getElementById("bitrixProductResults"), product.bitrix_id);
         document.getElementById("bitrixProductPreview").hidden = false;
         document.getElementById("bitrixPreviewName").textContent = product.name || "—";
         document.getElementById("bitrixPreviewArticle").textContent = product.article || "—";
@@ -8031,9 +8031,13 @@
         document.getElementById("bitrixPreviewCategory").textContent = product.category || "Не распознана";
         document.getElementById("bitrixPreviewPrice").textContent = bitrixMoney(product.price, product.currency);
         document.getElementById("bitrixPreviewStock").textContent = product.stock ?? "Недоступен";
+        for (const [id, value] of [["Article", product.article], ["Brand", product.brand], ["Category", product.category], ["Price", product.price], ["Stock", product.stock]]) {
+            document.getElementById("bitrixPreview" + id).parentElement.hidden = value === null || value === undefined || value === "";
+        }
         const photo = document.getElementById("bitrixPreviewPhoto");
         photo.hidden = !product.image_url;
         document.getElementById("bitrixPreviewNoPhoto").hidden = Boolean(product.image_url);
+        photo.onerror = function() { photo.hidden = true; document.getElementById("bitrixPreviewNoPhoto").hidden = false; };
         if (product.image_url) photo.src = product.image_url;
         const brand = document.getElementById("bitrixBrandSelect");
         const category = document.getElementById("bitrixCategorySelect");
@@ -8057,6 +8061,7 @@
     }
 
     async function loadBitrixProduct(id) {
+        resetBitrixSelection();
         const requestVersion = bitrixRequestVersion;
         bitrixPreviewController?.abort();
         bitrixPreviewController = new AbortController();
@@ -8066,21 +8071,24 @@
         try {
             const response = await fetch("/api/v1/bitrix-products/" + encodeURIComponent(id), {headers:{Accept:"application/json"},signal:controller.signal});
             const payload = await response.json();
-            if (requestVersion !== bitrixRequestVersion) return;
+            if (requestVersion !== bitrixRequestVersion || controller.signal.aborted) return;
             if (!response.ok) throw new Error(payload.message || "Не удалось загрузить товар.");
             showBitrixPreview(payload.data);
-            document.getElementById("bitrixProductResults").replaceChildren();
-            document.getElementById("bitrixProductStatus").textContent = "";
+            document.getElementById("bitrixProductStatus").textContent = "Показано товаров: " + document.getElementById("bitrixProductResults").children.length;
         } catch (error) {
             if (error.name === "AbortError" || requestVersion !== bitrixRequestVersion) return;
+            document.getElementById("bitrixProductStatus").textContent = "";
             bitrixImportMessage(error.message);
         } finally {
             if (bitrixPreviewController === controller) bitrixPreviewController = null;
         }
     }
 
+    let bitrixSubmitting = false;
     async function submitBitrixImport(action) {
-        if (!bitrixSelectedProduct) return;
+        if (!bitrixSelectedProduct || bitrixSubmitting) return;
+        bitrixSubmitting = true;
+        document.getElementById("bitrixProductSearch").disabled = true;
         const button = action === "update" ? document.getElementById("bitrixUpdateProduct") : document.getElementById("bitrixImportProduct");
         button.disabled = true;
         bitrixImportMessage("");
@@ -8100,6 +8108,8 @@
             bitrixImportMessage(error.message);
         } finally {
             button.disabled = false;
+            bitrixSubmitting = false;
+            document.getElementById("bitrixProductSearch").disabled = false;
         }
     }
 

@@ -17,6 +17,7 @@ class ForbiddenMoySklad:
         raise AssertionError('Supply accessed MoySklad')
 web.MoySkladClient=ForbiddenMoySklad
 engine=SupplyEngine(fixture.fixture_catalog_database)
+engine.resolve_bitrix(products[1])
 card=engine.resolve_bitrix(products[0])
 with fixture.fixture_catalog_database.transaction() as c:
     c.execute('UPDATE catalog_excel_products SET stock=3 WHERE id=?',(card['id'],))

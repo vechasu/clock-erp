@@ -322,7 +322,7 @@
     $("supply-meta").textContent = current
       ? `${labels[current.status]} · Создана ${current.created_at} · ${current.created_by}${current.posted_at ? " · Проведена " + current.posted_at + " · " + current.posted_by : ""}`
       : "";
-    $("bitrix-panel").hidden = true;
+
     message("", true);
     renderItems();
     if (!$("supply-dialog").open) $("supply-dialog").showModal();
@@ -334,6 +334,7 @@
     $("title").disabled = posted;
     $("comment").disabled = posted;
     $("draft-actions").hidden = posted;
+    $("save-first-hint").hidden = Boolean(current);
     for (const id of ["save-supply", "post-supply", "delete-supply"])
       $(id).hidden = posted || (id === "delete-supply" && !current);
     $("items").querySelector("tbody").innerHTML = items
@@ -460,14 +461,78 @@
     }
   };
   let addition = null;
+  let pickerProduct = null,
+    searchTimer = null,
+    searchController = null,
+    searchVersion = 0;
   function selectedProduct() {
-    return JSON.parse(
-      $("supply-product").dataset.sharedCatalogSelectedItem || "null",
-    );
+    return pickerProduct;
   }
+  function cancelSearch() {
+    clearTimeout(searchTimer);
+    searchVersion++;
+    searchController?.abort();
+  }
+  async function searchProducts() {
+    const version = searchVersion;
+    const controller = new AbortController();
+    searchController = controller;
+    const parameters = new URLSearchParams({ type: "product", limit: "200" });
+    const query = $("supply-product-search").value.trim();
+    if (query) parameters.set("q", query);
+    $("supply-search-status").textContent = "Ищем в каталоге ERP…";
+    try {
+      const response = await fetch("/api/v1/catalog/options?" + parameters, {
+        credentials: "same-origin",
+        signal: controller.signal,
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (version !== searchVersion || controller.signal.aborted) return;
+      if (!response.ok)
+        throw new Error(payload.message || "Не удалось загрузить каталог ERP.");
+      const products = Array.isArray(payload.data) ? payload.data : [];
+      window.ERPProductPicker.results(
+        $("supply-product-results"),
+        products,
+        (p) => {
+          if (busy || addition) return;
+          pickerProduct = p;
+          window.ERPProductPicker.highlight($("supply-product-results"), p.id);
+          updateAddition();
+        },
+      );
+      $("supply-search-status").textContent = products.length
+        ? "Показано товаров: " + products.length
+        : "Товар не найден в ERP. Сначала добавьте его в каталог.";
+    } catch (error) {
+      if (error.name === "AbortError" || version !== searchVersion) return;
+      $("supply-search-status").textContent = error.message;
+    }
+  }
+  $("supply-product-search").oninput = () => {
+    cancelSearch();
+    pickerProduct = null;
+    $("supply-product-results").replaceChildren();
+    updateAddition();
+    $("supply-search-status").textContent = "Ищем в каталоге ERP…";
+    searchTimer = setTimeout(searchProducts, 300);
+  };
   function updateAddition() {
     $("add-quantity").disabled = Boolean(addition);
-    $("supply-productTrigger").disabled = Boolean(addition);
+    $("supply-product-search").disabled = Boolean(addition);
+    $("quantity-minus").disabled =
+      Boolean(addition) || Number($("add-quantity").value) <= 1;
+    $("quantity-plus").disabled =
+      Boolean(addition) || Number($("add-quantity").value) >= 2147483647;
+    $("supply-selection-empty").hidden = Boolean(selectedProduct() || addition);
+    $("supply-selection-controls").hidden = !selectedProduct() && !addition;
+    $("confirm-add-item").disabled =
+      busy ||
+      (!addition && (!selectedProduct() || !$("add-quantity").validity.valid));
+    $("confirm-add-item").textContent = addition
+      ? "Проверить предыдущую операцию"
+      : "Добавить в поставку";
     if (addition) {
       $("selected-product").textContent =
         `${addition.name}: +${addition.payload.quantity} шт.`;
@@ -477,9 +542,7 @@
     }
     const p = selectedProduct(),
       q = Number($("add-quantity").value);
-    $("selected-product").textContent = p
-      ? `${p.name} · ${p.article || ""} · Остаток: ${number(p.is_physical_component ? p.physical_stock : p.stock)}`
-      : "";
+    window.ERPProductPicker.preview($("selected-product"), p);
     const existing = items.find((i) => Number(i.product_id) === Number(p?.id));
     $("duplicate-confirmation").textContent = existing
       ? `Этот товар уже есть в поставке. Сейчас: ${number(existing.quantity)} шт. Добавить ещё ${number(q)} шт.?`
@@ -487,11 +550,18 @@
         ? "Товар добавится в черновик. Остаток изменится при проведении."
         : "";
   }
-  $("supply-product").addEventListener(
-    "catalog-combobox:change",
-    updateAddition,
-  );
   $("add-quantity").oninput = updateAddition;
+  for (const [id, change] of [
+    ["quantity-minus", -1],
+    ["quantity-plus", 1],
+  ]) {
+    $(id).onclick = () => {
+      const q = Number($("add-quantity").value);
+      if (Number.isInteger(q))
+        $("add-quantity").value = Math.max(1, Math.min(2147483647, q + change));
+      updateAddition();
+    };
+  }
   $("add-item").onclick = () => {
     // Persist an uncertain request across refresh. Retrying keeps its original payload and key.
     if (
@@ -503,6 +573,10 @@
       message("Сначала сохраните изменения черновика.", true);
       return;
     }
+    cancelSearch();
+    pickerProduct = null;
+    $("supply-product-search").value = "";
+    $("supply-product-results").replaceChildren();
     const saved = sessionStorage.getItem("supply-add:" + current.id);
     addition = saved ? JSON.parse(saved) : null;
     $("add-item-message").hidden = !addition;
@@ -511,12 +585,25 @@
       : "";
     $("confirm-add-item").textContent = addition
       ? "Проверить предыдущую операцию"
-      : "Подтвердить добавление";
+      : "Добавить в поставку";
     $("add-quantity").value = addition?.payload.quantity || 1;
     updateAddition();
     $("add-item-dialog").showModal();
+    if (!addition) {
+      searchProducts();
+      $("supply-product-search").focus();
+    }
   };
-  $("close-add-item").onclick = () => $("add-item-dialog").close();
+  $("close-add-item").onclick = $("cancel-add-item").onclick = () => {
+    if (!busy) $("add-item-dialog").close();
+  };
+  $("add-item-dialog").addEventListener("cancel", (event) => {
+    if (busy) event.preventDefault();
+  });
+  $("add-item-dialog").addEventListener("close", () => {
+    cancelSearch();
+    pickerProduct = null;
+  });
   $("add-item-form").onsubmit = async (event) => {
     event.preventDefault();
     if (busy) return;
@@ -547,6 +634,7 @@
           JSON.stringify(addition),
         );
       }
+      updateAddition();
       const result = await api(
         "supplies/" + encodeURIComponent(current.id) + "/items",
         {
@@ -574,41 +662,9 @@
       $("add-item-message").hidden = false;
     } finally {
       busy = false;
-      $("confirm-add-item").disabled = false;
+      renderItems();
+      updateAddition();
     }
-  };
-  $("add-bitrix").onclick = () => {
-    $("bitrix-panel").hidden = false;
-    $("bitrix-query").focus();
-  };
-  $("bitrix-search").onclick = () =>
-    action(async () => {
-      const found = await api(
-        "bitrix?q=" + encodeURIComponent($("bitrix-query").value),
-      );
-      $("bitrix-results").innerHTML =
-        found
-          .map(
-            (p) =>
-              `<button class="button" data-bitrix="${esc(p.bitrix_id)}">${esc(p.name)} · ${esc(p.article)} · ${esc(p.brand)}</button>`,
-          )
-          .join("") || "Товары не найдены";
-    }, true);
-  $("bitrix-results").onclick = (e) => {
-    const b = e.target.closest("[data-bitrix]");
-    if (b)
-      action(async () => {
-        const product = await api("bitrix/" + b.dataset.bitrix, {
-          method: "POST",
-        });
-        if (items.some((i) => Number(i.product_id ?? i.id) === product.id))
-          throw new Error(
-            "Товар уже есть в поставке. Измените его количество.",
-          );
-        items.push({ ...product, product_id: product.id, quantity: 1 });
-        message("", true);
-        renderItems();
-      }, true);
   };
   $("save-supply").onclick = () =>
     action(async () => {
