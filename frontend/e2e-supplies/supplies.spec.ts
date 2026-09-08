@@ -177,7 +177,7 @@ test('append goods to a posted supply using the shared ERP picker', async ({ pag
   expect(writes.every((url) => url.endsWith('/items'))).toBe(true);
   await page.locator('#add-item').click();
   await page.locator('#supply-product-search').fill('NONEXISTENT-SUPPLY-SKU');
-  await expect(page.locator('#add-item-form')).toContainText('Сначала добавьте его в каталог');
+  await expect(page.locator('#add-item-form')).toContainText('Выберите источник Bitrix для поиска и импорта');
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(
