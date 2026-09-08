@@ -189,8 +189,8 @@ test('page size, modes and synchronization work after lazy card selection', asyn
 });
 
 test('compact rows retain density, disclosure and independent scrolling', async ({ page }) => {
-  for (const width of [1920, 1440, 1280, 1024, 390]) {
-    await page.setViewportSize({ width, height: 900 });
+  for (const width of [1920, 1440, 1376, 1280, 1024, 390]) {
+    await page.setViewportSize({ width, height: width === 1376 ? 717 : 900 });
     await page.goto('/app/orders?source=wildberries');
     const row = page.locator('.orders-split-table tbody tr').first();
     await expect(row).toBeVisible();

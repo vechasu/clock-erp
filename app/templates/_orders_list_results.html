@@ -55,7 +55,7 @@
                     </td>
                     <td><span class="date-value date-stacked" data-date="{{ order.get('created_at') or order.get('date') }}">—</span></td>
                     <td class="order-units">{% if order.get('item_units') is not none %}{{ order.item_units }} шт.{% else %}Не загружено{% endif %}</td>
-                    <td class="money-cell">{% if total is not none %}<strong><span class="money-value" data-amount="{{ total }}"></span> ₽</strong>{% else %}Сумма не передана{% endif %}</td>
+                    <td class="money-cell">{% if total is not none %}<strong><span class="money-value" data-amount="{{ total }}"></span> ₽</strong>{% else %}Сумма не передана{% endif %}{% if mode == 'split' %}<span class="order-inline-units">{% if order.get('item_units') is not none %}{{ order.item_units }} шт.{% else %}Не загружено{% endif %}</span>{% endif %}</td>
                     <td class="status-cell"><span class="badge order-status-{{ order.get('ui_status_tone','neutral') }}">{{ order.get('ui_status_label') or 'Статус не определён' }}</span><span class="sale-state {{ 'is-done' if order.get('sale_completed') else '' }}">{{ 'Продажа проведена' if order.get('sale_completed') else 'Продажа не проведена' }}</span></td>
                 </tr>
             {% endfor %}</tbody>
