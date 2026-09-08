@@ -176,6 +176,7 @@ from app.services.out_of_stock import OutOfStockChecks
 from app.services.product_excel_export import ProductExcelExport
 from app.services.receipt_inventory import (
     ReceiptInventory,
+    positive_integer as positive_receipt_integer,
 )
 from app.services.shared_catalog import (
     CatalogReferenceError,
@@ -19741,6 +19742,8 @@ def api_bitrix_product_preview(bitrix_id):
             "BITRIX_UNAVAILABLE",
             "Bitrix сейчас недоступен. Попробуйте ещё раз позже.", 503,
         )
+    except ValueError as error:
+        return api_error("PRODUCT_MATCH_CONFLICT", str(error), 409)
 
 
 @app.route("/api/v1/bitrix-products/<int:bitrix_id>/import", methods=["POST"])
@@ -19770,45 +19773,25 @@ def api_bitrix_product_import(bitrix_id):
     database = CatalogDatabase()
     store = ProductImageStore(database)
     prepared = None
-    previous_path = ""
     try:
+        quantity = None if supply_id else positive_receipt_integer(payload.get("quantity"), "Количество")
         client = _bitrix_single_client()
         product = client.get_product(bitrix_id)
         if product is None:
             return api_error("BITRIX_PRODUCT_NOT_FOUND", "Товар Bitrix не найден.", 404)
-        if supply_id:
-            # Import only the card; supply posting remains the sole stock operation.
-            product = dict(product, stock=0)
-            preview = BitrixERPProductSync(database).preview_single(product)
-            if preview["duplicate"]:
-                result = BitrixERPProductSync(database).apply_single(product, "resolve")
-                return api_success({**result, "product": serialize_api_product(
-                    ExcelProductCatalog(database).get_product(result["erp_product_id"])
-                )})
-        source = _bitrix_single_source_payload(product, database)
-        brand_id = payload.get("brand_id") or source.get("brand_id")
-        category_id = payload.get("category_id") or source.get("category_id")
-        if source.get("brand") and not brand_id:
-            return api_error(
-                "BITRIX_TAXONOMY_REQUIRED", "Выберите бренд для товара.", 422,
-            )
-        if source.get("category") and not category_id:
-            return api_error(
-                "BITRIX_TAXONOMY_REQUIRED", "Выберите категорию для товара.", 422,
-            )
-        preview = BitrixERPProductSync(database).preview_single(
-            product, brand_id=brand_id, category_id=category_id
-        )
-        if action == "create" and preview["duplicate"]:
-            return api_error(
-                "PRODUCT_ALREADY_EXISTS",
-                "Товар уже существует в ERP.", 409,
-                {"existing": preview.get("existing"), "preview": preview},
-            )
-        if action == "update" and not preview.get("existing"):
-            return api_error(
-                "PRODUCT_NOT_FOUND", "Совпадающий товар ERP не найден.", 404,
-            )
+        sync = BitrixERPProductSync(database)
+        preview = sync.preview_single(product)
+        if preview["ambiguous"]:
+            return api_error("PRODUCT_AMBIGUOUS", "Найдено несколько совпадающих товаров ERP.", 409)
+        brand_id = category_id = None
+        if not preview.get("existing"):
+            source = _bitrix_single_source_payload(product, database)
+            brand_id = payload.get("brand_id") or source.get("brand_id")
+            category_id = payload.get("category_id") or source.get("category_id")
+            if source.get("brand") and not brand_id:
+                return api_error("BITRIX_TAXONOMY_REQUIRED", "Выберите бренд для товара.", 422)
+            if source.get("category") and not category_id:
+                return api_error("BITRIX_TAXONOMY_REQUIRED", "Выберите категорию для товара.", 422)
         image = next((
             item for item in product.get("images") or []
             if item.get("is_primary") and item.get("original_url")
@@ -19816,33 +19799,17 @@ def api_bitrix_product_import(bitrix_id):
             item for item in product.get("images") or []
             if item.get("original_url")
         ), None)
-        if image:
+        if image and not preview.get("existing"):
             content, mime_type, filename = client.download_product_image(image)
             prepared = store.prepare_image(content, filename, mime_type)
-        if preview.get("existing"):
-            current = ExcelProductCatalog(database).get_product(
-                preview["existing"]["id"]
-            )
-            previous_path = str((current or {}).get("local_image_path") or "")
-            if (
-                prepared
-                and (current or {}).get("local_image_sha256") == prepared["sha256"]
-                and str((current or {}).get("local_image_external_id") or "")
-                == "bitrix:{}".format(product["external_product_id"])
-            ):
-                store.discard_prepared(prepared)
-                prepared = None
         result = BitrixERPProductSync(database).apply_single(
             product, action, brand_id=brand_id, category_id=category_id,
-            prepared_image=prepared, actor=current_audit_actor(),
+            prepared_image=prepared, actor=current_audit_actor(), quantity=quantity,
         )
-        if result["status"] == "duplicate":
+        if result["status"] != "created":
             store.discard_prepared(prepared)
-            prepared = None
         WAREHOUSE_CACHE["items"] = []
         WAREHOUSE_CACHE["loaded_at"] = 0
-        if previous_path and previous_path != (prepared or {}).get("path"):
-            store._remove_if_unused(previous_path)
         return api_success({
             **result,
             "product": serialize_api_product(

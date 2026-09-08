@@ -110,6 +110,43 @@ class SupplyTest(unittest.TestCase):
         self.engine.resolve_bitrix(dict(product,stock=999))
         self.assertEqual(self.stock(p['id']),6)
 
+    def test_new_existing_post_retry_and_append_preserve_cards(self):
+        from app.services.receipt_inventory import ReceiptInventory
+        source = {'external_product_id': '901', 'external_sku': 'TEST-901',
+                  'name': 'Original', 'brand': 'A', 'category': {'name': 'B'}, 'stock': 999}
+        first = self.engine.resolve_bitrix(source)
+        self.assertEqual(first['stock'], 0)
+        first_doc = self.draft([(first['id'], 2)])
+        self.engine.post(first_doc['id'])
+        self.assertEqual(self.stock(first['id']), 2)
+        existing_id = self.product(3, '902')
+        with self.db.connect() as c:
+            before = dict(c.execute('SELECT * FROM catalog_excel_products WHERE id = ?', (existing_id,)).fetchone())
+        matched = self.engine.resolve_bitrix(dict(source, external_product_id='902', brand='Changed', category={'name': 'Changed'}, name='Changed', stock=998))
+        self.assertEqual(matched['id'], existing_id)
+        document = self.draft([(existing_id, 2)])
+        posted = self.engine.post(document['id'])
+        self.assertEqual(posted['items'][0]['quantity'], 2)
+        self.assertEqual(self.stock(existing_id), 5)
+        self.engine.get(document['id'])
+        self.engine.post(document['id'])
+        with self.assertRaises(SupplyError):
+            self.engine.update(document['id'], 'Saved', '', [{'product_id': existing_id, 'quantity': 2}])
+        self.assertEqual(self.stock(existing_id), 5)
+        self.engine.add_item(document['id'], first['id'], 2, 'append-once')
+        self.engine.add_item(document['id'], first['id'], 2, 'append-once')
+        self.assertEqual(self.stock(existing_id), 5)
+        self.assertEqual(self.stock(first['id']), 4)
+        with self.db.connect() as c:
+            after = dict(c.execute('SELECT * FROM catalog_excel_products WHERE id = ?', (existing_id,)).fetchone())
+            self.assertEqual(c.execute('SELECT count(*) FROM catalog_stock_movements WHERE receipt_id = ?', (document['id'],)).fetchone()[0], 2)
+        for key in before.keys() - {'stock', 'stock_source', 'updated_at'}:
+            self.assertEqual(after[key], before[key], key)
+        with self.assertRaises(ReceiptInventoryError):
+            ReceiptInventory(self.db).cancel_receipt(document['id'])
+        self.assertEqual(self.stock(existing_id), 5)
+        self.assertEqual(self.stock(first['id']), 4)
+
     def test_legacy_visible_without_invented_history(self):
         rows=self.engine.movements([{'id':'old','number':'PR-1','positions':[{'product_name':'Old watch','quantity':1}]}])
         self.assertEqual(rows[0]['source_type'],'legacy')

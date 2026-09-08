@@ -4160,7 +4160,7 @@
         .bitrix-preview-photo { width:96px;height:96px; }
         .bitrix-preview-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px; }
         .bitrix-taxonomy { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
-        .bitrix-taxonomy select { width:100%;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;background:#fff; }
+        .bitrix-taxonomy select, .bitrix-taxonomy input { width:100%;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;background:#fff; }
         .bitrix-import-actions { position:sticky;bottom:-18px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin:0 -18px -18px;padding:12px 18px;background:#fff;border-top:1px solid #e2e8f0; }
         .bitrix-import-error { color:#b91c1c; }
         @media(max-width:620px){.bitrix-preview{grid-template-columns:1fr}.bitrix-preview-fields,.bitrix-taxonomy{grid-template-columns:1fr}}
@@ -4835,10 +4835,13 @@
                                             <span>Бренд: <strong id="bitrixPreviewBrand">—</strong></span>
                                             <span>Категория: <strong id="bitrixPreviewCategory">—</strong></span>
                                             <span>Цена: <strong id="bitrixPreviewPrice">—</strong></span>
-                                            <span>Остаток: <strong id="bitrixPreviewStock">—</strong></span>
+                                            <span>Остаток Bitrix (справочно): <strong id="bitrixPreviewStock">—</strong></span>
                                         </div>
                                     </div>
                                 </section>
+                                <div class="bitrix-taxonomy picker-taxonomy">
+                                    <label>Количество к приходу в ERP<input id="bitrixImportQuantity" type="number" min="1" step="1" value="1" required></label>
+                                </div>
                                 <div id="bitrixDuplicateNotice" hidden>
                                     <strong>Товар уже есть в ERP.</strong> <span id="bitrixDuplicateText"></span>
                                     <div id="bitrixChanges" class="bitrix-muted"></div>
@@ -4853,7 +4856,7 @@
                         <div class="picker-footer">
                             <button class="products-workspace-button" type="button" onclick="closeBitrixImportModal()">Отмена</button>
                             <a id="bitrixOpenExisting" class="products-workspace-button" href="#" hidden>Открыть товар</a>
-                            <button id="bitrixUpdateProduct" class="products-workspace-button" type="button" hidden>Обновить из Bitrix</button>
+                            <button id="bitrixUpdateProduct" class="products-workspace-button" type="button" hidden>Добавить количество</button>
                             <button id="bitrixImportProduct" class="products-workspace-button is-primary" type="button" hidden>Добавить товар в ERP</button>
                         </div>
                     </div>
@@ -7961,6 +7964,7 @@
 
     function resetBitrixSelection() {
         bitrixSelectedProduct = null;
+        document.getElementById("bitrixImportQuantity").value = "1";
         document.getElementById("bitrixSelectionEmpty").hidden = false;
         window.ERPProductPicker.highlight(document.getElementById("bitrixProductResults"), "");
         document.getElementById("bitrixProductPreview").hidden = true;
@@ -8041,7 +8045,7 @@
         const category = document.getElementById("bitrixCategorySelect");
         brand.value = product.brand_id || "";
         category.value = product.category_id || "";
-        document.getElementById("bitrixTaxonomy").hidden = product.brand_recognized && product.category_recognized;
+        document.getElementById("bitrixTaxonomy").hidden = Boolean(product.duplicate) || (product.brand_recognized && product.category_recognized);
         const duplicate = Boolean(product.duplicate);
         document.getElementById("bitrixDuplicateNotice").hidden = !duplicate;
         document.getElementById("bitrixImportProduct").hidden = duplicate;
@@ -8051,11 +8055,7 @@
         open.href = product.existing ? "/warehouse/product/" + product.existing.id : "#";
         document.getElementById("bitrixDuplicateText").textContent = product.existing
             ? product.existing.name + " · ID " + product.existing.id : "Нужно выбрать совпадение вручную.";
-        const labels = {excel_name_raw:"Название",excel_article:"Артикул",excel_brand:"Бренд",excel_category:"Категория",bitrix_price_amount:"Цена",bitrix_primary_image_url:"Фотография"};
-        const changes = Object.entries(product.changes || {}).filter(function(entry){return labels[entry[0]];});
-        document.getElementById("bitrixChanges").textContent = changes.length
-            ? "Изменятся поля: " + changes.map(function(entry){return labels[entry[0]];}).join(", ")
-            : "Данные карточки уже актуальны.";
+        document.getElementById("bitrixChanges").textContent = "Карточка товара сохранится. Введённое количество добавится к остатку ERP.";
     }
 
     async function loadBitrixProduct(id) {
@@ -8083,6 +8083,11 @@
     let bitrixSubmitting = false;
     async function submitBitrixImport(action) {
         if (!bitrixSelectedProduct || bitrixSubmitting) return;
+        const quantity = Number(document.getElementById("bitrixImportQuantity").value);
+        if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+            bitrixImportMessage("Введите целое положительное количество.");
+            return;
+        }
         bitrixSubmitting = true;
         document.getElementById("bitrixProductSearch").disabled = true;
         const button = action === "update" ? document.getElementById("bitrixUpdateProduct") : document.getElementById("bitrixImportProduct");
@@ -8092,14 +8097,14 @@
             const response = await fetch("/api/v1/bitrix-products/" + encodeURIComponent(bitrixSelectedProduct.bitrix_id) + "/import", {
                 method:"POST", credentials:"same-origin",
                 headers:{"Content-Type":"application/json","Accept":"application/json","X-CSRF-Token":document.querySelector('#warehouseAddForm [name="csrf_token"]')?.value || ""},
-                body:JSON.stringify({action:action,brand_id:document.getElementById("bitrixBrandSelect").value || null,category_id:document.getElementById("bitrixCategorySelect").value || null})
+                body:JSON.stringify({action:action,quantity:quantity,brand_id:document.getElementById("bitrixBrandSelect").value || null,category_id:document.getElementById("bitrixCategorySelect").value || null})
             });
             const payload = await response.json();
             if (!response.ok) {
                 if (payload.fields?.preview) showBitrixPreview(Object.assign({}, bitrixSelectedProduct, payload.fields.preview));
                 throw new Error(payload.message || "Импорт не выполнен.");
             }
-            window.location.assign("/warehouse?notice=success&message=" + encodeURIComponent(action === "update" ? "Товар обновлён из Bitrix" : "Товар добавлен из Bitrix"));
+            window.location.assign("/warehouse?notice=success&message=" + encodeURIComponent("Количество добавлено к остатку ERP"));
         } catch (error) {
             bitrixImportMessage(error.message);
         } finally {
