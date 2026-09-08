@@ -1710,7 +1710,7 @@
                     kind,
                     globalCategoryOptions
                 );
-                if (scope.dataset.catalogOptionImages === "false") {
+                if (scope?.dataset.catalogOptionImages === "false") {
                     option.image = "";
                 }
                 if (groupCategories) {
