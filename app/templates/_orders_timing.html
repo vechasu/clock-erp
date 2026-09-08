@@ -2,17 +2,22 @@
 <script>
 (() => {
     const key='vechasu:orders:timings:v1';
+    performance.setResourceTimingBufferSize(5000);
+    const resourceKeys=new Map();
+    const resourceKey=name=>{if(!resourceKeys.has(name))resourceKeys.set(name,resourceKeys.size+1);return resourceKeys.get(name);};
     let rows=[];try{rows=JSON.parse(sessionStorage.getItem(key)||'[]');}catch(error){}
     const longTasks=[];try{new PerformanceObserver(list=>longTasks.push(...list.getEntries().map(e=>({start:e.startTime,duration:e.duration})))).observe({type:'longtask',buffered:true});}catch(error){}
     let inputAt=0;
     document.addEventListener('input',event=>{if(event.target.id==='orderSearch')inputAt=performance.now();},true);
     const safePath=name=>{const u=new URL(name,location.href);return u.origin+u.pathname.replace(/\d+/g,':id');};
-    const resource=e=>({path:safePath(e.name),kind:e.initiatorType||'navigation',start:e.startTime,duration:e.duration,ttfb:e.responseStart-e.requestStart,transfer:e.transferSize,encoded:e.encodedBodySize,decoded:e.decodedBodySize,server:Object.fromEntries((e.serverTiming||[]).map(t=>[t.name,t.duration]))});
+    const resource=e=>({key:resourceKey(e.name),path:safePath(e.name),kind:e.initiatorType||'navigation',start:e.startTime,duration:e.duration,ttfb:e.responseStart-e.requestStart,transfer:e.transferSize,encoded:e.encodedBodySize,decoded:e.decodedBodySize,server:Object.fromEntries((e.serverTiming||[]).map(t=>[t.name,t.duration]))});
     const publish=()=>{
         try{sessionStorage.setItem(key,JSON.stringify(rows.slice(-300)));}catch(error){}
         let output=document.getElementById('ordersTimingOutput');
         if(!output){output=document.createElement('output');output.id='ordersTimingOutput';output.hidden=true;document.body.append(output);}
         output.textContent=JSON.stringify(rows.slice(-300));
+        let resources=document.getElementById('ordersTimingResources');if(!resources){resources=document.createElement('output');resources.id='ordersTimingResources';resources.hidden=true;document.body.append(resources);}
+        resources.textContent=JSON.stringify(performance.getEntriesByType('resource').map(resource));
     };
     function finish(token,primary,failed=false){
         requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -27,6 +32,7 @@
         }));
     }
     window.OrdersTiming={begin(operation){const now=performance.now();const start=operation==='search'&&now-inputAt<600?inputAt:now;return {operation,start,hidden:document.visibilityState!=='visible'};},finish};
+    new PerformanceObserver(()=>{if(document.body)publish();}).observe({type:'resource',buffered:true});
     document.addEventListener('DOMContentLoaded',()=>{
         const nav=performance.getEntriesByType('navigation')[0];
         finish({operation:nav?.type==='back_forward'?'back_document':'document',start:0,hidden:document.visibilityState!=='visible'},nav);
