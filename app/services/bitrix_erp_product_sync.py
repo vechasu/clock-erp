@@ -174,8 +174,9 @@ class BitrixERPProductSync:
         external_id = _text(product.get("external_product_id"))
         rows = connection.execute(
             "SELECT * FROM catalog_excel_products WHERE active = 1 "
-            "AND bitrix_external_product_id = ? ORDER BY id",
-            (external_id,),
+            "AND (bitrix_external_product_id = ? OR bitrix_catalog_product_id IN "
+            "(SELECT id FROM catalog_products WHERE external_product_id = ?)) ORDER BY id",
+            (external_id, external_id),
         ).fetchall()
         if rows:
             return {"method": "bitrix_id", "products": rows}
@@ -219,8 +220,8 @@ class BitrixERPProductSync:
 
     def apply_single(self, product, action, brand_id=None, category_id=None,
                      prepared_image=None, actor=None):
-        """Create or explicitly update one card in one SQLite transaction."""
-        if action not in {"create", "update"}:
+        """Create/update a card, or resolve it without importing external stock."""
+        if action not in {"create", "update", "resolve"}:
             raise ValueError("Неподдерживаемое действие импорта.")
         validation = self._validate(product)
         if validation:
@@ -231,12 +232,26 @@ class BitrixERPProductSync:
             selected = self._selected_taxonomy(
                 connection, product, brand_id, category_id
             )
+            if action == "resolve":
+                selected = dict(selected, stock=0)
+                if self._deleted_product(connection, selected):
+                    raise ValueError("Товар ERP удалён. Восстановите карточку перед добавлением.")
             match = self._single_match(connection, selected)
             rows = match["products"]
+            if action == "resolve" and any(
+                _text(row["bitrix_external_product_id"]) not in ("", _text(selected["external_product_id"]))
+                for row in rows
+            ):
+                raise ValueError("Артикул связан с другим товаром Bitrix. Требуется ручное сопоставление.")
             if len(rows) > 1:
                 raise ValueError("Найдено несколько совпадающих товаров ERP.")
             existing = rows[0] if rows else None
-            if action == "create" and existing is not None:
+            if action in {"create", "resolve"} and existing is not None:
+                if action == "resolve":
+                    connection.execute(
+                        "UPDATE catalog_excel_products SET bitrix_external_product_id = ? WHERE id = ?",
+                        (_text(selected["external_product_id"]), existing["id"]),
+                    )
                 return {
                     "status": "duplicate", "match_method": match["method"],
                     "erp_product_id": existing["id"], "changes": {},
