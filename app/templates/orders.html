@@ -6,6 +6,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vechasu ERP — Заказы</title>
+    {% include "_orders_timing.html" %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/themes.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css', v='catalog-combobox-20260824-product-hierarchy-strap-references') }}">
@@ -475,6 +476,7 @@
     let searchReturnMode=initial;
         function formatOrdersResults(scope){scope.querySelectorAll('.money-value').forEach(node=>node.textContent=formatMoney(node.dataset.amount));scope.querySelectorAll('.date-value').forEach(node=>node.classList.contains('date-stacked')?formatStackedDate(node):node.textContent=formatDate(node.dataset.date));scope.querySelectorAll('.comment-date-value').forEach(formatCommentDate);}
         async function loadOrdersResults(url,{push=false}={}){
+        const timingUrl=new URL(url,location.href);const timing=window.OrdersTiming?.begin(timingUrl.searchParams.get('q')?'search':timingUrl.searchParams.has('page')?'page':'filter');
         const requestId=++ordersSearchRequest;
         ordersSearchController?.abort();
         const controller=new AbortController();ordersSearchController=controller;
@@ -496,6 +498,7 @@
             Object.entries(payload.kpis||{}).forEach(([key,value])=>{const node=document.querySelector(`[data-status-count="${key}"]`);if(node)node.textContent=value;});
                 window.history[push?'pushState':'replaceState']({},'',displayUrl.pathname+displayUrl.search);
             formatOrdersResults(document.querySelector('[data-orders-results]'));
+            if(timing)window.OrdersTiming.finish(timing);
             if(payload.exact_search?.status==='local_found'&&payload.exact_search.local_count===1&&workspace.dataset.layoutMode!=='list'&&payload.exact_search.selected_url){window.location.assign(payload.exact_search.selected_url);}
             if(payload.exact_search&&(payload.exact_search.status==='external_found'||payload.exact_search.local_count>1)&&workspace.dataset.layoutMode==='card'){applyMode('list',false);}
         }catch(error){if(error.name!=='AbortError'){window.VechasuNotify?.error(error.message||'Не удалось обновить заказы');}}
@@ -523,6 +526,7 @@
     let cardController=null;
     const listSearch=()=>new URL(window.location.href).search;
     async function selectOrder(href,{push=true}={}){
+        const timing=window.OrdersTiming?.begin(!push?'back':href.includes('/wildberries/')?'card_wb':'card_tictactoy');
         const target=new URL(href,window.location.href);
         cardController?.abort();const controller=new AbortController();cardController=controller;
         try{
@@ -549,6 +553,7 @@
             const script=document.createElement('script');script.textContent=source.textContent;document.body.append(script);script.remove();
             window.initializeSharedCatalogCascades?.(panel);
             window.VechasuEntityTasksInit?.(panel);
+            if(timing)window.OrdersTiming.finish(timing);
         }catch(error){if(error.name!=='AbortError')window.VechasuNotify?.error(error.message);}
     }
     document.querySelector('.orders-list-panel')?.addEventListener('click',event=>{

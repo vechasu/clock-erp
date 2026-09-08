@@ -322,6 +322,8 @@ app.wsgi_app = ProxyFix(
     x_host=TRUSTED_PROXY_COUNT,
 )
 configure_auth(app, PROJECT_ROOT)
+from app.request_timing import register_order_request_timing
+register_order_request_timing(app)
 app.config.setdefault(
     "TASKS_DATABASE",
     os.getenv("ERP_TASKS_DATABASE", "").strip()
