@@ -199,9 +199,21 @@ class CustomerRegistry:
                 )}
             phone_ids = self._candidate_ids(connection, "phone", phone, source)
             email_ids = self._candidate_ids(connection, "email", email, source)
+            external_owners = {int(row[0]) for row in connection.execute(
+                "SELECT DISTINCT customer_id FROM customer_operations "
+                "WHERE source=? AND external_customer_id=?",
+                (source, external_customer_id),
+            )} if external_ids else set()
             if related_ids:
                 candidates = related_ids
                 matched_by = "related_order"
+            elif (len(external_ids) == 1 and (phone_ids | email_ids) == external_ids
+                  and external_owners <= external_ids):
+                # A personal source ID corroborated by an unambiguous contact
+                # takes priority when the other contact is new. Known shared
+                # accounts and contacts pointing at another person cannot do so.
+                candidates = external_ids
+                matched_by = "external_id_and_contact"
             elif phone_ids and email_ids and phone_ids != email_ids:
                 candidates = set()
                 reason = "phone_email_cross_conflict"
@@ -210,7 +222,7 @@ class CustomerRegistry:
                 candidates = set()
                 reason = "phone_email_value_conflict"
                 matched_by = "conflict"
-            elif len(external_ids & (phone_ids | email_ids)) == 1:
+            elif len(external_ids & (phone_ids | email_ids)) == 1 and external_owners <= external_ids:
                 candidates = external_ids & (phone_ids | email_ids)
                 matched_by = "external_id_and_contact"
             elif len(phone_ids) > 1 or len(email_ids) > 1:
@@ -220,7 +232,7 @@ class CustomerRegistry:
             elif phone_ids or email_ids:
                 candidates = phone_ids or email_ids
                 matched_by = "phone" if phone_ids else "email" if email_ids else "operation_identity"
-            elif external_ids and not (phone or email):
+            elif external_ids and not (phone or email) and external_owners <= external_ids:
                 candidates = external_ids
                 matched_by = "external_id"
             elif external_ids:
