@@ -1,0 +1,36 @@
+{% if request.environ.get('orders.timing.enabled') and current_user %}
+<script>
+(() => {
+    const key='vechasu:orders:timings:v1';
+    let rows=[];try{rows=JSON.parse(sessionStorage.getItem(key)||'[]');}catch(error){}
+    const longTasks=[];try{new PerformanceObserver(list=>longTasks.push(...list.getEntries().map(e=>({start:e.startTime,duration:e.duration})))).observe({type:'longtask',buffered:true});}catch(error){}
+    let inputAt=0;
+    document.addEventListener('input',event=>{if(event.target.id==='orderSearch')inputAt=performance.now();},true);
+    const safePath=name=>{const u=new URL(name,location.href);return u.origin+u.pathname.replace(/\d+/g,':id');};
+    const resource=e=>({path:safePath(e.name),kind:e.initiatorType||'navigation',start:e.startTime,duration:e.duration,ttfb:e.responseStart-e.requestStart,transfer:e.transferSize,encoded:e.encodedBodySize,decoded:e.decodedBodySize,server:Object.fromEntries((e.serverTiming||[]).map(t=>[t.name,t.duration]))});
+    const publish=()=>{
+        try{sessionStorage.setItem(key,JSON.stringify(rows.slice(-300)));}catch(error){}
+        let output=document.getElementById('ordersTimingOutput');
+        if(!output){output=document.createElement('output');output.id='ordersTimingOutput';output.hidden=true;document.body.append(output);}
+        output.textContent=JSON.stringify(rows.slice(-300));
+    };
+    function finish(token,primary,failed=false){
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+            const painted=performance.now();
+            const entries=performance.getEntriesByType('resource').filter(e=>e.startTime>=token.start-1);
+            const main=primary||entries.find(e=>/\/(api\/orders|order\/)/.test(e.name));
+            const row={operation:token.operation,epoch:performance.timeOrigin+token.start,e2e:painted-token.start,frontend:main?painted-main.responseEnd:null,ttfb:main?main.responseStart-main.requestStart:null,server:main?resource(main).server:{},primary:main?resource(main):null,ttfbFromStart:main?main.responseStart-token.start:null,failed,hidden:document.visibilityState!=='visible',longTasks:longTasks.filter(e=>e.start>=token.start&&e.start<painted),resources:entries.map(resource)};
+            rows.push(row);publish();
+            // Count async tasks/images belonging to the interaction without
+            // treating their completion as the card's first usable paint.
+            setTimeout(()=>{row.resources=performance.getEntriesByType('resource').filter(e=>e.startTime>=token.start-1&&e.startTime<=painted).map(resource);publish();},500);
+        }));
+    }
+    window.OrdersTiming={begin(operation){const now=performance.now();const start=operation==='search'&&now-inputAt<600?inputAt:now;return {operation,start};},finish};
+    document.addEventListener('DOMContentLoaded',()=>{
+        const nav=performance.getEntriesByType('navigation')[0];
+        finish({operation:nav?.type==='back_forward'?'back_document':'document',start:0},nav);
+    },{once:true});
+})();
+</script>
+{% endif %}
