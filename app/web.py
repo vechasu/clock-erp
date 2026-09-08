@@ -1382,6 +1382,11 @@ def overview_page():
 def orders_page():
     if not can_view_orders():
         abort(403)
+    if request.args.get("retry") == "1" and request.headers.get("X-Order-Detail") != "1":
+        get_orders(force=True)
+        return redirect(url_for("orders_page", **{
+            key: value for key, value in request.args.items() if key != "retry"
+        }), code=303)
     orders, list_state = (order_card_list_state() if request.headers.get("X-Order-Detail") == "1" else current_orders_list_state(
         request.args, force=request.args.get("retry") == "1",
     ))
@@ -2843,6 +2848,26 @@ def order_page(order_id):
             if list_state.get("exact_number") else []
         ),
     )
+
+
+@app.post("/order/<int:order_id>/refresh")
+def order_refresh(order_id):
+    """Explicit read-only Bitrix fetch, outside the ordinary card path."""
+    if not can_view_orders():
+        abort(403)
+    store = OrdersSnapshotStore()
+    if not store.get(order_id):
+        abort(404)
+    try:
+        order = get_order(order_id)
+        if not order:
+            raise BitrixReadOnlyError("Заказ не найден в Bitrix")
+        store.enrich_from_detail(order_id, order)
+    except BitrixReadOnlyError:
+        app.logger.warning("Explicit Bitrix order refresh failed order_id=%s", order_id)
+        return redirect(url_for("order_page", order_id=order_id,
+                                notice="error", message="Не удалось обновить заказ из Bitrix; сохранённые данные доступны."), code=303)
+    return redirect(url_for("order_page", order_id=order_id, **request.args.to_dict()), code=303)
 
 
 @app.get("/order/wildberries/<wb_order_id>")

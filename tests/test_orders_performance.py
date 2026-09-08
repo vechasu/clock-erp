@@ -75,6 +75,38 @@ class OrdersPerformanceTest(unittest.TestCase):
             with self.store.connection() as connection:
                 connection.execute('DELETE FROM orders_snapshot WHERE order_id=?', ('wb:999999',))
 
+    def test_explicit_list_refresh_does_not_propagate_retry_to_navigation(self):
+        config = dict(web.app.config)
+        web.app.config.update(TESTING=True, AUTH_TESTING=False)
+        try:
+            with mock.patch.object(web, 'get_orders', return_value=[]) as refresh:
+                response = web.app.test_client().get('/orders?retry=1&source=tictactoy')
+                refresh.assert_called_once_with(force=True)
+            self.assertEqual(response.status_code, 303)
+            self.assertNotIn('retry=', response.headers['Location'])
+            self.assertIn('source=tictactoy', response.headers['Location'])
+        finally:
+            web.app.config.clear()
+            web.app.config.update(config)
+
+    def test_explicit_refresh_updates_only_selected_local_snapshot(self):
+        config = dict(web.app.config)
+        web.app.config.update(TESTING=True, AUTH_TESTING=False, ORDERS_SNAPSHOT_TESTING=True)
+        self.store.upsert_bitrix([{'id': '7002', 'status': 'N', 'products': []}], 1000)
+        try:
+            with mock.patch.dict('os.environ', {'ORDERS_DATABASE_PATH': str(self.path)}), \
+                 mock.patch.object(web, 'get_order', return_value={'id': '7002', 'status': 'A', 'products': [{'name': 'Fresh', 'quantity': 2}]}) as fetch:
+                response = web.app.test_client().post('/order/7002/refresh')
+                fetch.assert_called_once_with(7002)
+            self.assertEqual(response.status_code, 303)
+            self.assertEqual(self.store.get('7002')['products'][0]['name'], 'Fresh')
+            self.assertEqual(self.store.get('7002')['status'], 'A')
+        finally:
+            with self.store.connection() as connection:
+                connection.execute("DELETE FROM orders_snapshot WHERE order_id='7002'")
+            web.app.config.clear()
+            web.app.config.update(config)
+
     def test_fragment_never_loads_list_or_bitrix(self):
         config = dict(web.app.config)
         web.app.config.update(TESTING=True, AUTH_TESTING=False, ORDERS_SNAPSHOT_TESTING=True)
