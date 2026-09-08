@@ -413,7 +413,7 @@ class RepairsFullCycleTest(unittest.TestCase):
         web.save_repair_cases(cases)
         completed = self.action(
             repair["id"], "complete", return_method="pickup",
-            completion_result="returned_unrepaired", work_result="Диагностика завершена",
+            completion_result="impossible", work_result="Диагностика завершена",
         )
         self.assertEqual(completed.status_code, 200, completed.get_data(as_text=True))
         data = completed.get_json()["data"]
