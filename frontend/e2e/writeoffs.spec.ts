@@ -42,10 +42,12 @@ test('write-off persists and cancels once', async ({ page }, testInfo) => {
     expect(fields[0]!.y).toBeLessThan(fields[1]!.y);
     expect(fields[1]!.y).toBeLessThan(fields[2]!.y);
   }
+  await page.locator('#writeoffPhoto').dispatchEvent('error');
+  await expect(page.locator('#writeoffPhotoPlaceholder')).toBeVisible();
   const stock = Number(await page.locator('#writeoffQuantity').getAttribute('max'));
   expect(stock).toBeGreaterThan(0);
   await page.locator('#writeoffQuantity').fill(String(stock + 1));
-  await expect(page.locator('#writeoffQuantityError')).toContainText('Нельзя списать больше остатка');
+  await expect(page.locator('#writeoffQuantityError')).toContainText('Нельзя списать больше');
   await page.locator('#writeoffReason').selectOption('Брак');
   let posts = 0;
   page.on('request', (request) => {

@@ -20,7 +20,7 @@
 <button class="button button-secondary">Применить</button>
 </form>
 <div class="sales-data-card"><div class="writeoff-table-wrap">
-<table class="sales-table writeoff-table"><thead><tr>{% for label in ['Дата','Товар','Артикул','Бренд','Категория','Количество','Причина','Сотрудник','Комментарий','Действия'] %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+<table class="sales-table erp-data-table writeoff-table"><thead><tr>{% for label in ['Дата','Товар','Артикул','Бренд','Категория','Количество','Причина','Сотрудник','Комментарий','Действия'] %}<th>{{ label }}</th>{% endfor %}</tr></thead>
 <tbody>{% for row in writeoffs %}<tr>
 <td>{{ render_erp_datetime(row.created_at) }}</td>
 <td>{% if row.image_url %}<img src="{{ row.image_url }}" alt="" width="40" height="40" loading="lazy" style="object-fit:contain">{% endif %}{{ row.product_name }}</td>
@@ -32,7 +32,7 @@
 <div id="writeoffModal" class="modal erp-modal sales-form-modal" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
 <div class="modal-dialog erp-modal-dialog sales-form-dialog" role="dialog" aria-modal="true" aria-labelledby="writeoffTitle">
 <div class="modal-header erp-modal-header"><h2 id="writeoffTitle">Добавить списание</h2><button type="button" class="modal-close" id="closeWriteoff" aria-label="Закрыть">×</button></div>
-<form id="writeoffForm" class="modal-body sales-form-body" data-shared-catalog-scope data-catalog-product-images="false" data-catalog-in-stock="true">
+<form id="writeoffForm" class="modal-body sales-form-body" data-shared-catalog-scope data-catalog-option-images="false" data-catalog-in-stock="true">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="manual-form-grid writeoff-form-grid">
 <h3 class="erp-form-section-title field-wide sale-section-title">Товар</h3>

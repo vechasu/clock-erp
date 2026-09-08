@@ -597,7 +597,7 @@
                     meta.textContent = option.meta;
                     details.append(meta, count);
                     copy.append(label, details);
-                    if (option.image && combobox.closest("[data-shared-catalog-scope]")?.dataset.catalogProductImages !== "false") {
+                    if (option.image) {
                         const image = document.createElement("img");
                         image.className = "catalog-combobox-option-image";
                         image.src = option.image;
@@ -1710,6 +1710,9 @@
                     kind,
                     globalCategoryOptions
                 );
+                if (scope?.dataset.catalogOptionImages === "false") {
+                    option.image = "";
+                }
                 if (groupCategories) {
                     option.group = item.used_by_brand
                         ? "Категории этого бренда"

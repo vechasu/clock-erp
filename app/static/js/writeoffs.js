@@ -20,45 +20,39 @@
     const quantityError = document.getElementById('writeoffQuantityError');
     const photo = document.getElementById('writeoffPhoto');
     const placeholder = document.getElementById('writeoffPhotoPlaceholder');
-    let selectedProduct = null;
-    let available = 0;
+    let available = null;
     const validateQuantity = () => {
         const value = Number(quantity.value);
         const message = !Number.isInteger(value) || value < 1
             ? 'Укажите целое количество не меньше 1.'
-            : selectedProduct && value > available
-                ? `Доступно ${available} шт. Нельзя списать больше остатка.`
-                : '';
+            : available !== null && value > available
+                ? `Нельзя списать больше доступного остатка: ${available} шт.` : '';
         quantity.setCustomValidity(message);
         quantity.setAttribute('aria-invalid', String(Boolean(message)));
         quantityError.textContent = message;
         quantityError.hidden = !message;
         return !message;
     };
-    const renderProduct = (p) => {
-        selectedProduct = p;
-        available = Number(p ? (p.is_bundle ? p.available_to_assemble : p.is_physical_component ? p.physical_stock : p.stock) ?? 0 : 0);
-        document.getElementById('writeoffProductName').textContent = p?.name || p?.display_name || 'Выберите товар';
+    quantity.addEventListener('input', validateQuantity);
+    photo.addEventListener('error', () => { photo.hidden = true; placeholder.hidden = false; });
+    const showProduct = (p) => {
+        available = p ? Number(p.is_bundle ? p.available_to_assemble : p.is_physical_component ? p.physical_stock : p.stock) || 0 : null;
+        document.getElementById('writeoffProductName').textContent = p ? p.name || p.display_name : 'Выберите товар';
         document.getElementById('writeoffProductDetails').textContent = p
             ? `Артикул: ${p.article || '—'} · Баркод: ${p.barcode || '—'} · Остаток: ${available} шт.`
             : 'Баркод, артикул и остаток появятся после выбора товара.';
-        const source = p?.local_image_url || window.normalizeCatalogProductImageUrls(p)[0] || '';
-        photo.hidden = !source;
-        placeholder.hidden = Boolean(source);
-        if (source) photo.src = source;
-        else photo.removeAttribute('src');
-        if (p) quantity.max = String(available);
-        else quantity.removeAttribute('max');
-        error.textContent = '';
+        const src = p && (p.local_image_url || window.normalizeCatalogProductImageUrls(p)[0]);
+        if (src) photo.src = src; else photo.removeAttribute('src');
+        photo.hidden = !src;
+        placeholder.hidden = Boolean(src);
+        if (available === null) quantity.removeAttribute('max'); else quantity.max = String(available);
         validateQuantity();
     };
-    photo.addEventListener('error', () => { photo.hidden = true; placeholder.hidden = false; });
-    quantity.addEventListener('input', validateQuantity);
-    form.addEventListener('shared-catalog:selected', (event) => {
-        if (event.detail.kind === 'product') renderProduct(event.detail.item);
-    });
     form.addEventListener('catalog-combobox:change', (event) => {
-        if (event.target.dataset.sharedCatalogKind !== 'product' || !event.detail.value) renderProduct(null);
+        if (event.target.matches('[data-shared-catalog-kind]')) showProduct(null);
+    });
+    form.addEventListener('shared-catalog:selected', (event) => {
+        if (event.detail.kind === 'product') showProduct(event.detail.item);
     });
     const post = async (url, payload, requestKey) => {
         const response = await fetch(url, {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':form.elements.csrf_token.value,...(requestKey ? {'Idempotency-Key':requestKey} : {})},body:JSON.stringify(payload)});
@@ -80,8 +74,8 @@
     form.addEventListener('submit',async (event) => {
         event.preventDefault(); error.textContent = '';
         const payload = {product_id:form.elements.product_id.value,quantity:form.elements.quantity.value,reason:reason.value,comment:form.elements.comment.value};
-        if (!payload.product_id || !selectedProduct) { error.textContent = 'Выберите товар.'; return; }
-        if (!validateQuantity()) { quantity.focus(); return; }
+        if (!payload.product_id || available === null) { error.textContent = 'Выберите товар.'; return; }
+        if (!validateQuantity()) return;
         const next = JSON.stringify(payload);
         if (signature !== next) { signature = next; key = crypto.randomUUID(); }
         const button = document.getElementById('submitWriteoff'); button.disabled = true;
