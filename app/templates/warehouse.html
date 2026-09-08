@@ -8007,10 +8007,8 @@
         status.textContent = "Ищем в Bitrix…";
         bitrixImportMessage("");
         try {
-            const response = await fetch("/api/v1/bitrix-products/search?q=" + encodeURIComponent(query), {headers:{Accept:"application/json"},signal:controller.signal});
-            const payload = await response.json();
+            const payload = {data: await window.ERPProductPicker.bitrix.search(query, controller.signal)};
             if (requestVersion !== bitrixRequestVersion) return;
-            if (!response.ok) throw new Error(payload.message || "Поиск недоступен.");
             renderBitrixResults(payload.data || []);
             status.textContent = payload.data?.length ? "Найдено: " + payload.data.length : "Товары не найдены";
         } catch (error) {
@@ -8069,10 +8067,8 @@
         bitrixImportMessage("");
         document.getElementById("bitrixProductStatus").textContent = "Загружаем карточку…";
         try {
-            const response = await fetch("/api/v1/bitrix-products/" + encodeURIComponent(id), {headers:{Accept:"application/json"},signal:controller.signal});
-            const payload = await response.json();
+            const payload = {data: await window.ERPProductPicker.bitrix.preview(id, controller.signal)};
             if (requestVersion !== bitrixRequestVersion || controller.signal.aborted) return;
-            if (!response.ok) throw new Error(payload.message || "Не удалось загрузить товар.");
             showBitrixPreview(payload.data);
             document.getElementById("bitrixProductStatus").textContent = "Показано товаров: " + document.getElementById("bitrixProductResults").children.length;
         } catch (error) {

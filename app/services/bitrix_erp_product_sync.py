@@ -228,9 +228,10 @@ class BitrixERPProductSync:
     def apply_single(self, product, action, brand_id=None, category_id=None,
                      prepared_image=None, actor=None, quantity=None):
         """Resolve a card and post user-entered stock atomically in the ERP ledger."""
-        if action not in {"create", "update"}:
+        if action not in {"create", "update", "resolve"}:
             raise ValueError("Неподдерживаемое действие импорта.")
-        quantity = positive_integer(quantity, "Количество")
+        if action != "resolve":
+            quantity = positive_integer(quantity, "Количество")
         if self._validate(product):
             raise ValueError("Товар Bitrix не содержит ID или названия.")
         actor = actor or {}
@@ -240,6 +241,11 @@ class BitrixERPProductSync:
                 raise ValueError("Товар ERP удалён. Восстановите карточку перед добавлением.")
             match = self._single_match(connection, product)
             rows = match["products"]
+            if action == "resolve" and any(
+                _text(row["bitrix_external_product_id"]) not in ("", _text(product["external_product_id"]))
+                for row in rows
+            ):
+                raise ValueError("Артикул связан с другим товаром Bitrix. Требуется ручное сопоставление.")
             if len(rows) > 1:
                 raise ValueError("Найдено несколько совпадающих товаров ERP.")
             existing = rows[0] if rows else None
@@ -275,6 +281,18 @@ class BitrixERPProductSync:
                 )
             else:
                 product_id = existing["id"]
+
+            if action == "resolve":
+                if existing is not None:
+                    connection.execute(
+                        "UPDATE catalog_excel_products SET bitrix_external_product_id = ? WHERE id = ?",
+                        (_text(product["external_product_id"]), product_id),
+                    )
+                return {
+                    "status": "created" if existing is None else "duplicate",
+                    "match_method": match["method"], "erp_product_id": product_id,
+                    "changes": {},
+                }
 
             # Use the same receipt document/ledger primitives as supplies. Both
             # card creation and stock posting roll back together on any failure.

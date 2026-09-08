@@ -19750,12 +19750,31 @@ def api_bitrix_product_preview(bitrix_id):
 def api_bitrix_product_import(bitrix_id):
     require_csrf_when_authenticated()
     payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return api_error("BITRIX_IMPORT_INVALID", "Некорректные данные товара.", 422)
     action = str(payload.get("action") or "create").strip()
+    supply_id = payload.get("supply_id")
+    if "supply_id" in payload and (not isinstance(supply_id, str) or not supply_id.strip()):
+        return api_error("SUPPLY_INVALID", "Укажите текущую поставку.", 422)
+    if action not in ("create", "update"):
+        return api_error("BITRIX_IMPORT_INVALID", "Неподдерживаемое действие импорта.", 422)
+    if supply_id:
+        from app.services.supplies import SupplyEngine, SupplyError
+        user = current_auth_user() or {}
+        if auth_is_enabled() and user.get("role") in ("viewer", "readonly", "read_only"):
+            abort(403)
+        try:
+            supply = SupplyEngine().get(str(supply_id))
+            if supply["status"] not in ("draft", "posted"):
+                raise SupplyError("В удалённую поставку нельзя добавлять товары.")
+        except SupplyError as error:
+            return api_error("SUPPLY_INVALID", str(error), 422)
+        action = "resolve"
     database = CatalogDatabase()
     store = ProductImageStore(database)
     prepared = None
     try:
-        quantity = positive_integer(payload.get("quantity"), "Количество")
+        quantity = None if supply_id else positive_integer(payload.get("quantity"), "Количество")
         client = _bitrix_single_client()
         product = client.get_product(bitrix_id)
         if product is None:

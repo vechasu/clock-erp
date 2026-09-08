@@ -32,6 +32,8 @@
         ? p.physical_stock
         : p.stock;
     return [
+      ["Источник", p.source_label],
+      ["Bitrix ID", p.bitrix_id],
       ["Артикул", p.article],
       ["Бренд", p.brand],
       ["Категория", p.category],
@@ -90,5 +92,43 @@
     );
     container.append(photo(p.image_url, true), node("h3", "", p.name), fields);
   }
-  window.ERPProductPicker = { results, highlight, preview };
+  async function request(path, options = {}) {
+    const response = await fetch(path, {
+      credentials: "same-origin",
+      ...options,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-CSRF-Token":
+          document.querySelector("meta[name=csrf-token]")?.content || "",
+        ...options.headers,
+      },
+    });
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("Не удалось получить ответ сервера. Повторите запрос.");
+    }
+    if (!response.ok || payload.ok === false) {
+      const error = new Error(payload.message || "Операция не выполнена.");
+      error.status = response.status;
+      throw error;
+    }
+    return payload.data;
+  }
+  const bitrix = {
+    search: (query, signal) =>
+      request("/api/v1/bitrix-products/search?q=" + encodeURIComponent(query), {
+        signal,
+      }),
+    preview: (id, signal) =>
+      request("/api/v1/bitrix-products/" + encodeURIComponent(id), { signal }),
+    import: (id, payload) =>
+      request("/api/v1/bitrix-products/" + encodeURIComponent(id) + "/import", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  };
+  window.ERPProductPicker = { results, highlight, preview, request, bitrix };
 })();

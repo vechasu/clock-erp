@@ -354,5 +354,82 @@ class SingleBitrixProductImportTest(unittest.TestCase):
         self.assertEqual(saved["stock"], 2)
 
 
+    def supply_import(self, supply_id, product=None):
+        product = product or source_product()
+        with mock.patch.object(web, "_bitrix_single_client", return_value=FakeBitrixClient(product)):
+            return self.client.post("/api/v1/bitrix-products/501/import", json={"supply_id": supply_id})
+
+    def test_supply_import_card_then_add_retry_merge_and_reload(self):
+        from app.services.supplies import SupplyEngine
+        engine = SupplyEngine(CatalogDatabase(self.database_path))
+        supply = engine.create("Test supply")
+        imported = self.supply_import(supply["id"])
+        self.assertEqual(imported.status_code, 201, imported.get_json())
+        product = imported.get_json()["data"]["product"]
+        self.assertEqual(product["stock"], 0)
+        self.assertEqual(engine.get(supply["id"])["items"], [])
+        self.assertEqual(engine.movements(), [])
+        with CatalogDatabase(self.database_path).connect() as c:
+            card = c.execute("SELECT * FROM catalog_excel_products WHERE id=?", (product["id"],)).fetchone()
+            self.assertEqual(card["bitrix_external_product_id"], "501")
+            self.assertEqual(card["excel_article"], "BX-501")
+            self.assertEqual(card["excel_brand"], "Known")
+            self.assertEqual(card["excel_category"], "Watches")
+            self.assertTrue(card["local_image_path"])
+        path = "/api/v1/receipts/supplies/" + supply["id"] + "/items"
+        for unused in range(2):
+            response = self.client.post(path, json={"product_id": product["id"], "quantity": 3}, headers={"Idempotency-Key": "picker-test-123"})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()["data"]["total_quantity"], 3)
+        again = self.supply_import(supply["id"])
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.get_json()["data"]["erp_product_id"], product["id"])
+        response = self.client.post(path, json={"product_id": product["id"], "quantity": 2}, headers={"Idempotency-Key": "picker-test-456"})
+        self.assertEqual(response.get_json()["data"]["position_count"], 1)
+        reloaded = self.client.get("/api/v1/receipts/supplies/" + supply["id"]).get_json()["data"]
+        self.assertEqual(reloaded["items"][0]["quantity"], 5)
+        self.assertEqual(reloaded["items"][0]["stock_before"], 0)
+        self.assertEqual(reloaded["items"][0]["stock_after"], 5)
+        self.assertEqual(engine.movements(), [])
+        engine.post(supply["id"])
+        self.assertEqual(self.supply_import(supply["id"]).get_json()["data"]["product"]["stock"], 5)
+        self.client.post(path, json={"product_id": product["id"], "quantity": 2}, headers={"Idempotency-Key": "picker-posted-1"})
+        self.assertEqual(engine.get(supply["id"])["total_quantity"], 7)
+        self.assertEqual(len(engine.movements()), 2)
+
+    def test_supply_failed_import_invalid_quantity_and_failed_add(self):
+        from app.services.supplies import SupplyEngine
+        engine = SupplyEngine(CatalogDatabase(self.database_path))
+        supply = engine.create("Test supply")
+        with mock.patch.object(web, "_bitrix_single_client", return_value=FakeBitrixClient(unavailable=True)):
+            failed = self.client.post("/api/v1/bitrix-products/501/import", json={"supply_id": supply["id"]})
+        self.assertEqual(failed.status_code, 503)
+        self.assertEqual(engine.get(supply["id"])["items"], [])
+        product = self.supply_import(supply["id"]).get_json()["data"]["product"]
+        path = "/api/v1/receipts/supplies/" + supply["id"] + "/items"
+        for quantity in (0, -1, "abc", 1.5, True):
+            response = self.client.post(path, json={"product_id": product["id"], "quantity": quantity}, headers={"Idempotency-Key": "invalid-quantity"})
+            self.assertEqual(response.status_code, 422)
+        engine.delete(supply["id"])
+        response = self.client.post(path, json={"product_id": product["id"], "quantity": 3}, headers={"Idempotency-Key": "cancelled-supply"})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(engine.get(supply["id"])["items"], [])
+        with CatalogDatabase(self.database_path).connect() as c:
+            self.assertEqual(c.execute("SELECT stock FROM catalog_excel_products WHERE id=?", (product["id"],)).fetchone()[0], 0)
+        with mock.patch.object(web, "_bitrix_single_client") as remote:
+            self.assertEqual(self.supply_import(supply["id"]).status_code, 422)
+            remote.assert_not_called()
+
+    def test_supply_rejects_conflicting_identity_without_changing_card(self):
+        from app.services.supplies import SupplyEngine
+        supply = SupplyEngine(CatalogDatabase(self.database_path)).create("Test")
+        original = self.post_import(source_product()).get_json()["data"]["product"]
+        other = source_product(identity="502", name="Different", article="BX-501")
+        with mock.patch.object(web, "_bitrix_single_client", return_value=FakeBitrixClient(other)):
+            result = self.client.post("/api/v1/bitrix-products/502/import", json={"supply_id": supply["id"]})
+        self.assertEqual(result.status_code, 422)
+        self.assertEqual(self.supply_import(supply["id"]).get_json()["data"]["erp_product_id"], original["id"])
+
+
 if __name__ == "__main__":
     unittest.main()
