@@ -130,6 +130,13 @@ class WildberriesReadOnlyClient:
         url = self.origins[service] + path
         headers = self._headers()
         for attempt in range(self.max_retries + 1):
+            if time.monotonic() >= getattr(self, 'sync_deadline', float('inf')) or len(self.request_audit) >= getattr(self, 'sync_request_limit', float('inf')):
+                raise WildberriesReadOnlyError("Достигнут лимит времени или запросов WB", "WB_SYNC_BUDGET")
+            interval = getattr(self, 'sync_min_interval', 0)
+            delay = interval - (time.monotonic() - getattr(self, '_last_sync_request', 0))
+            if delay > 0:
+                self.sleep(delay)
+            self._last_sync_request = time.monotonic()
             self.request_audit.append({
                 "method": method,
                 "service": service,

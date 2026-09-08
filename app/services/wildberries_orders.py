@@ -100,5 +100,8 @@ def synchronize_wildberries_orders(client, store, synced_at=None):
         else:
             normalized.append(order)
     result = store.upsert_wildberries(normalized)
+    statuses = {str(row['id']): {key: row[key] for key in ('id', 'supplierStatus', 'wbStatus') if key in row}
+                for row in rows if isinstance(row, dict) and row.get('id') and row.get('supplierStatus')}
+    result['statuses_updated'] = store.update_wildberries_statuses(statuses) if statuses else 0
     result.update({"received": len(rows), "errors": errors})
     return result
