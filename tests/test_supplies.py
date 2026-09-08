@@ -254,3 +254,149 @@ class SupplyTest(unittest.TestCase):
                     self.assertEqual(client.get('/api/v1/receipts/movements').status_code,200)
         finally:
             web.app.config.clear();web.app.config.update(original)
+
+    def test_add_new_and_existing_only_delta_and_preserve_history(self):
+        a, b = self.product(7, 'a'), self.product(4, 'b')
+        d = self.draft([(a, 3)])
+        posted = self.engine.post(d['id'], 'Poster')
+        original = self.engine.movements()
+        result = self.engine.add_item(d['id'], b, 2, 'request-new', 'Максим')
+        self.assertEqual((result['position_count'], result['total_quantity']), (2, 5))
+        self.assertEqual((self.stock(a), self.stock(b)), (10, 6))
+        result = self.engine.add_item(d['id'], a, 2, 'request-existing', 'Максим')
+        self.assertEqual((result['position_count'], result['total_quantity']), (2, 7))
+        self.assertEqual(result['items'][0]['quantity'], 5)
+        self.assertEqual(result['items'][0]['stock_after'], 12)
+        self.assertEqual(result['posted_at'], posted['posted_at'])
+        self.assertEqual(result['posted_by'], 'Poster')
+        self.engine.post(d['id'])
+        self.assertEqual((self.stock(a), self.stock(b)), (12, 6))
+        movements = self.engine.movements()
+        self.assertIn(original[0], movements)
+        self.assertEqual(len(movements), 3)
+        self.assertEqual(len(self.engine.list()), 1)
+        with self.db.connect() as c:
+            movement = c.execute("SELECT * FROM catalog_stock_movements WHERE operation_kind='add' ORDER BY rowid LIMIT 1").fetchone()
+            self.assertEqual((movement['source_id'], movement['product_id'], movement['quantity_delta'], movement['user_name']), (d['id'], b, 2, 'Максим'))
+            self.assertTrue(movement['created_at'])
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM erp_audit_events WHERE entity_type='receipt'").fetchone()[0], 2)
+
+    def test_add_draft_then_post_once(self):
+        p = self.product()
+        d = self.draft()
+        self.engine.add_item(d['id'], p, 2, 'draft-request')
+        self.engine.add_item(d['id'], p, 2, 'draft-request')
+        self.assertEqual(self.stock(p), 3)
+        self.assertEqual(self.engine.get(d['id'])['total_quantity'], 2)
+        self.engine.post(d['id'])
+        self.engine.add_item(d['id'], p, 2, 'draft-request')
+        self.assertEqual(self.stock(p), 5)
+
+    def test_add_retry_and_key_conflict(self):
+        p = self.product()
+        d = self.draft([(p, 1)])
+        self.engine.post(d['id'])
+        for _ in range(3): self.engine.add_item(d['id'], p, 2, 'same-request')
+        self.assertEqual(self.stock(p), 6)
+        with self.assertRaises(SupplyError): self.engine.add_item(d['id'], p, 3, 'same-request')
+        self.assertEqual(self.engine.get(d['id'])['total_quantity'], 3)
+
+    def test_add_validation_and_deleted(self):
+        p = self.product()
+        d = self.draft([(p, 1)])
+        self.engine.post(d['id'])
+        for q in (0, -1, 1.5, '2', None, True, 2147483648):
+            with self.subTest(q=q), self.assertRaises(SupplyError): self.engine.add_item(d['id'], p, q, 'invalid-request')
+        for pid in (None, True, '1', 999999, 10**30):
+            with self.subTest(pid=pid), self.assertRaises(SupplyError): self.engine.add_item(d['id'], pid, 2, 'invalid-request')
+        for key in (None, '', 'x', 'x'*97):
+            with self.subTest(key=key), self.assertRaises(SupplyError): self.engine.add_item(d['id'], p, 2, key)
+        with self.assertRaises(SupplyError): self.engine.add_item('missing', p, 2, 'invalid-request')
+        deleted = self.draft()
+        self.engine.delete(deleted['id'])
+        with self.assertRaises(SupplyError): self.engine.add_item(deleted['id'], p, 2, 'invalid-request')
+        with self.db.transaction() as c: c.execute('UPDATE catalog_excel_products SET active=0 WHERE id=?', (p,))
+        with self.assertRaises(SupplyError): self.engine.add_item(d['id'], p, 2, 'invalid-request')
+        self.assertEqual(self.stock(p), 4)
+        self.assertEqual(self.engine.get(d['id'])['total_quantity'], 1)
+
+    def test_add_rollback_after_all_writes(self):
+        p, other = self.product(), self.product(7, 'other')
+        d = self.draft([(p, 1)])
+        self.engine.post(d['id'])
+        before = self.engine.get(d['id'])
+        movements = self.engine.movements()
+        def fail(_): raise RuntimeError('injected')
+        for pid in (p, other):
+            with self.assertRaises(RuntimeError): self.engine.add_item(d['id'], pid, 3, 'rollback-request', failure_hook=fail)
+            self.assertEqual(self.engine.get(d['id']), before)
+            self.assertEqual(self.engine.movements(), movements)
+            self.assertEqual((self.stock(p), self.stock(other)), (4, 7))
+        self.engine.add_item(d['id'], other, 3, 'rollback-request')
+        self.assertEqual(self.stock(other), 10)
+
+    def test_add_concurrent_distinct_and_identical(self):
+        p = self.product()
+        d = self.draft([(p, 1)])
+        self.engine.post(d['id'])
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            a = pool.submit(self.engine.add_item, d['id'], p, 2, 'concurrent-a')
+            b = pool.submit(self.engine.add_item, d['id'], p, 3, 'concurrent-b')
+            a.result(); b.result()
+        self.assertEqual(self.stock(p), 9)
+        self.assertEqual(self.engine.get(d['id'])['items'][0]['quantity'], 6)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: self.engine.add_item(d['id'], p, 2, 'concurrent-same'), range(2)))
+        self.assertEqual(self.stock(p), 11)
+        self.assertTrue(all(r['total_quantity'] == 8 for r in results))
+
+    def test_add_api_permissions_csrf_and_idempotency(self):
+        import os
+        import app.web as web
+        from app.auth import require_csrf
+        config = dict(web.app.config)
+        web.app.config.update(TESTING=True, AUTH_TESTING=False)
+        self.addCleanup(lambda: (web.app.config.clear(), web.app.config.update(config)))
+        p = self.product()
+        d = self.draft([(p, 1)])
+        self.engine.post(d['id'])
+        path = '/api/v1/receipts/supplies/' + d['id'] + '/items'
+        with patch.dict(os.environ, {'CATALOG_DATABASE_PATH': str(self.db.path)}), patch.object(web, 'MoySkladClient', side_effect=AssertionError('remote')), patch.object(web, '_bitrix_single_client', side_effect=AssertionError('remote')):
+            client = web.app.test_client()
+            with patch('app.supply_routes.auth_is_enabled', return_value=True), patch('app.supply_routes.current_auth_user', return_value={'role': 'viewer'}):
+                self.assertEqual(client.post(path, json={'product_id':p,'quantity':2}).status_code, 403)
+            with patch('app.supply_routes.require_csrf_when_authenticated', side_effect=require_csrf):
+                self.assertEqual(client.post(path, json={'product_id':p,'quantity':2}).status_code, 403)
+            for _ in range(2):
+                response = client.post(path, json={'product_id':p,'quantity':2}, headers={'Idempotency-Key':'http-request'})
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            self.assertEqual(client.post(path, json=[]).status_code, 422)
+        self.assertEqual(self.stock(p), 6)
+
+    def test_add_local_card_without_bitrix_and_keep_purchase_price(self):
+        p = self.product()
+        d = self.draft([(p, 1)])
+        with self.db.transaction() as c:
+            c.execute('UPDATE catalog_excel_products SET bitrix_external_product_id=NULL, bitrix_catalog_product_id=NULL WHERE id=?', (p,))
+            c.execute('UPDATE erp_receipt_items SET purchase_price=100 WHERE receipt_id=?', (d['id'],))
+        self.engine.add_item(d['id'], p, 2, 'local-card-request')
+        self.engine.post(d['id'])
+        result = self.engine.add_item(d['id'], p, 3, 'local-card-posted')
+        self.assertEqual(result['items'][0]['purchase_price'], 100)
+        self.assertEqual(self.stock(p), 9)
+
+    def test_add_physical_component_and_concurrent_sale(self):
+        from app.services.product_bundles import ProductBundles
+        from app.services.component_inventory import ComponentInventory, balance
+        p, sku = self.product(99), self.product(99, 'sku')
+        ProductBundles(self.db).configure(sku, [{'component_id':p, 'quantity':1}])
+        ComponentInventory(self.db).confirm(p, 7, 'Tester')
+        d = self.draft([(p, 1)])
+        self.engine.post(d['id'])
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            a = pool.submit(self.engine.add_item, d['id'], p, 3, 'physical-request')
+            b = pool.submit(SalesInventory(self.db).create_sale, {'id':'physical-sale','source':'Tictactoy'}, p, 2, 100)
+            a.result(); b.result()
+        self.assertEqual(self.stock(p), 99)
+        with self.db.connect() as c: self.assertEqual(balance(c, p), 9)
+        with self.assertRaises(ReceiptInventoryError): self.engine.add_item(d['id'], sku, 1, 'bundle-request')
