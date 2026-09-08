@@ -50,8 +50,8 @@ def publish_orders(orders_path, orders):
                         "WHERE source=? AND external_customer_id=?",
                         (operation["source"], str(operation["external_customer_id"])),
                     ).fetchone()[0]
-                    if owners > 1:
-                        LOGGER.warning("Shared external customer ID without contacts: order %s deferred",
+                    if owners != 1:
+                        LOGGER.warning("Unproven external customer ID without contacts: order %s deferred",
                                        operation["external_id"])
                         continue
                 registry.upsert_operation(connection, operation)

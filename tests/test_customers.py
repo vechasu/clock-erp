@@ -545,6 +545,11 @@ class CustomerRoutesTest(unittest.TestCase):
 
     def test_external_identity_is_retained_but_shared_contactless_ids_are_deferred(self):
         snapshot = OrdersSnapshotStore(self.path)
+        snapshot.upsert_bitrix([order(21143, name="", phone="", email="",
+                                      external_customer_id="unknown")], 1)
+        with CustomerRegistry(self.customers_path).connection() as connection:
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM customer_operations WHERE external_id='21143'").fetchone())
         snapshot.upsert_bitrix([order(21139, external_customer_id="stable")], 2)
         normalized = web.normalize_order({"id": "21140", "USER_ID": "stable", "status": "N"})
         snapshot.upsert_bitrix([normalized], 3)
