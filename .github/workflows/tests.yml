@@ -155,6 +155,12 @@ jobs:
           SMSBLISS_PASSWORD: ""
         run: pnpm exec playwright test e2e/sms.spec.ts --project=desktop-1440
 
+      - name: Write-off desktop and mobile workflow
+        env:
+          ERP_TEST_MODE: "1"
+          ERP_AUTH_ENABLED: "0"
+        run: pnpm exec playwright test e2e/writeoffs.spec.ts --project=desktop-1440 --project=mobile-390
+
       - name: Playwright/Axe accessibility gate
         env:
           CI: "true"

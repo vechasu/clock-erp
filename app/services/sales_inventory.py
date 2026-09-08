@@ -2267,9 +2267,10 @@ class SalesInventory:
                 "product_id": str(row["product_id"]),
                 "created_at": row["created_at"],
                 "type": row["movement_type"],
-                "label": labels.get(
-                    row["movement_type"],
-                    row["movement_type"],
+                "label": (
+                    ("Отмена списания" if row["operation_kind"] == "cancel" else "Списание")
+                    if row["source_type"] == "writeoff"
+                    else labels.get(row["movement_type"], row["movement_type"])
                 ),
                 "quantity": abs(delta),
                 "diff": delta,
