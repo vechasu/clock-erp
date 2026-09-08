@@ -19,17 +19,17 @@
             const painted=performance.now();
             const entries=performance.getEntriesByType('resource').filter(e=>e.startTime>=token.start-1);
             const main=primary||entries.find(e=>/\/(api\/orders|order\/)/.test(e.name));
-            const row={operation:token.operation,epoch:performance.timeOrigin+token.start,e2e:painted-token.start,frontend:main?painted-main.responseEnd:null,ttfb:main?main.responseStart-main.requestStart:null,server:main?resource(main).server:{},primary:main?resource(main):null,ttfbFromStart:main?main.responseStart-token.start:null,failed,hidden:document.visibilityState!=='visible',longTasks:longTasks.filter(e=>e.start>=token.start&&e.start<painted),resources:entries.map(resource)};
+            const row={operation:token.operation,epoch:performance.timeOrigin+token.start,e2e:painted-token.start,frontend:main?painted-main.responseEnd:null,ttfb:main?main.responseStart-main.requestStart:null,server:main?resource(main).server:{},primary:main?resource(main):null,ttfbFromStart:main?main.responseStart-token.start:null,failed,hidden:!!token.hidden||document.visibilityState!=='visible',longTasks:longTasks.filter(e=>e.start>=token.start&&e.start<painted),resources:entries.map(resource)};
             rows.push(row);publish();
             // Count async tasks/images belonging to the interaction without
             // treating their completion as the card's first usable paint.
             setTimeout(()=>{row.resources=performance.getEntriesByType('resource').filter(e=>e.startTime>=token.start-1&&e.startTime<=painted).map(resource);publish();},500);
         }));
     }
-    window.OrdersTiming={begin(operation){const now=performance.now();const start=operation==='search'&&now-inputAt<600?inputAt:now;return {operation,start};},finish};
+    window.OrdersTiming={begin(operation){const now=performance.now();const start=operation==='search'&&now-inputAt<600?inputAt:now;return {operation,start,hidden:document.visibilityState!=='visible'};},finish};
     document.addEventListener('DOMContentLoaded',()=>{
         const nav=performance.getEntriesByType('navigation')[0];
-        finish({operation:nav?.type==='back_forward'?'back_document':'document',start:0},nav);
+        finish({operation:nav?.type==='back_forward'?'back_document':'document',start:0,hidden:document.visibilityState!=='visible'},nav);
     },{once:true});
 })();
 </script>
