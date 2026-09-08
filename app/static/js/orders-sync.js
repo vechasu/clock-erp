@@ -85,7 +85,13 @@
         const overflow = bar.querySelector('[data-overflow-statuses]');
         const more = bar.querySelector('[data-status-more]');
         const statuses = [...bar.querySelectorAll('[data-status-filter]')].filter(button => button.dataset.statusFilter !== 'all');
+        let fittedWidth = -1;
         function fitStatuses() {
+            const width = bar.clientWidth;
+            // ResizeObserver also delivers an initial notification and height
+            // changes. Neither needs another series of forced table layouts.
+            if (width === fittedWidth) return;
+            fittedWidth = width;
             statuses.forEach(button => overflow.append(button));
             more.hidden = !statuses.length;
             let count = 0;
