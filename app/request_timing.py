@@ -11,7 +11,7 @@ import time
 from http.cookies import CookieError, SimpleCookie
 from urllib.parse import parse_qs
 
-from flask import before_render_template, g, request, template_rendered
+from flask import g, request
 import requests.sessions
 
 _local = threading.local()
@@ -96,24 +96,24 @@ def register_order_request_timing(app):
 
     def get_template(*args, **kwargs):
         metrics = getattr(_local, "metrics", None)
-        if metrics is not None and not metrics["template_stack"]:
+        if metrics is not None and not metrics["template_depth"]:
             return _measure("template", original_get_template, *args, **kwargs)
         return original_get_template(*args, **kwargs)
 
     app.jinja_env.get_template = get_template
 
-    def before_template(sender, template, context, **extra):
-        metrics = getattr(_local, "metrics", None)
-        if metrics is not None:
-            metrics["template_stack"].append(time.perf_counter())
+    class TimedTemplate(app.jinja_env.template_class):
+        def render(self, *args, **kwargs):
+            metrics = getattr(_local, "metrics", None)
+            if metrics is None or metrics["template_depth"]:
+                return super().render(*args, **kwargs)
+            metrics["template_depth"] += 1
+            try:
+                return _measure("template", super().render, *args, **kwargs)
+            finally:
+                metrics["template_depth"] -= 1
 
-    def after_template(sender, template, context, **extra):
-        metrics = getattr(_local, "metrics", None)
-        if metrics is not None and metrics["template_stack"]:
-            metrics["template"] += (time.perf_counter() - metrics["template_stack"].pop()) * 1000
-
-    before_render_template.connect(before_template, app, weak=False)
-    template_rendered.connect(after_template, app, weak=False)
+    app.jinja_env.template_class = TimedTemplate
 
     for method in ("open_session", "save_session"):
         original = getattr(app.session_interface, method)
@@ -157,7 +157,7 @@ def register_order_request_timing(app):
         ))
         if not enabled:
             return original_wsgi(environ, start_response)
-        metrics = dict(sql=0.0, queries=0, template=0.0, session=0.0, external=0.0, external_calls=0, template_stack=[])
+        metrics = dict(sql=0.0, queries=0, template=0.0, session=0.0, external=0.0, external_calls=0, template_depth=0)
         previous = getattr(_local, "metrics", None)
         _local.metrics = metrics
         environ["orders.timing.enabled"] = True
