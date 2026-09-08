@@ -107,7 +107,9 @@
         observer = new ResizeObserver(fitStatuses);
         observer.observe(bar);
         bar.addEventListener('click', () => more.classList.toggle('has-active', !!overflow.querySelector('.active')));
-        fitStatuses();
+        // Let the list controller finish formatting its new rows before any
+        // geometry read forces layout. The toolbar is fitted before paint.
+        requestAnimationFrame(fitStatuses);
     }
     initializeStatuses();
     document.addEventListener('orders:filters-updated', initializeStatuses);

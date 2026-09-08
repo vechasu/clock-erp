@@ -598,6 +598,13 @@
             document.querySelectorAll('[data-status-filter]').forEach(item=>{const active=item.dataset.statusFilter===statusInput.value;item.classList.toggle('active',active);item.setAttribute('aria-pressed',String(active));});
             if(!await loadOrdersResults(url,{updateHistory:false,autoSelect:false})||window.location.href!==target)return;
         }
+        const match=url.pathname.match(/^\/order\/(wildberries\/)?([^/]+)$/);
+        const targetOrderId=match?(match[1]?'wb:':'')+decodeURIComponent(match[2]):null;
+        if(targetOrderId===selectedOrderId){
+            ++navigationGeneration;
+            window.clearTimeout(ordersSearchTimer);ordersSearchController?.abort();cardController?.abort();
+            return;
+        }
         selectOrder(target,{push:false});
     });
 {% endif %}
