@@ -50,7 +50,7 @@ class InternalOrdersTest(unittest.TestCase):
                 response = self.get_orders_page(path)
                 self.assertEqual(response.status_code, 200)
                 html = response.get_data(as_text=True)
-                self.assertIn('class="orders-command-bar"', html)
+                self.assertIn('class="orders-command-bar orders-reference-header"', html)
                 self.assertNotIn("Управление заказами интернет-магазина", html)
 
     def test_orders_workspace_does_not_fetch_bitrix_detail(self):

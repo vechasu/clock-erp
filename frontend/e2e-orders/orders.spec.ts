@@ -56,10 +56,10 @@ test('diagnostics retain errors, import and sync', async ({ page }) => {
   await page.goto('/app/orders?source=wildberries');
   await expect(page.locator('[data-wb-health]')).toContainText('Требует внимания');
   await expect(page.locator('[data-wb-preview-form]')).toBeHidden();
-  await page.locator('[data-wb-recovery] > summary').click();
+  await page.locator('[data-sync-row="wildberries"] [data-sync-details]').click();
   await expect(page.getByRole('heading', { name: 'Диагностика Wildberries' })).toBeVisible();
   await expect(page.locator('[data-wb-missing]')).toContainText('Тестовая ошибка API');
-  await expect(page.getByRole('button', { name: 'Обновить WB' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Обновить Wildberries', exact: true })).toBeVisible();
   await page.route('**/api/orders/wildberries/recovery/preview', route => route.fulfill({json:{ok:true,report:{rows:[],wb_count:1,importable:1,counts:{READY:1},errors:[],confirmation:'fixture-only'}}}));
   await page.locator('[name="supply_id"]').fill('WB-GI-TEST');
   await page.getByRole('button', { name: 'Проверить поставку' }).click();
@@ -114,4 +114,76 @@ test('card selection keeps the list DOM and uses one detail request', async ({ p
   await page.goBack();
   await expect(page.locator('.card-title h2')).toContainText(firstNumber);
   await expect(page.locator('[data-preserved-list]')).toHaveCount(1);
+});
+
+test('unified synchronization prevents duplicates and retains partial failure', async ({ page }) => {
+  const posts: string[] = [];
+  let finishWb!: () => void;
+  const holdWb = new Promise<void>(resolve => { finishWb = resolve; });
+  await page.route('**/api/orders/tictactoy/sync', async route => {
+    if (route.request().method() === 'POST') posts.push('tictactoy');
+    await route.fulfill({json:{ok:true,result:{outcome:'success',last_success_at:Date.now()/1000}}});
+  });
+  await page.route('**/api/orders/wildberries/sync', async route => {
+    posts.push('wildberries');
+    await holdWb;
+    await route.fulfill({status:503,json:{ok:false,error:{message:'Тестовый сбой WB'}}});
+  });
+  await page.goto('/app/orders?source=wildberries&page=2&page_size=20');
+  await page.locator('[data-sync-source="all"]').click();
+  await expect(page.locator('[data-sync-row="wildberries"]')).toHaveAttribute('data-state','running');
+  await expect(page.locator('[data-sync-source="all"]')).toBeDisabled();
+  await expect(page.locator('[data-sync-source="wildberries"]')).toBeDisabled();
+  finishWb();
+  await expect(page.locator('[data-sync-row="wildberries"]')).toHaveAttribute('data-state','error');
+  await expect(page.locator('[data-sync-row="tictactoy"]')).toHaveAttribute('data-state','success');
+  await expect(page.locator('.list-footer')).toContainText('Показано 21–40 из 125');
+  expect(posts.sort()).toEqual(['tictactoy','wildberries']);
+  await page.locator('[data-sync-source="tictactoy"]').click();
+  await expect.poll(() => posts.filter(x => x === 'tictactoy').length).toBe(2);
+  expect(posts.filter(x => x === 'wildberries')).toHaveLength(1);
+  await page.route('**/api/orders/wildberries/recovery', route => route.fulfill({json:{ok:true,diagnostics:{outcome:'success',last_success_at:new Date().toISOString()}}}));
+  await page.route('**/api/orders/wildberries/sync', route => route.fulfill({json:{ok:true,result:{outcome:'success',last_success_at:new Date().toISOString()}}}));
+  await page.locator('[data-sync-source="wildberries"]').click();
+  await expect(page.locator('[data-sync-row="wildberries"]')).toHaveAttribute('data-state','success');
+});
+
+test('reference header fits target viewports and overflow statuses remain usable', async ({ page }) => {
+  for (const [width,height] of [[1920,1080],[1440,900],[1366,768]]) {
+    await page.setViewportSize({width,height});
+    await page.goto('/app/orders');
+    await expect(page.locator('[data-orders-sync]')).toBeVisible();
+    await expect(page.locator('[data-wb-sync]')).toHaveCount(0);
+    await expect(page.getByText('Обновить Tictactoy',{exact:true})).toHaveCount(0);
+    const header = await page.locator('.orders-reference-header').boundingBox();
+    expect(header!.height).toBeLessThan(245);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const overflow = page.locator('[data-overflow-statuses] [data-status-filter]').first();
+    if (await overflow.count()) {
+      await page.locator('[data-status-more] > summary').click();
+      const status = await overflow.getAttribute('data-status-filter');
+      await overflow.click();
+      await expect(page).toHaveURL(new RegExp(`status=${status}`));
+    }
+    await page.screenshot({path:`/tmp/orders-reference-${width}.png`,fullPage:true});
+  }
+});
+
+
+test('page size, modes and synchronization work after lazy card selection', async ({ page }) => {
+  await page.route('**/api/orders/tictactoy/sync', route => route.fulfill({json:{ok:true,result:{outcome:'success',last_success_at:Date.now()/1000}}}));
+  await page.goto('/app/orders?source=wildberries');
+  await page.locator('[data-orders-page-size]').selectOption('20');
+  await expect(page.locator('.list-footer')).toContainText('Показано 1–20 из 125');
+  await page.locator('.orders-split-table .order-number').first().click();
+  await expect(page.locator('.card-title h2')).toBeVisible();
+  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/orders');
+  await page.locator('[data-sync-source="tictactoy"]').click();
+  await refreshed;
+  await expect(page.locator('.list-footer')).toContainText('Показано 1–20 из 125');
+  for (const mode of ['list','card','split']) {
+    await page.locator(`#ordersLayoutSwitch [data-layout-mode="${mode}"]`).click();
+    await expect(page.locator('#ordersWorkspace')).toHaveAttribute('data-layout-mode',mode);
+    await expect(page.locator(`#ordersLayoutSwitch [data-layout-mode="${mode}"]`)).toHaveAttribute('aria-checked','true');
+  }
 });
