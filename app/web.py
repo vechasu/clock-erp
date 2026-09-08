@@ -1389,7 +1389,11 @@ def orders_page():
     if not can_view_orders():
         abort(403)
     if request.args.get("retry") == "1" and request.headers.get("X-Order-Detail") != "1":
-        get_orders(force=True)
+        if ORDERS_REFRESH_LOCK.acquire(blocking=False):
+            try:
+                get_orders(force=True)
+            finally:
+                ORDERS_REFRESH_LOCK.release()
         return redirect(url_for("orders_page", **{
             key: value for key, value in request.args.items() if key != "retry"
         }), code=303)
@@ -1411,6 +1415,40 @@ def orders_page():
         detail_error="",
         exact_search=exact_search,
     )
+
+
+def orders_tictactoy_sync_state():
+    with ORDERS_CACHE_LOCK:
+        loaded_at = ORDERS_CACHE.get("loaded_at")
+        error = ORDERS_CACHE.get("error", "")
+    return {"last_success_at": loaded_at or None, "error": error,
+            "outcome": "error" if error else "success" if loaded_at else "unknown"}
+
+
+@app.get("/api/orders/tictactoy/sync")
+def tictactoy_sync_state_api():
+    if not can_view_orders():
+        abort(403)
+    result = orders_tictactoy_sync_state()
+    if ORDERS_REFRESH_LOCK.locked():
+        result["outcome"] = "running"
+    return jsonify(ok=True, result=result)
+
+
+@app.post("/api/orders/tictactoy/sync")
+def tictactoy_orders_sync_api():
+    if not can_view_orders():
+        abort(403)
+    require_csrf_when_authenticated()
+    if not ORDERS_REFRESH_LOCK.acquire(blocking=False):
+        return jsonify(ok=False, error={"message": "Синхронизация TicTacToy уже выполняется"}), 409
+    try:
+        get_orders(force=True)
+        result = orders_tictactoy_sync_state()
+        ok = result["outcome"] == "success"
+        return jsonify(ok=ok, result=result), 200 if ok else 503
+    finally:
+        ORDERS_REFRESH_LOCK.release()
 
 
 @app.get("/api/orders")
@@ -1494,6 +1532,12 @@ def orders_list_api():
                    if key not in {"products", "items", "wb_raw", "product_preview"}}
                   for row in list_state["rows"]],
         "kpis": list_state["kpis"],
+        "filters_html": render_template(
+            "_orders_filters.html",
+            order_source_counts=list_state.get("source_counts", {}),
+            order_status_counts=list_state.get("status_counts", {}),
+            order_status_label=status_label,
+        ),
         "exact_search": ({
             "number": exact_search["number"],
             "status": exact_search["status"],

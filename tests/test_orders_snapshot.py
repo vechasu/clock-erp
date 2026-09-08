@@ -361,10 +361,10 @@ class OrdersListIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         for expected in (
-            'class="orders-command-bar"', 'id="orderSearch"',
+            'class="orders-command-bar orders-reference-header"', 'id="orderSearch"',
             'data-status-filter="all"', 'data-source-filter="all"',
             'data-source-filter="tictactoy"', 'data-source-filter="wildberries"',
-            "Обновить WB", "Список", "Разделение", "Карточка",
+            "Обновить Wildberries", "Список", "Разделение", "Карточка",
         ):
             self.assertIn(expected, html)
         self.assertNotIn("Управление заказами интернет-магазина", html)

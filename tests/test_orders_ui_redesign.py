@@ -200,9 +200,9 @@ class OrdersUiRedesignTest(unittest.TestCase):
         )
 
     def test_filters_include_source_and_no_find_button(self):
-        filters = self.source.split(
-            'class="orders-command-bar"', 1
-        )[1].split("</form>", 1)[0]
+        filters = self.render_selected_order().split(
+            'class="orders-command-bar orders-reference-header"', 1
+        )[1].split('<div class="workspace"', 1)[0]
         self.assertIn('class="field field-search erp-search-input"', filters)
         self.assertIn('class="status-filter-tabs"', filters)
         self.assertEqual(filters.count("data-auto-submit-filter"), 1)
@@ -215,7 +215,7 @@ class OrdersUiRedesignTest(unittest.TestCase):
         self.assertNotIn("Свернуть список", filters)
         self.assertNotIn("data-collapse-list", self.source)
         self.assertNotIn(">Найти<", filters)
-        self.assertIn("url_for('orders_page')", filters)
+        self.assertIn('id="ordersFilters"', filters)
         self.assertIn("loadOrdersResults(ordersFilterUrl())", self.source)
         self.assertIn("event.key==='Enter'", self.source)
         self.assertIn("ordersSearchController?.abort()", self.source)
@@ -232,8 +232,8 @@ class OrdersUiRedesignTest(unittest.TestCase):
         html = self.render_selected_order()
         self.assertIn("css/erp-components.css", html)
         self.assertIn("css/orders.css", html)
-        self.assertIn('class="orders-command-bar"', html)
-        for label in ("Не подтверждён", "Все состояния", "TicTacToy"):
+        self.assertIn('class="orders-command-bar orders-reference-header"', html)
+        for label in ("Не подтверждён", "Статус:", "TicTacToy"):
             self.assertIn(label, html)
         self.assertNotIn('class="orders-kpis erp-workspace-metrics"', html)
         self.assertNotIn("Всего заказов", html)
