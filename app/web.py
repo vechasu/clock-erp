@@ -109,6 +109,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature
 from app.services.wildberries_matching import order_product_candidates
 from app.services.wildberries_sales import WildberriesSales
 from app.services.wildberries_orders import synchronize_wildberries_orders
+from app.services.wildberries_sync import SyncLock, run_sync
 from app.services.user_notifications import UserNotificationStore
 from app.services.brand_values import normalize_brand
 from app.services.catalog_reader import CatalogReader
@@ -465,7 +466,7 @@ ORDERS_CACHE_SECONDS = 60
 ORDERS_CACHE_LOCK = threading.RLock()
 ORDERS_REFRESH_LOCK = threading.Lock()
 ORDER_ITEM_COUNT_REFRESH_LOCK = threading.Lock()
-WB_SYNC_LOCK = threading.Lock()
+WB_SYNC_LOCK = SyncLock()
 ORDER_COMMENT_SYNC_LOCK = threading.Lock()
 ORDER_SEARCH_RATE_LOCK = threading.Lock()
 ORDER_SEARCH_RATE_BUCKETS = {}
@@ -1765,20 +1766,12 @@ def wildberries_orders_sync_api():
         )
         store = OrdersSnapshotStore()
         previous_ids = store.source_ids("wildberries")
-        result = synchronize_wildberries_orders(client, store)
-        previous_diagnostics = wb_diagnostics(store.path)
-        try:
-            recovery = WildberriesRecovery(client, store.path, CatalogDatabase().path)
-            recovery_result = recovery.reconcile(store)
-            recovery_result.update(new_orders=result['added'], last_success_at=sale_now_iso())
-            if recovery_result['errors'] or recovery_result['pending'] or result['errors']:
-                recovery_result['last_success_at'] = previous_diagnostics.get('last_success_at')
-            save_wb_diagnostics(store, recovery_result)
-            result['recovery'] = recovery_result
-        except (WildberriesReadOnlyError, ValueError, sqlite3.Error) as error:
-            previous_diagnostics.update(errors=[{'error': str(error)}], attention=1, checked_at=sale_now_iso())
-            save_wb_diagnostics(store, previous_diagnostics)
-            result['recovery'] = previous_diagnostics
+        result = run_sync(client, store, CatalogDatabase().path, mode='full', locked=True)
+        if result['outcome'] == 'error':
+            error = result.get('error') or {}
+            code = error.get('code', 'WB_SYNC_FAILED')
+            return jsonify(ok=False, result=result, error=dict(code=code,
+                message=error.get('error', 'Ошибка синхронизации WB'))), (400 if code == 'WB_NOT_CONFIGURED' else 429 if code == 'WB_RATE_LIMITED' else 503)
         current_ids = store.source_ids("wildberries")
         saved_orders = [
             store.get(order_id)
@@ -1798,7 +1791,8 @@ def wildberries_orders_sync_api():
         _publish_system_event(
             "wb_sync:success:{}".format(operation_id),
             "Синхронизация Wildberries завершена",
-            "Заказы Wildberries обновлены.", severity="success",
+            "Заказы Wildberries обновлены." if result['outcome'] == 'success' else "WB обновлён частично: проверьте диагностику.",
+            severity="success" if result['outcome'] == 'success' else "warning",
             target_url="/orders?source=wildberries", entity_type="integration",
             entity_id="wildberries", metadata={"operation": "wb_orders_sync"},
         )

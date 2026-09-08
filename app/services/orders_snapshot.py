@@ -440,10 +440,11 @@ class OrdersSnapshotStore:
                     continue
                 order = dict(order)
                 if existing:
-                    previous = json.loads(existing["payload_json"])
-                    for key in ("recovered_from_wb", "recovery_notice", "recovery_supply_id", "recovered_at"):
-                        if key in previous:
-                            order[key] = previous[key]
+                    # Statuses are refreshed separately from /orders/status. Preserve
+                    # every ERP field (including nested product mapping) here.
+                    # /orders/new may omit statuses; never reset them to defaults.
+                    updated += 1
+                    continue
                 created = order.get("created_at") or order.get("date")
                 total = order.get("order_total")
                 if total is None:
@@ -502,6 +503,43 @@ class OrdersSnapshotStore:
                 connection.execute("UPDATE orders_snapshot SET work_status=? WHERE order_id=?",
                                    (status_key(order), order_id))
         return {"added": added, "updated": updated}
+
+    def update_wildberries_statuses(self, statuses):
+        """Patch source statuses only; history and snapshot commit atomically."""
+        from app.services.wildberries_recovery import stamp
+        changed = 0
+        checked_at = stamp()
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for external_id, status in statuses.items():
+                if not status.get('supplierStatus'):
+                    continue
+                row = connection.execute(
+                    "SELECT order_id,payload_json FROM orders_snapshot WHERE source='wildberries' AND external_order_id=?",
+                    (str(external_id),)).fetchone()
+                if not row:
+                    continue
+                order = json.loads(row['payload_json'])
+                before = [order.get('supplier_status') or order.get('status', ''), order.get('wb_status', '')]
+                after = [status['supplierStatus'], status.get('wbStatus', before[1])]
+                if before == after and order.get('wb_status_checked_at') == checked_at:
+                    continue
+                if before != after:
+                    history = list(order.get('wb_status_history') or [])
+                    history.append(dict(at=checked_at, before=before, after=after))
+                    order['wb_status_history'] = history
+                    changed += 1
+                order.update(supplier_status=after[0], wb_status=after[1], status=after[0],
+                             status_name=' · '.join(value for value in after if value),
+                             wb_status_checked_at=checked_at, synced_at=checked_at)
+                raw = dict(order.get('wb_raw') or {})
+                raw.update(supplierStatus=after[0], wbStatus=after[1])
+                order['wb_raw'] = raw
+                order['wb_status_raw'] = dict(status)
+                connection.execute(
+                    "UPDATE orders_snapshot SET status=?,payload_json=?,loaded_at=?,work_status=? WHERE order_id=?",
+                    (after[0], json.dumps(order, ensure_ascii=False), datetime.now().timestamp(), status_key(order), row['order_id']))
+        return changed
 
     def ensure(self, orders, loaded_at):
         current = self.loaded_at()

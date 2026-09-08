@@ -239,6 +239,10 @@ class WildberriesRecovery:
                 statuses.update(self.client.get_order_statuses(ordered_ids[offset:offset + 100]))
             except WildberriesReadOnlyError as error:
                 errors.append({'order_ids': ordered_ids[offset:offset + 100], 'error': str(error)})
+        missing_statuses = [value for value in ordered_ids if value not in statuses]
+        if missing_statuses:
+            errors.append({'order_ids': missing_statuses, 'error': 'WB не вернул текущие статусы'})
+        statuses_updated = store.update_wildberries_statuses(statuses)
         rows = self.classify(ordered_ids, raw, statuses=statuses)
         for row in rows:
             for supply_id, members in memberships.items():
@@ -253,7 +257,7 @@ class WildberriesRecovery:
             if known < len(members):
                 warnings.append({'supply_id': supply_id, 'wb_count': len(members), 'erp_count': known, 'missing': len(members)-known})
         outcome = self.import_report(report, store)
-        return dict(recovered=outcome['imported'], attention=report['attention'] + len(errors) + len(outcome['failed']),
+        return dict(statuses_updated=statuses_updated, recovered=outcome['imported'], attention=report['attention'] + len(errors) + len(outcome['failed']),
                     supplies=warnings, errors=errors + outcome['failed'],
                     missing=[row['wb_order_id'] for row in rows if not row['already_imported']],
                     pending=[row for row in rows if row['error'] and not row['already_imported'] and not row['sale_id']], checked_at=stamp())

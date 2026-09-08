@@ -65,7 +65,7 @@ class OrdersPerformanceTest(unittest.TestCase):
         self.store.upsert_wildberries([order])
         try:
             order['wb_status'] = 'sold'
-            self.store.upsert_wildberries([order])
+            self.store.update_wildberries_statuses({'999999': {'supplierStatus': 'confirm', 'wbStatus': 'sold'}})
             with self.store.connection() as connection:
                 row = connection.execute('SELECT work_status,status,payload_json FROM orders_snapshot WHERE order_id=?', ('wb:999999',)).fetchone()
             self.assertEqual(row['work_status'], status_key(order))

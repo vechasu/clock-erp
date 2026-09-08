@@ -9360,6 +9360,10 @@
                     throw new Error(payload.error?.message || "Не удалось обновить WB-заказы");
                 }
                 const result = payload.result;
+                if (result.outcome === 'partial') {
+                    window.VechasuNotify?.warning('WB обновлён частично: проверьте диагностику.');
+                    return;
+                }
                 window.VechasuNotify?.success(
                     `WB: получено ${result.received}, новых ${result.added}, обновлено ${result.updated}, сопоставлено ${result.matched}, не сопоставлено ${result.unmatched}`
                 );

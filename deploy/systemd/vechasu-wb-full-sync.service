@@ -1,0 +1,15 @@
+[Unit]
+Description=Vechasu WB hourly recovery and terminal reconciliation
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/clock-erp
+EnvironmentFile=/etc/clock-erp/clock-erp.env
+ExecStart=/opt/clock-erp/venv/bin/python -m scripts.wb_orders_sync --mode full
+TimeoutStartSec=480
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryLimit=256M

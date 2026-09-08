@@ -1,0 +1,11 @@
+[Unit]
+Description=Vechasu WB synchronization every five minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/5:00
+AccuracySec=5s
+Persistent=true
+Unit=vechasu-wb-sync.service
+
+[Install]
+WantedBy=timers.target
