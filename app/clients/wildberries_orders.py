@@ -75,6 +75,8 @@ class WildberriesReadOnlyClient:
             marketplace_base_url
         )
         self.request_audit = []
+        self.request_budget = None
+        self.deadline = None
 
     @staticmethod
     def _validated_marketplace_origin(value):
@@ -130,6 +132,9 @@ class WildberriesReadOnlyClient:
         url = self.origins[service] + path
         headers = self._headers()
         for attempt in range(self.max_retries + 1):
+            if ((self.request_budget is not None and len(self.request_audit) >= self.request_budget)
+                    or (self.deadline is not None and time.monotonic() >= self.deadline)):
+                raise WildberriesReadOnlyError('Достигнут лимит времени или запросов синхронизации', 'WB_SYNC_BUDGET')
             self.request_audit.append({
                 "method": method,
                 "service": service,

@@ -392,6 +392,44 @@ class OrdersSnapshotStore:
         """Compatibility entry point: recent refreshes are additive, never destructive."""
         return self.upsert_bitrix(orders, loaded_at)
 
+    def update_wildberries_status(self, external_id, status, connection=None):
+        """Merge only authoritative WB status fields; never replace an ERP card."""
+        self.initialize()
+        if connection is None:
+            with self.connection() as target:
+                target.execute("BEGIN IMMEDIATE")
+                return self.update_wildberries_status(external_id, status, target)
+        row = connection.execute(
+            "SELECT payload_json FROM orders_snapshot WHERE source='wildberries' "
+            "AND external_order_id=?", (str(external_id),)).fetchone()
+        if row is None or not status.get('supplierStatus') or not status.get('wbStatus'):
+            return 0
+        order = json.loads(row['payload_json'])
+        before = {key: order.get(key, '') for key in ('supplier_status', 'wb_status')}
+        after = {'supplier_status': status['supplierStatus'], 'wb_status': status['wbStatus']}
+        if before == after:
+            return 0
+        when = datetime.utcnow().replace(microsecond=0).isoformat() + '+00:00'
+        order.update(after)
+        order['status'] = after['supplier_status']
+        label = after['supplier_status'] + ' · ' + after['wb_status']
+        order['status_name'] = ('Требует сопоставления · ' if order.get('requires_matching') else '') + label
+        order['synced_at'] = when
+        order['wb_status_updated_at'] = when
+        order['wb_status_metadata'] = dict(status)
+        raw = dict(order.get('wb_raw') or {})
+        raw.update(supplierStatus=status['supplierStatus'], wbStatus=status['wbStatus'])
+        order['wb_raw'] = raw
+        history = list(order.get('wb_status_history') or [])
+        history.append({'at': when, 'before': before, 'after': after})
+        order['wb_status_history'] = history
+        connection.execute(
+            "UPDATE orders_snapshot SET status=?, payload_json=?, loaded_at=? "
+            "WHERE source='wildberries' AND external_order_id=?",
+            (order['status'], json.dumps(order, ensure_ascii=False, separators=(',', ':')),
+             datetime.now().timestamp(), str(external_id)))
+        return 1
+
     def upsert_wildberries(self, orders, only_missing=False, connection=None, on_insert=None):
         """Idempotently store each WB assembly order as its own record."""
         self.initialize()
@@ -414,12 +452,11 @@ class OrdersSnapshotStore:
                 ).fetchone()
                 if existing and only_missing:
                     continue
-                order = dict(order)
                 if existing:
-                    previous = json.loads(existing["payload_json"])
-                    for key in ("recovered_from_wb", "recovery_notice", "recovery_supply_id", "recovered_at"):
-                        if key in previous:
-                            order[key] = previous[key]
+                    updated += self.update_wildberries_status(
+                        wb_order_id, order.get('wb_raw') or {}, connection)
+                    continue
+                order = dict(order)
                 created = order.get("created_at") or order.get("date")
                 total = order.get("order_total")
                 if total is None:

@@ -89,7 +89,7 @@ def normalize_wildberries_order(order, synced_at=None):
     }
 
 
-def synchronize_wildberries_orders(client, store, synced_at=None):
+def synchronize_wildberries_orders(client, store, synced_at=None, only_missing=False):
     rows = client.get_new_orders()
     normalized = []
     errors = 0
@@ -99,6 +99,6 @@ def synchronize_wildberries_orders(client, store, synced_at=None):
             errors += 1
         else:
             normalized.append(order)
-    result = store.upsert_wildberries(normalized)
+    result = store.upsert_wildberries(normalized, only_missing=only_missing)
     result.update({"received": len(rows), "errors": errors})
     return result

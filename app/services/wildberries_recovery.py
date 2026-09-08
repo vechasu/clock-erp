@@ -88,7 +88,7 @@ class WildberriesRecovery:
                          else match_state if match_state != 'READY' else 'NO_STOCK' if no_stock else 'READY')
                 rows.append(dict(wb_order_id=external_id, supply_id=supply_id or raw.get('supplyId', ''),
                     article=product.get('article', ''), barcode=product.get('barcode', ''), nm_id=product.get('nm_id'),
-                    supplier_status=raw.get('supplierStatus'), wb_status=raw.get('wbStatus'),
+                    supplier_status=raw.get('supplierStatus'), wb_status=raw.get('wbStatus'), status_available=bool(status),
                     erp_product=match, candidates=candidates, mapping_method=method,
                     matching_status=match_state, no_stock=no_stock, already_imported=bool(present),
                     sale_id=sale['id'] if sale else None, status=state, error=error, order=normalized))
@@ -140,9 +140,17 @@ class WildberriesRecovery:
         if report['errors']:
             raise ValueError('Импорт заблокирован: ' + '; '.join(report['errors']))
         from app.services.audit_journal import AuditJournal
-        result = {'imported': 0, 'skipped': 0, 'failed': [], 'order_ids': []}
+        result = {'imported': 0, 'updated': 0, 'skipped': 0, 'failed': [], 'order_ids': []}
         for row in report['rows']:
-            if row['already_imported'] or row['sale_id']:
+            if row['already_imported']:
+                if row.get('status_available') and row['supplier_status'] and row['wb_status']:
+                    result['updated'] += store.update_wildberries_status(row['wb_order_id'], {
+                        'supplierStatus': row['supplier_status'], 'wbStatus': row['wb_status']})
+                elif row['error']:
+                    result['failed'].append({'wb_order_id': row['wb_order_id'], 'error': row['error']})
+                result['skipped'] += 1
+                continue
+            if row['sale_id']:
                 result['skipped'] += 1
                 continue
             if row['error'] or not row['order']:
@@ -253,7 +261,7 @@ class WildberriesRecovery:
             if known < len(members):
                 warnings.append({'supply_id': supply_id, 'wb_count': len(members), 'erp_count': known, 'missing': len(members)-known})
         outcome = self.import_report(report, store)
-        return dict(recovered=outcome['imported'], attention=report['attention'] + len(errors) + len(outcome['failed']),
+        return dict(recovered=outcome['imported'], updated=outcome['updated'], attention=report['attention'] + len(errors) + len(outcome['failed']),
                     supplies=warnings, errors=errors + outcome['failed'],
                     missing=[row['wb_order_id'] for row in rows if not row['already_imported']],
                     pending=[row for row in rows if row['error'] and not row['already_imported'] and not row['sale_id']], checked_at=stamp())

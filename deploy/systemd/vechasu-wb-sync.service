@@ -1,0 +1,14 @@
+[Unit]
+Description=Vechasu WB fast synchronization
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/clock-erp
+EnvironmentFile=/etc/clock-erp/clock-erp.env
+ExecStart=/opt/clock-erp/venv/bin/python -m scripts.wb_orders_sync --mode fast
+TimeoutStartSec=270
+Nice=10
+IOSchedulingClass=idle
+UMask=0077

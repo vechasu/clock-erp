@@ -28,16 +28,19 @@
             const lastSuccess = d.last_success_at ? new Date(d.last_success_at) : null;
             const time = lastSuccess && !Number.isNaN(lastSuccess.getTime())
                 ? new Intl.DateTimeFormat('ru-RU', {dateStyle:'short',timeStyle:'short'}).format(lastSuccess) : '';
-            const hasIssues = d.attention || (d.errors || []).length || (d.pending || []).length;
+            const age = lastSuccess ? Math.max(0, Math.floor((Date.now() - lastSuccess.getTime()) / 60000)) : null;
+            const stale = age === null || !Number.isFinite(age) || age > 15;
+            const hasIssues = stale || ['partial', 'error', 'running'].includes(d.result) || d.attention || (d.errors || []).length || (d.pending || []).length;
             root.querySelector('[data-wb-health]').textContent = hasIssues
                 ? `Требует внимания${d.attention ? ' · ' + d.attention : ''}`
                 : time ? `Синхронизирован · ${time}` : 'Синхронизация ещё не выполнялась';
-            root.querySelector('[data-wb-diagnostic]').textContent = `Последняя успешная синхронизация: ${d.last_success_at || 'ещё не выполнялась'} · Новых: ${d.new_orders || 0} · Восстановлено: ${d.recovered || 0} · Требуют внимания: ${d.attention || 0}`;
+            root.querySelector('[data-wb-diagnostic]').textContent = `Последняя успешная синхронизация: ${time || 'ещё не выполнялась'} · Последняя попытка: ${d.last_attempt_at || '—'} · Результат: ${{success:'успешно',partial:'частично',error:'ошибка',running:'выполняется'}[d.result] || 'нет данных'} · Новых: ${d.new_orders || 0} · Обновлено статусов: ${d.updated || 0} · Восстановлено: ${d.recovered || 0} · Ошибок: ${(d.errors || []).length} · Возраст данных: ${age === null ? 'неизвестен' : age + ' мин'}`;
             const warning = root.querySelector('[data-wb-missing]');
             const lines = (d.supplies || []).map(s => `${s.supply_id}: WB содержит ${s.wb_count}, ERP знала ${s.erp_count}, пропущено ${s.missing}.`);
+            if (stale) lines.unshift('Внимание: нет успешной синхронизации WB за последние 15 минут.');
             lines.push(...(d.errors || []).map(e => e.error));
             lines.push(...(d.pending || []).map(row => `${row.wb_order_id}: ${row.error}`));
-            warning.textContent = lines.length ? 'Найдены заказы WB, отсутствующие в ERP. ' + lines.join(' ') + ' Проверьте поставку ниже для восстановления.' : '';
+            warning.textContent = lines.length ? lines.join(' ') : '';
             warning.hidden = !lines.length;
             const restore = root.querySelector('[data-wb-restore]');
             restore.hidden = !(d.supplies || []).length;
@@ -84,4 +87,5 @@
         finally {busy = false; importButton.disabled = false;}
     });
     loadDiagnostics();
+    window.setInterval(() => { if (!document.hidden && !busy) loadDiagnostics(); }, 60000);
 })();

@@ -206,7 +206,7 @@ class WildberriesRecoveryTest(unittest.TestCase):
         self.recovery.import_report(self.preview(), self.store)
         self.client.get_new_orders = lambda: [self.client.rows[0]]
         result = synchronize_wildberries_orders(self.client, self.store)
-        self.assertEqual(result['updated'], 1)
+        self.assertEqual(result['updated'], 0)
         self.assertEqual(result['added'], 0)
         self.assertTrue(self.store.get('wb:101')['recovered_from_wb'])
 

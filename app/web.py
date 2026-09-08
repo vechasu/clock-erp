@@ -465,7 +465,7 @@ ORDERS_CACHE_SECONDS = 60
 ORDERS_CACHE_LOCK = threading.RLock()
 ORDERS_REFRESH_LOCK = threading.Lock()
 ORDER_ITEM_COUNT_REFRESH_LOCK = threading.Lock()
-WB_SYNC_LOCK = threading.Lock()
+from app.services.wildberries_sync import WBSyncLock, run_sync as run_wildberries_sync
 ORDER_COMMENT_SYNC_LOCK = threading.Lock()
 ORDER_SEARCH_RATE_LOCK = threading.Lock()
 ORDER_SEARCH_RATE_BUCKETS = {}
@@ -1712,7 +1712,8 @@ def wildberries_recovery_import():
     if auth_is_enabled() and (current_auth_user() or {}).get('role') not in {'admin', 'employee'}:
         abort(403)
     payload = request.get_json(silent=True) or {}
-    if not WB_SYNC_LOCK.acquire(blocking=False):
+    wb_sync_lock = WBSyncLock(OrdersSnapshotStore().path)
+    if not wb_sync_lock.acquire(blocking=False):
         return jsonify(ok=False, message="Синхронизация WB уже выполняется"), 409
     try:
         confirmed = wb_recovery_signer().loads(payload.get('confirmation') or '', max_age=1800)
@@ -1736,13 +1737,14 @@ def wildberries_recovery_import():
         app.logger.exception("WB recovery import failed")
         return jsonify(ok=False, message="Импорт не завершён. Повторная проверка безопасна."), 503
     finally:
-        WB_SYNC_LOCK.release()
+        wb_sync_lock.release()
 
 
 @app.post("/api/orders/wildberries/sync")
 def wildberries_orders_sync_api():
     require_csrf_when_authenticated()
-    if not WB_SYNC_LOCK.acquire(blocking=False):
+    wb_sync_lock = WBSyncLock(OrdersSnapshotStore().path)
+    if not wb_sync_lock.acquire(blocking=False):
         return jsonify({
             "ok": False,
             "error": {"code": "WB_SYNC_RUNNING", "message": "Синхронизация Wildberries уже выполняется"},
@@ -1754,20 +1756,7 @@ def wildberries_orders_sync_api():
         )
         store = OrdersSnapshotStore()
         previous_ids = store.source_ids("wildberries")
-        result = synchronize_wildberries_orders(client, store)
-        previous_diagnostics = wb_diagnostics(store.path)
-        try:
-            recovery = WildberriesRecovery(client, store.path, CatalogDatabase().path)
-            recovery_result = recovery.reconcile(store)
-            recovery_result.update(new_orders=result['added'], last_success_at=sale_now_iso())
-            if recovery_result['errors'] or recovery_result['pending'] or result['errors']:
-                recovery_result['last_success_at'] = previous_diagnostics.get('last_success_at')
-            save_wb_diagnostics(store, recovery_result)
-            result['recovery'] = recovery_result
-        except (WildberriesReadOnlyError, ValueError, sqlite3.Error) as error:
-            previous_diagnostics.update(errors=[{'error': str(error)}], attention=1, checked_at=sale_now_iso())
-            save_wb_diagnostics(store, previous_diagnostics)
-            result['recovery'] = previous_diagnostics
+        result = run_wildberries_sync(client, store, CatalogDatabase().path, mode='full', locked=True)
         current_ids = store.source_ids("wildberries")
         saved_orders = [
             store.get(order_id)
@@ -1783,6 +1772,11 @@ def wildberries_orders_sync_api():
         result["unmatched"] = sum(
             1 for row in assembly_rows if row["matching_status"] != "matched"
         )
+        if result['sync_status'] != 'success':
+            if any(item.get('error') == 'WB_NOT_CONFIGURED' for item in result['recovery']['errors']):
+                return jsonify(ok=False, result=result, error={'code': 'WB_NOT_CONFIGURED', 'message': 'Wildberries API не настроен'}), 400
+            return jsonify(ok=False, result=result, error={
+                'code': 'WB_SYNC_PARTIAL', 'message': 'Синхронизация WB завершена с ошибками; проверьте диагностику.'}), 503
         operation_id = getattr(g, "operation_id", "") or uuid.uuid4().hex
         _publish_system_event(
             "wb_sync:success:{}".format(operation_id),
@@ -1821,7 +1815,7 @@ def wildberries_orders_sync_api():
             "error": {"code": "WB_SYNC_FAILED", "message": "Не удалось сохранить заказы Wildberries"},
         }), 503
     finally:
-        WB_SYNC_LOCK.release()
+        wb_sync_lock.release()
 
 
 def bulk_conducted_order_sales(order_ids, database=None):

@@ -133,7 +133,7 @@ class WildberriesStorageTest(unittest.TestCase):
         second = self.sync([raw_order(200, "same"), raw_order(201, "same")])
 
         self.assertEqual(first, {"received": 2, "added": 2, "updated": 0, "errors": 0})
-        self.assertEqual(second, {"received": 2, "added": 0, "updated": 2, "errors": 0})
+        self.assertEqual(second, {"received": 2, "added": 0, "updated": 0, "errors": 0})
         self.assertEqual(self.store.count(), 3)
         self.assertEqual(self.store.get("wb:200")["order_uid"], "same")
         self.assertEqual(self.store.get("wb:201")["order_uid"], "same")
@@ -339,10 +339,11 @@ class WildberriesRoutesTest(unittest.TestCase):
         catalog_path = Path(self.temporary.name) / "sync-catalog.db"
         CatalogDatabase(catalog_path).initialize()
         fake_client = mock.Mock()
+        fake_client.request_audit = []
         fake_client.get_new_orders.return_value = [raw_order(202, article="UNKNOWN-WB")]
         fake_client.get_orders.return_value = []
         fake_client.get_supplies.return_value = {"next": 0, "supplies": []}
-        fake_client.get_order_statuses.return_value = {}
+        fake_client.get_order_statuses.return_value = {'202':dict(id=202,supplierStatus='new',wbStatus='waiting')}
         with (
             mock.patch.dict("os.environ", {
                 "ORDERS_DATABASE_PATH": str(self.path),
@@ -357,7 +358,7 @@ class WildberriesRoutesTest(unittest.TestCase):
         self.assertEqual(first.get_json()["result"]["added"], 1)
         self.assertEqual(first.get_json()["result"]["unmatched"], 1)
         self.assertEqual(second.get_json()["result"]["added"], 0)
-        self.assertEqual(second.get_json()["result"]["updated"], 1)
+        self.assertEqual(second.get_json()["result"]["updated"], 0)
 
 
 if __name__ == "__main__":

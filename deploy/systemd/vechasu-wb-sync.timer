@@ -1,0 +1,10 @@
+[Unit]
+Description=Vechasu WB fast timer
+
+[Timer]
+OnCalendar=*-*-* *:0/5:00
+Persistent=true
+Unit=vechasu-wb-sync.service
+
+[Install]
+WantedBy=timers.target

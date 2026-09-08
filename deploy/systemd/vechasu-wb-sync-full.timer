@@ -1,0 +1,10 @@
+[Unit]
+Description=Vechasu WB full timer
+
+[Timer]
+OnCalendar=*-*-* *:02:00
+Persistent=true
+Unit=vechasu-wb-sync-full.service
+
+[Install]
+WantedBy=timers.target
