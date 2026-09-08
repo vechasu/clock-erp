@@ -21,6 +21,7 @@ from app.services.inventory_lock import (
 from app.services.product_classification import classify_product
 from app.services.product_reconciliation import article_quality, normalize_text, reliable_article
 from app.services.shared_catalog import assign_product_taxonomy
+from app.services.receipt_inventory import ReceiptInventory, positive_integer
 
 
 CATALOG_BATCH_ID = "bitrix-catalog-products"
@@ -170,15 +171,28 @@ class BitrixERPProductSync:
 
     @staticmethod
     def _single_match(connection, product):
-        """Match only by the two identities allowed by the interactive import."""
+        """Match stable Bitrix links first, then an unambiguous article."""
         external_id = _text(product.get("external_product_id"))
         rows = connection.execute(
             "SELECT * FROM catalog_excel_products WHERE active = 1 "
-            "AND bitrix_external_product_id = ? ORDER BY id",
-            (external_id,),
+            "AND (bitrix_external_product_id = ? OR bitrix_catalog_product_id IN "
+            "(SELECT id FROM catalog_products WHERE external_source = 'bitrix' "
+            "AND external_product_id = ?)) ORDER BY id",
+            (external_id, external_id),
         ).fetchall()
         if rows:
             return {"method": "bitrix_id", "products": rows}
+        xml_id = _text(product.get("external_xml_id"))
+        if xml_id:
+            rows = connection.execute(
+                "SELECT * FROM catalog_excel_products WHERE active = 1 "
+                "AND lower(trim(COALESCE(bitrix_xml_id, ''))) = ? ORDER BY id",
+                (xml_id.casefold(),),
+            ).fetchall()
+            if rows:
+                if any(_text(row["bitrix_external_product_id"]) not in ("", external_id) for row in rows):
+                    raise ValueError("XML ID связан с другим товаром Bitrix.")
+                return {"method": "xml_id", "products": rows}
         article = _text(product.get("external_sku"))
         if article:
             rows = connection.execute(
@@ -186,24 +200,18 @@ class BitrixERPProductSync:
                 "AND lower(trim(COALESCE(excel_article, ''))) = ? ORDER BY id",
                 (article.casefold(),),
             ).fetchall()
+        if rows and any(_text(row["bitrix_external_product_id"]) not in ("", external_id) for row in rows):
+            raise ValueError("Артикул связан с другим товаром Bitrix. Требуется ручное сопоставление.")
         return {"method": "article", "products": rows if article else []}
 
     def preview_single(self, product, brand_id=None, category_id=None):
         """Preview an interactive one-product import without writing anything."""
         self.database.initialize()
         with self.database.connect() as connection:
-            selected = self._selected_taxonomy(
-                connection, product, brand_id, category_id
-            )
-            match = self._single_match(connection, selected)
+            match = self._single_match(connection, product)
             rows = match["products"]
             existing = rows[0] if len(rows) == 1 else None
             changes = {}
-            if existing is not None:
-                enrichment = enrichment_from_product(selected)
-                changes = self._card_changes(
-                    connection, existing, selected, enrichment
-                )
             return {
                 "duplicate": bool(rows),
                 "ambiguous": len(rows) > 1,
@@ -218,91 +226,79 @@ class BitrixERPProductSync:
             }
 
     def apply_single(self, product, action, brand_id=None, category_id=None,
-                     prepared_image=None, actor=None):
-        """Create or explicitly update one card in one SQLite transaction."""
+                     prepared_image=None, actor=None, quantity=None):
+        """Resolve a card and post user-entered stock atomically in the ERP ledger."""
         if action not in {"create", "update"}:
             raise ValueError("Неподдерживаемое действие импорта.")
-        validation = self._validate(product)
-        if validation:
+        quantity = positive_integer(quantity, "Количество")
+        if self._validate(product):
             raise ValueError("Товар Bitrix не содержит ID или названия.")
         actor = actor or {}
         self.database.initialize()
         with self.database.transaction() as connection:
-            selected = self._selected_taxonomy(
-                connection, product, brand_id, category_id
-            )
-            match = self._single_match(connection, selected)
+            if self._deleted_product(connection, product):
+                raise ValueError("Товар ERP удалён. Восстановите карточку перед добавлением.")
+            match = self._single_match(connection, product)
             rows = match["products"]
             if len(rows) > 1:
                 raise ValueError("Найдено несколько совпадающих товаров ERP.")
             existing = rows[0] if rows else None
-            if action == "create" and existing is not None:
-                return {
-                    "status": "duplicate", "match_method": match["method"],
-                    "erp_product_id": existing["id"], "changes": {},
-                }
-            if action == "update" and existing is None:
-                raise ValueError("Совпадающий товар ERP не найден.")
-
-            enrichment = enrichment_from_product(selected)
-            before = {}
             if existing is None:
-                product_id = self._insert_card(connection, selected, enrichment)
-                status = "created"
-                changes = {}
+                selected = self._selected_taxonomy(
+                    connection, dict(product, stock=0), brand_id, category_id
+                )
+                product_id = self._insert_card(
+                    connection, selected, enrichment_from_product(selected)
+                )
+                assign_product_taxonomy(
+                    connection, product_id, brand=selected.get("brand"),
+                    category=(selected.get("category") or {}).get("name"),
+                    brand_id=selected.get("_erp_brand_id"),
+                    category_id=selected.get("_erp_category_id"),
+                )
+                if prepared_image:
+                    connection.execute(
+                        "UPDATE catalog_excel_products SET local_image_path = ?, "
+                        "local_image_source = 'bitrix', local_image_sha256 = ?, "
+                        "local_image_external_id = ?, local_image_updated_at = ? WHERE id = ?",
+                        (prepared_image["path"], prepared_image["sha256"],
+                         "bitrix:{}".format(selected["external_product_id"]),
+                         prepared_image["updated_at"], product_id),
+                    )
+                row = connection.execute(
+                    "SELECT * FROM catalog_excel_products WHERE id = ?", (product_id,)
+                ).fetchone()
+                AuditJournal(self.database).record(
+                    "product", product_id, "created", row["excel_name_raw"],
+                    row["excel_article"] or "", after=self._audit_card(row),
+                    source="bitrix_single_import", connection=connection, **actor
+                )
             else:
                 product_id = existing["id"]
-                before = self._audit_card(existing)
-                changes = self._card_changes(
-                    connection, existing, selected, enrichment
-                )
-                if changes:
-                    self._update_card(
-                        connection, existing, selected, enrichment, changes
-                    )
-                status = "updated" if changes or prepared_image else "unchanged"
 
-            brand_id_value = selected.get("_erp_brand_id")
-            category_id_value = selected.get("_erp_category_id")
-            assign_product_taxonomy(
-                connection, product_id,
-                brand=selected.get("brand"),
-                category=(selected.get("category") or {}).get("name"),
-                brand_id=brand_id_value, category_id=category_id_value,
+            # Use the same receipt document/ledger primitives as supplies. Both
+            # card creation and stock posting roll back together on any failure.
+            receipt_id = "bitrix-add:" + uuid.uuid4().hex
+            now = utc_now()
+            user_name = str(actor.get("actor_name") or actor.get("actor_id") or "")
+            receipt = {"number": receipt_id, "source_type": "bitrix_single_import",
+                       "comment": "Добавление количества через Товары"}
+            positions = ReceiptInventory._prepare_positions([
+                {"product_id": product_id, "quantity": quantity}
+            ])
+            ReceiptInventory._insert_draft(
+                connection, receipt, positions, receipt_id, None, user_name, "default", now
             )
-            if prepared_image:
-                connection.execute(
-                    "UPDATE catalog_excel_products SET local_image_path = ?, "
-                    "local_image_source = 'bitrix', local_image_sha256 = ?, "
-                    "local_image_external_id = ?, local_image_updated_at = ?, "
-                    "updated_at = ? WHERE id = ?",
-                    (
-                        prepared_image["path"], prepared_image["sha256"],
-                        "bitrix:{}".format(selected["external_product_id"]),
-                        prepared_image["updated_at"], utc_now(), product_id,
-                    ),
-                )
-            row = connection.execute(
-                "SELECT * FROM catalog_excel_products WHERE id = ?",
-                (product_id,),
-            ).fetchone()
-            after = self._audit_card(row)
-            if status != "unchanged":
-                AuditJournal(self.database).record(
-                    "product", product_id,
-                    "created" if status == "created" else "updated",
-                    row["excel_name_raw"], row["excel_article"] or "",
-                    before=before, after=after,
-                    metadata={
-                        "article": row["excel_article"] or "",
-                        "bitrix_id": selected["external_product_id"],
-                    },
-                    source="bitrix_single_import", connection=connection,
-                    **actor
-                )
+            ReceiptInventory._post_draft(connection, receipt_id, user_name, None, now)
+            AuditJournal(self.database).record(
+                "receipt", receipt_id, "created", "Приход " + receipt_id,
+                after={"status": "posted", "quantity": quantity},
+                source="bitrix_single_import", connection=connection, **actor
+            )
             return {
-                "status": status, "match_method": match["method"],
-                "erp_product_id": product_id, "changes": changes,
+                "status": "created" if existing is None else "stock_added",
+                "match_method": match["method"], "erp_product_id": product_id,
+                "changes": {}, "receipt_id": receipt_id,
             }
 
     @staticmethod

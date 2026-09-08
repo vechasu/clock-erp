@@ -114,12 +114,12 @@ class SingleBitrixProductImportTest(unittest.TestCase):
             category = connection.execute("SELECT id FROM erp_categories WHERE name='Watches'").fetchone()[0]
         return brand, category
 
-    def post_import(self, product, action="create"):
+    def post_import(self, product, action="create", quantity=2):
         brand, category = self.taxonomy()
         with mock.patch.object(web, "_bitrix_single_client", return_value=FakeBitrixClient(product)):
             return self.client.post(
                 "/api/v1/bitrix-products/{}/import".format(product["external_product_id"]),
-                json={"action": action, "brand_id": brand, "category_id": category},
+                json={"action": action, "quantity": quantity, "brand_id": brand, "category_id": category},
             )
 
     def test_search_and_import_one_product_with_local_photo(self):
@@ -162,24 +162,95 @@ class SingleBitrixProductImportTest(unittest.TestCase):
         product = source_product("504", article="BX-504")
         self.assertEqual(self.post_import(product).status_code, 201)
         repeated = self.post_import(product)
-        self.assertEqual(repeated.status_code, 409)
-        self.assertEqual(repeated.get_json()["code"], "PRODUCT_ALREADY_EXISTS")
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.get_json()["data"]["product"]["stock"], 4)
 
     def test_article_match_is_reported_before_create(self):
         product = source_product("505", article="SEED-1")
         response = self.post_import(product)
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.get_json()["fields"]["preview"]["match_method"], "article")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["match_method"], "article")
+        self.assertEqual(response.get_json()["data"]["product"]["stock"], 4)
 
-    def test_explicit_update_changes_card_but_preserves_stock(self):
+    def test_legacy_update_adds_quantity_and_preserves_card(self):
         product = source_product("506", name="First", article="BX-506")
         created = self.post_import(product).get_json()["data"]["product"]
         changed = source_product("506", name="Updated", article="BX-506", image=False)
         response = self.post_import(changed, action="update")
         self.assertEqual(response.status_code, 200)
         saved = response.get_json()["data"]["product"]
-        self.assertEqual(saved["name"], "Updated")
-        self.assertEqual(saved["stock"], created["stock"])
+        self.assertEqual(saved["name"], "First")
+        self.assertEqual(saved["stock"], created["stock"] + 2)
+
+    def test_new_stock_is_user_quantity_for_every_external_stock(self):
+        for index, stock in enumerate((999, 998, 997, 47, 0, None)):
+            with self.subTest(stock=stock):
+                source = source_product(str(800 + index), article="NEW-" + str(index))
+                source["stock"] = stock
+                response = self.post_import(source, quantity=2)
+                self.assertEqual(response.status_code, 201)
+                saved = response.get_json()["data"]
+                self.assertEqual(saved["product"]["stock"], 2)
+                with CatalogDatabase(self.database_path).connect() as connection:
+                    movement = connection.execute(
+                        "SELECT stock_before, stock_after, quantity_delta FROM catalog_stock_movements WHERE receipt_id = ?",
+                        (saved["receipt_id"],),
+                    ).fetchone()
+                    self.assertEqual(tuple(movement), (0, 2, 2))
+
+    def test_existing_card_unchanged_with_different_unknown_taxonomy(self):
+        source = source_product("850", article="EXISTING-850")
+        saved = self.post_import(source, quantity=3).get_json()["data"]["product"]
+        database = CatalogDatabase(self.database_path)
+        with database.connect() as connection:
+            before = dict(connection.execute("SELECT * FROM catalog_excel_products WHERE id = ?", (saved["id"],)).fetchone())
+        changed = source_product("850", name="Changed", article="Changed article", brand="Other", category="Other")
+        changed["stock"] = 999
+        fake = FakeBitrixClient(changed)
+        with mock.patch.object(web, "_bitrix_single_client", return_value=fake), mock.patch.object(fake, "download_product_image", side_effect=AssertionError("existing photo must not be fetched")):
+            response = self.client.post("/api/v1/bitrix-products/850/import", json={"quantity": 2, "brand_id": -1, "category_id": -1})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["product"]["stock"], 5)
+        with database.connect() as connection:
+            after = dict(connection.execute("SELECT * FROM catalog_excel_products WHERE id = ?", (saved["id"],)).fetchone())
+            self.assertEqual(connection.execute("SELECT count(*) FROM catalog_excel_products WHERE bitrix_external_product_id = '850'").fetchone()[0], 1)
+        for key in before.keys() - {"stock", "stock_source", "updated_at"}:
+            self.assertEqual(after[key], before[key], key)
+
+    def test_invalid_quantity_does_not_create_or_add_stock(self):
+        for quantity in (None, 0, -1, 1.5, True, "bad"):
+            with self.subTest(quantity=quantity):
+                response = self.post_import(source_product("860", article="BAD-860"), quantity=quantity)
+                self.assertEqual(response.status_code, 422)
+        with CatalogDatabase(self.database_path).connect() as connection:
+            self.assertEqual(connection.execute("SELECT count(*) FROM catalog_excel_products WHERE bitrix_external_product_id = '860'").fetchone()[0], 0)
+
+    def test_stock_post_failure_rolls_back_new_card_and_receipt(self):
+        with mock.patch("app.services.receipt_inventory.ReceiptInventory._post_draft", side_effect=ValueError("blocked")):
+            response = self.post_import(source_product("870", article="FAIL-870"))
+        self.assertEqual(response.status_code, 422)
+        with CatalogDatabase(self.database_path).connect() as connection:
+            self.assertEqual(connection.execute("SELECT count(*) FROM catalog_excel_products WHERE bitrix_external_product_id = '870'").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT count(*) FROM erp_receipts").fetchone()[0], 0)
+
+    def test_xml_link_reuses_card_when_article_changes(self):
+        source = source_product("875", article="XML-875")
+        saved = self.post_import(source).get_json()["data"]["product"]
+        with CatalogDatabase(self.database_path).transaction() as connection:
+            connection.execute("UPDATE catalog_excel_products SET bitrix_external_product_id = NULL WHERE id = ?", (saved["id"],))
+        source["external_sku"] = "CHANGED-XML-ARTICLE"
+        response = self.post_import(source)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"]["match_method"], "xml_id")
+        self.assertEqual(response.get_json()["data"]["product"]["id"], saved["id"])
+        self.assertEqual(response.get_json()["data"]["product"]["stock"], 4)
+
+    def test_conflicting_article_does_not_match_other_bitrix_identity(self):
+        first = self.post_import(source_product("880", article="SAME-880")).get_json()["data"]["product"]
+        response = self.post_import(source_product("881", article="SAME-880"))
+        self.assertEqual(response.status_code, 422)
+        with CatalogDatabase(self.database_path).connect() as connection:
+            self.assertEqual(connection.execute("SELECT stock FROM catalog_excel_products WHERE id = ?", (first["id"],)).fetchone()[0], 2)
 
     def test_bitrix_unavailable_does_not_create_card(self):
         before = self.client.get("/api/v1/products?page_size=200").get_json()["meta"]["total"]
@@ -196,13 +267,21 @@ class SingleBitrixProductImportTest(unittest.TestCase):
                 mock.patch("app.services.bitrix_erp_product_sync.AuditJournal.record", side_effect=RuntimeError("save failed")):
             response = self.client.post(
                 "/api/v1/bitrix-products/507/import",
-                json={"action": "create", "brand_id": self.taxonomy()[0], "category_id": self.taxonomy()[1]},
+                json={"action": "create", "quantity": 2, "brand_id": self.taxonomy()[0], "category_id": self.taxonomy()[1]},
             )
         after = self.client.get("/api/v1/products?page_size=200").get_json()["meta"]["total"]
         self.assertEqual(response.status_code, 500)
         self.assertEqual(before, after)
         image_root = self.root / "product_images"
         self.assertFalse(image_root.exists() and list(image_root.iterdir()))
+
+    def test_products_and_receipts_render_without_remote_clients(self):
+        with mock.patch.object(web, "MoySkladClient", side_effect=AssertionError("remote")), mock.patch.object(web, "_bitrix_single_client", side_effect=AssertionError("remote")):
+            products = self.client.get("/warehouse")
+            receipts = self.client.get("/app/receipts")
+        self.assertEqual(products.status_code, 200)
+        self.assertEqual(receipts.status_code, 200)
+        self.assertIn('id="bitrixImportQuantity"', products.get_data(as_text=True))
 
     def test_frontend_contains_dropdown_live_search_preview_and_update(self):
         template = Path("app/templates/warehouse.html").read_text(encoding="utf-8")
@@ -217,8 +296,8 @@ class SingleBitrixProductImportTest(unittest.TestCase):
 
         self.assertIn("bitrixProductSearch", template)
         self.assertIn("setTimeout(function(){searchBitrixProducts", template)
-        self.assertIn("Изменятся поля:", template)
-        self.assertIn("Обновить из Bitrix", template)
+        self.assertIn("bitrixImportQuantity", template)
+        self.assertIn("Добавить количество", template)
 
     def test_search_c_opo_retro_gold_excludes_unrelated_products(self):
         products = [
@@ -265,14 +344,14 @@ class SingleBitrixProductImportTest(unittest.TestCase):
         self.assertIn("requestVersion !== bitrixRequestVersion", template)
         self.assertIn("setTimeout(function(){searchBitrixProducts(query, requestVersion);}, 300)", template)
 
-    def test_stock_999_is_preserved_in_preview_and_import(self):
+    def test_external_stock_is_preview_only(self):
         product = source_product("641", "Stocked", "STOCK-999")
         product["stock"] = 999
         with mock.patch.object(web, "_bitrix_single_client", return_value=FakeBitrixClient(product)):
             preview = self.client.get("/api/v1/bitrix-products/641")
         self.assertEqual(preview.get_json()["data"]["stock"], 999)
         saved = self.post_import(product).get_json()["data"]["product"]
-        self.assertEqual(saved["stock"], 999)
+        self.assertEqual(saved["stock"], 2)
 
 
 if __name__ == "__main__":
