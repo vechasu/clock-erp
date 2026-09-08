@@ -534,7 +534,11 @@
         )
           throw new Error("Количество должно быть целым положительным числом.");
         addition = {
-          key: crypto.randomUUID(),
+          key:
+            crypto.randomUUID?.() ||
+            Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+              byte.toString(16).padStart(2, "0"),
+            ).join(""),
           name: p.name,
           payload: { product_id: Number(p.id), quantity },
         };

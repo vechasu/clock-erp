@@ -180,6 +180,7 @@ test('a lost response and refresh retry the same addition exactly once', async (
   page,
   request,
 }) => {
+  await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
   const p = (await (await request.post('/api/v1/receipts/bitrix/90101')).json()).data;
   const supply = (
     await (
