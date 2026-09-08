@@ -646,3 +646,33 @@ class CustomerRoutesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CustomerRuntimeValidationTest(unittest.TestCase):
+    def test_runtime_reads_skip_integrity_scan_but_deploy_validation_keeps_it(self):
+        from app.services.customer_registry import validate_database
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "customers.db"
+            migrate_database(path)
+            statements = []
+            connect = sqlite3.connect
+            def traced(*args, **kwargs):
+                connection = connect(*args, **kwargs)
+                connection.set_trace_callback(statements.append)
+                return connection
+            with mock.patch("app.services.customer_registry.sqlite3.connect", side_effect=traced):
+                self.assertIsNone(CustomerRegistry(path).customer_for_operation("order", "tictactoy", "missing"))
+                self.assertFalse(any("quick_check" in sql.lower() for sql in statements))
+                validate_database(path)
+                self.assertTrue(any("quick_check" in sql.lower() for sql in statements))
+
+    def test_runtime_validation_rejects_changed_schema(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "customers.db"
+            migrate_database(path)
+            registry = CustomerRegistry(path)
+            registry.validate()
+            with sqlite3.connect(str(path)) as connection:
+                connection.execute("DROP TABLE customer_notes")
+            with self.assertRaisesRegex(sqlite3.DatabaseError, "schema differs"):
+                registry.validate()
