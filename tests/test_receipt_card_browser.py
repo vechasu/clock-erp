@@ -13,7 +13,7 @@ class ReceiptWorkspaceTest(unittest.TestCase):
             page=web.app.test_client().get('/app/receipts')
         self.assertEqual(page.status_code,200)
         text=page.get_data(as_text=True)
-        for label in ('Все записи','Поставки','Отмены продаж','Новая поставка','Добавить из Bitrix'):
+        for label in ('Все записи','Поставки','Отмены продаж','Новая поставка','Добавить товар в поставку'):
             self.assertIn(label,text)
         self.assertIn('class="table-scroll"',text)
         self.assertIn('aria-label="Таблица позиций поставки"',text)

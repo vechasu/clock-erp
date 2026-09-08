@@ -1,4 +1,3 @@
-{% from "_catalog_combobox.html" import render_catalog_combobox %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -9,8 +8,8 @@
 <title>ТТТ ERP — Приход</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/supplies.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
-<script defer src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/product-picker.css') }}">
+<script defer src="{{ url_for('static', filename='js/product-picker.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/supplies.js') }}">
 </script>
 </head>
@@ -104,16 +103,9 @@
 </label>
 <button id="add-item" class="button" hidden>+ Добавить товар</button>
 <div id="draft-actions" class="actions">
-<button id="add-bitrix" class="button">+ Добавить из Bitrix</button>
+<p id="save-first-hint">Сохраните черновик, затем добавьте существующие товары ERP.</p>
 <span>«Было» и «Станет» до проведения — предварительные значения</span>
 </div>
-<section id="bitrix-panel" hidden>
-<label>Поиск в Bitrix<input id="bitrix-query" placeholder="Название, артикул или ID">
-</label>
-<button id="bitrix-search" class="button">Найти в Bitrix</button>
-<div id="bitrix-results">
-</div>
-</section>
 <div class="table-scroll">
 <table id="items" aria-label="Таблица позиций поставки">
 <thead>
@@ -142,16 +134,25 @@
 <button id="post-supply" class="button primary erp-primary-action">Провести поставку</button>
 </footer>
 </dialog>
-<dialog id="add-item-dialog" aria-labelledby="add-item-heading">
-<header><h2 id="add-item-heading">Добавить товар</h2><button id="close-add-item" class="button" aria-label="Закрыть добавление">×</button></header>
-<form id="add-item-form" data-shared-catalog-scope data-catalog-product-global="true">
-{{ render_catalog_combobox('supply-product', 'product', [], shared_catalog_kind='product', id_input_name='product_id', item_label='товар', prefix_search=false, search_placeholder='Поиск товара по названию или артикулу', empty_label='Товар не найден в ERP. Сначала добавьте его в каталог.') }}
-<p>Товар не найден в ERP? Сначала добавьте его в каталог.</p>
-<p id="selected-product"></p>
-<label>Добавить количество<input id="add-quantity" type="number" min="1" max="2147483647" step="1" value="1" required></label>
-<p id="duplicate-confirmation" role="status"></p>
-<p id="add-item-message" role="alert" hidden></p>
-<button id="confirm-add-item" class="button primary" type="submit">Подтвердить добавление</button>
+<dialog id="add-item-dialog" class="product-picker" aria-labelledby="add-item-heading">
+<header><div><h2 id="add-item-heading">Добавить товар в поставку</h2><p class="picker-subtitle">Выберите существующий товар из каталога ERP</p></div><button id="close-add-item" class="button" aria-label="Закрыть добавление">×</button></header>
+<form id="add-item-form" class="picker-form">
+<div class="picker-search">
+<input id="supply-product-search" type="search" placeholder="Поиск товара по названию или артикулу" aria-label="Поиск товара по названию или артикулу" autocomplete="off">
+<div id="supply-search-status" class="picker-status" role="status" aria-live="polite"></div>
+</div>
+<div class="picker-columns">
+<section class="picker-results-panel"><h3>Результаты поиска</h3><div id="supply-product-results" class="picker-results"></div></section>
+<section class="picker-selected-panel"><h3>Выбранный товар</h3>
+<div id="supply-selection-empty" class="picker-empty">Выберите товар из результатов слева</div>
+<div id="selected-product" class="picker-preview"></div>
+<div id="supply-selection-controls" hidden>
+<label for="add-quantity">Количество</label>
+<div class="picker-quantity"><button id="quantity-minus" class="button" type="button" aria-label="Уменьшить количество">−</button><input id="add-quantity" type="number" min="1" max="2147483647" step="1" value="1" required><button id="quantity-plus" class="button" type="button" aria-label="Увеличить количество">+</button></div>
+<p id="duplicate-confirmation" class="picker-note" role="status"></p>
+</div></section></div>
+<p id="add-item-message" class="picker-error" role="alert" hidden></p>
+<footer class="picker-footer"><button id="cancel-add-item" class="button" type="button">Отмена</button><button id="confirm-add-item" class="button primary" type="submit" disabled>Добавить в поставку</button></footer>
 </form>
 </dialog>
 <dialog id="source-dialog" aria-label="Документ-источник">

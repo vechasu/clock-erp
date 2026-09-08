@@ -1,4 +1,16 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+async function selectProduct(page: Page, article: string) {
+  await page.locator('#supply-product-search').fill(article);
+  await page.locator('#supply-product-results .picker-result').first().click();
+}
+async function addProduct(page: Page, article: string, quantity = '1') {
+  await page.locator('#add-item').click();
+  await selectProduct(page, article);
+  await page.locator('#add-quantity').fill(quantity);
+  await page.locator('#confirm-add-item').click();
+  await expect(page.locator('#add-item-dialog')).not.toBeVisible();
+}
+
 test('supply posts two local movements and remains read-only', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -8,11 +20,10 @@ test('supply posts two local movements and remains read-only', async ({ page }) 
   await page.locator('[data-tab="supplies"]').click();
   await page.locator('#new-supply').click();
   await page.locator('#title').fill('Casio — сентябрь 2026');
-  await page.locator('#add-bitrix').click();
-  await page.locator('#bitrix-query').fill('Casio');
-  await page.locator('#bitrix-search').click();
-  await page.locator('[data-bitrix="90101"]').click();
-  await page.locator('[data-bitrix="90102"]').click();
+  await page.locator('#save-supply').click();
+  await expect(page.locator('#dialog-message')).toContainText('Черновик сохранён');
+  await addProduct(page, 'SUP-90101');
+  await addProduct(page, 'SUP-90102');
   await page.locator('[data-quantity="0"]').fill('5');
   await page.locator('[data-quantity="1"]').fill('6');
   await expect(page.locator('[data-after="0"]')).toHaveText('8');
@@ -63,12 +74,15 @@ test('draft validation, duplicate prevention, search and pagination', async ({ p
   await expect(page.locator('#records tbody tr')).toHaveCount(3);
   await page.locator('#new-supply').click();
   await page.locator('#title').fill('Duplicate protection');
-  await page.locator('#add-bitrix').click();
-  await page.locator('#bitrix-query').fill('Casio');
-  await page.locator('#bitrix-search').click();
-  await page.locator('[data-bitrix="90101"]').click();
-  await page.locator('[data-bitrix="90101"]').click();
-  await expect(page.locator('#dialog-message')).toContainText('Товар уже есть');
+  await page.locator('#save-supply').click();
+  await expect(page.locator('#dialog-message')).toContainText('Черновик сохранён');
+  await addProduct(page, 'SUP-90101');
+  await page.locator('#add-item').click();
+  await selectProduct(page, 'SUP-90101');
+  await expect(page.locator('#duplicate-confirmation')).toContainText('Этот товар уже есть');
+  await page.locator('#confirm-add-item').click();
+  await expect(page.locator('#add-item-dialog')).not.toBeVisible();
+  await expect(page.locator('#supply-totals')).toContainText('Единиц: 2');
   await expect(page.locator('#items tbody tr')).toHaveCount(1);
   await page.locator('[data-quantity="0"]').fill('0');
   await page.locator('#save-supply').click();
@@ -135,12 +149,7 @@ test('append goods to a posted supply using the shared ERP picker', async ({ pag
     .getByRole('button', { name: 'Открыть' })
     .click();
   await page.locator('#add-item').click();
-  await page.locator('#supply-productTrigger').click();
-  await page.locator('#supply-product .brand-combobox-search').fill('SUP-90102');
-  await page
-    .locator('#supply-product .brand-combobox-option')
-    .filter({ hasText: 'Casio F91W' })
-    .click();
+  await selectProduct(page, 'SUP-90102');
   await expect(page.locator('#selected-product')).toContainText('Остаток:');
   await page.locator('#add-quantity').fill('2');
   await page.locator('#confirm-add-item').click();
@@ -150,6 +159,8 @@ test('append goods to a posted supply using the shared ERP picker', async ({ pag
   await expect(page.locator('#supply-totals')).toHaveText('Позиций: 2 · Единиц: 5');
   await expect(page.locator('#dialog-message')).toContainText('+2 шт.');
   await page.locator('#add-item').click();
+  await expect(page.locator('#confirm-add-item')).toBeDisabled();
+  await selectProduct(page, 'SUP-90102');
   await page.locator('#add-quantity').fill('2');
   await expect(page.locator('#duplicate-confirmation')).toContainText(
     'Сейчас: 2 шт. Добавить ещё 2 шт.?',
@@ -165,8 +176,7 @@ test('append goods to a posted supply using the shared ERP picker', async ({ pag
   expect(writes).toHaveLength(2);
   expect(writes.every((url) => url.endsWith('/items'))).toBe(true);
   await page.locator('#add-item').click();
-  await page.locator('#supply-productTrigger').click();
-  await page.locator('#supply-product .brand-combobox-search').fill('NONEXISTENT-SUPPLY-SKU');
+  await page.locator('#supply-product-search').fill('NONEXISTENT-SUPPLY-SKU');
   await expect(page.locator('#add-item-form')).toContainText('Сначала добавьте его в каталог');
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
@@ -200,12 +210,7 @@ test('a lost response and refresh retry the same addition exactly once', async (
     await page.locator('#add-item').click();
   };
   await open();
-  await page.locator('#supply-productTrigger').click();
-  await page.locator('#supply-product .brand-combobox-search').fill('SUP-90101');
-  await page
-    .locator('#supply-product .brand-combobox-option')
-    .filter({ hasText: 'Casio A168' })
-    .click();
+  await selectProduct(page, 'SUP-90101');
   await page.locator('#add-quantity').fill('2');
   await page.route(
     '**/supplies/*/items',
