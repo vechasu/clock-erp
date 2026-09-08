@@ -1,3 +1,4 @@
+{% from "_catalog_combobox.html" import render_catalog_combobox %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -8,6 +9,8 @@
 <title>ТТТ ERP — Приход</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/erp-components.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/supplies.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-combobox.css') }}">
+<script defer src="{{ url_for('static', filename='js/catalog-combobox.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/supplies.js') }}">
 </script>
 </head>
@@ -99,6 +102,7 @@
 <label>Комментарий<textarea id="comment" maxlength="2000">
 </textarea>
 </label>
+<button id="add-item" class="button" hidden>+ Добавить товар</button>
 <div id="draft-actions" class="actions">
 <button id="add-bitrix" class="button">+ Добавить из Bitrix</button>
 <span>«Было» и «Станет» до проведения — предварительные значения</span>
@@ -137,6 +141,18 @@
 <button id="save-supply" class="button">Сохранить черновик</button>
 <button id="post-supply" class="button primary erp-primary-action">Провести поставку</button>
 </footer>
+</dialog>
+<dialog id="add-item-dialog" aria-labelledby="add-item-heading">
+<header><h2 id="add-item-heading">Добавить товар</h2><button id="close-add-item" class="button" aria-label="Закрыть добавление">×</button></header>
+<form id="add-item-form" data-shared-catalog-scope data-catalog-product-global="true">
+{{ render_catalog_combobox('supply-product', 'product', [], shared_catalog_kind='product', id_input_name='product_id', item_label='товар', prefix_search=false, search_placeholder='Поиск товара по названию или артикулу', empty_label='Товар не найден в ERP. Сначала добавьте его в каталог.') }}
+<p>Товар не найден в ERP? Сначала добавьте его в каталог.</p>
+<p id="selected-product"></p>
+<label>Добавить количество<input id="add-quantity" type="number" min="1" max="2147483647" step="1" value="1" required></label>
+<p id="duplicate-confirmation" role="status"></p>
+<p id="add-item-message" role="alert" hidden></p>
+<button id="confirm-add-item" class="button primary" type="submit">Подтвердить добавление</button>
+</form>
 </dialog>
 <dialog id="source-dialog" aria-label="Документ-источник">
 <header>
