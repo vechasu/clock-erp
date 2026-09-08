@@ -1456,3 +1456,59 @@ html[data-theme] .orders-page .order-table-row.active:focus { background:#e5f0ff
 .orders-page .orders-sync header {padding-top:6px;padding-bottom:6px;}
 .orders-page .orders-reference-header .orders-filter-area {justify-content:space-evenly;}
 .orders-page .orders-reference-header .view-option[aria-checked="true"] {background:var(--theme-active,#eff6ff)!important;color:var(--blue)!important;box-shadow:inset 0 0 0 1px var(--blue);}
+
+/* Compact split rows: photo, identity, product, and state retain independent space. */
+.orders-page .order-row-customer {
+    display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    color:var(--muted);font-size:11px;line-height:15px;max-width:100%;
+}
+.orders-page .orders-split-table tr {
+    position:relative;grid-template-columns:minmax(0,1fr) 130px 22px;
+    grid-template-rows:auto auto auto;gap:0 8px;padding:8px 10px;min-height:82px;
+}
+.orders-page .orders-split-table td:first-child {display:contents;}
+.orders-page .orders-split-table .order-row-product {
+    grid-column:1;grid-row:1 / 4;display:grid;
+    grid-template-columns:40px minmax(0,1fr);gap:8px;align-items:start;min-width:0;
+}
+.orders-page .orders-split-table .order-row-photo {width:40px;height:40px;min-width:0;}
+.orders-page .orders-split-table .order-row-copy {
+    display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;min-width:0;
+}
+.orders-page .orders-split-table .order-row-identity,
+.orders-page .orders-split-table .order-row-description {min-width:0;}
+.orders-page .orders-split-table .order-number {display:block;font-size:12px;line-height:18px;letter-spacing:-0.02em;}
+.orders-page .orders-split-table .source-label {display:block;margin:0;font-size:10px;line-height:15px;}
+.orders-page .orders-split-table .order-row-copy .list-product-name {
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    overflow:hidden;overflow-wrap:anywhere;font-size:12px;line-height:15px;margin-top:0;
+}
+.orders-page .orders-split-table .order-row-article {
+    white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis;margin-top:2px;
+}
+.orders-page .orders-split-table .order-row-date {display:block;font-size:10px;line-height:14px;color:var(--muted);}
+.orders-page .orders-split-table td:nth-child(2) {display:none;}
+.orders-page .orders-split-table td:nth-child(3) {grid-column:2;grid-row:3;font-size:11px;line-height:14px;}
+.orders-page .orders-split-table td:nth-child(4) {grid-column:2;grid-row:2;font-size:14px;line-height:18px;}
+.orders-page .orders-split-table td:nth-child(5) {grid-column:2;grid-row:1;}
+.orders-page .orders-split-table td:nth-child(n+3) {border-left:0!important;padding-left:0!important;min-width:0;}
+.orders-page .workspace .order-work-table.orders-split-table .badge {padding:2px 6px;font-size:10px;line-height:13px;min-width:0;}
+.orders-page .orders-split-table .sale-state {margin:0;padding:1px 0;font-size:10px;line-height:13px;}
+.orders-page .orders-split-table .order-row-secondary {grid-column:1 / -1;grid-row:4;margin:0;min-width:0;overflow-wrap:anywhere;}
+.orders-page .orders-split-table .order-row-secondary > summary {
+    position:absolute;right:8px;top:25px;width:24px;height:28px;display:grid;
+    place-items:center;list-style:none;border-radius:5px;color:var(--blue);
+}
+.orders-page .orders-split-table .order-row-secondary > summary::-webkit-details-marker {display:none;}
+.orders-page .orders-split-table .order-disclosure-label {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);}
+.orders-page .orders-split-table .order-row-secondary > summary::after {content:'›';font-size:22px;}
+.orders-page .orders-split-table .order-row-secondary[open] > summary::after {content:'⌄';}
+.orders-page .orders-split-table .order-row-secondary[open] {padding-top:8px;}
+.orders-page .orders-split-table .order-row-secondary > summary:focus-visible {outline:2px solid var(--blue);}
+.orders-page .workspace[data-layout-mode="split"] .list-footer {padding:8px 10px;font-size:11px;}
+@media(max-width:600px) {
+    .orders-page .orders-split-table tr {grid-template-columns:minmax(0,1fr) 116px 20px;gap:0 6px;padding:8px;}
+    .orders-page .orders-split-table .order-row-copy {grid-template-columns:minmax(0,1fr);gap:3px;}
+    .orders-page .orders-split-table .order-row-identity {display:flex;flex-wrap:wrap;align-items:baseline;gap:0 5px;}
+    .orders-page .orders-split-table .order-row-customer {flex-basis:100%;}
+}
