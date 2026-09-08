@@ -23,7 +23,7 @@
         requestAnimationFrame(()=>requestAnimationFrame(()=>{
             const painted=performance.now();
             const entries=performance.getEntriesByType('resource').filter(e=>e.startTime>=token.start-1);
-            const main=primary||entries.find(e=>/\/(api\/orders|order\/)/.test(e.name));
+            const main=primary||entries.find(e=>token.url?e.name===token.url:/\/(api\/orders|order\/)/.test(e.name));
             const row={operation:token.operation,epoch:performance.timeOrigin+token.start,e2e:painted-token.start,frontend:main?painted-main.responseEnd:null,ttfb:main?main.responseStart-main.requestStart:null,server:main?resource(main).server:{},primary:main?resource(main):null,ttfbFromStart:main?main.responseStart-token.start:null,failed,hidden:!!token.hidden||document.visibilityState!=='visible',longTasks:longTasks.filter(e=>e.start>=token.start&&e.start<painted),resources:entries.map(resource)};
             rows.push(row);publish();
             // Count async tasks/images belonging to the interaction without

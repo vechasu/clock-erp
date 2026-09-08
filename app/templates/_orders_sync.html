@@ -12,4 +12,4 @@
         {% with unified_orders_sync=true %}{% include "_wb_recovery.html" %}{% endwith %}
     </div>
 </section>
-<script defer src="{{ url_for('static', filename='js/orders-sync.js', v='orders-reference-v1') }}"></script>
+<script defer src="{{ static_asset_url('js/orders-sync.js') }}"></script>

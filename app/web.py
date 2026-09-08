@@ -324,6 +324,8 @@ app.wsgi_app = ProxyFix(
 configure_auth(app, PROJECT_ROOT)
 from app.request_timing import register_order_request_timing
 register_order_request_timing(app)
+from app.orders_response import register_orders_response
+register_orders_response(app)
 app.config.setdefault(
     "TASKS_DATABASE",
     os.getenv("ERP_TASKS_DATABASE", "").strip()
@@ -18357,11 +18359,10 @@ def inject_sidebar_navigation():
             team = _team_presence_now()
         except (MigrationRequiredError, sqlite3.Error):
             team = []
+    navigation_items = get_navigation_items(include_disabled=True)
     return {
-        "sidebar_navigation_items": get_navigation_items(),
-        "navigation_preference_items": get_navigation_items(
-            include_disabled=True
-        ),
+        "sidebar_navigation_items": [item for item in navigation_items if item["enabled"]],
+        "navigation_preference_items": navigation_items,
         "collaboration_users": _task_users(),
         "sidebar_brand": {
             "title": "TTT",

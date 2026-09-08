@@ -46,7 +46,29 @@ class OrdersPerformanceTest(unittest.TestCase):
                 self.assertEqual(loads.call_count, size)
                 self.assertEqual(result['total'], 16471)
                 counts.append(sum(sql.startswith('SELECT') for sql in statements))
-        self.assertEqual(counts, [4, 4, 4])
+        self.assertEqual(counts, [3, 3, 3])
+
+    def test_substring_candidates_are_bounded_and_only_page_payloads_are_decoded(self):
+        original = self.store.connect
+        statements = []
+        def connect():
+            connection = original()
+            connection.set_trace_callback(statements.append)
+            return connection
+        with mock.patch.object(self.store, 'connect', side_effect=connect):
+            with mock.patch('app.services.orders_snapshot.json.loads', wraps=json.loads) as loads:
+                result = self.store.query({'q': 'wildberries', 'page': 10})
+        self.assertEqual(result['total'], 16471)
+        self.assertEqual(result['page'], 10)
+        self.assertEqual(loads.call_count, 50)
+        self.assertEqual(sum(' LIKE ' in sql for sql in statements), 3)
+        statements.clear()
+        with mock.patch.object(self.store, 'connect', side_effect=connect):
+            self.assertEqual(self.store.query({'q': 'no-such-text'})['total'], 0)
+        self.assertEqual(sum(' LIKE ' in sql for sql in statements), 1)
+        with self.store.connection() as connection:
+            self.assertIsNone(connection.execute(
+                "SELECT name FROM sqlite_master WHERE name='orders_search_matches'").fetchone())
 
     def test_page_and_exact_identity_plans_use_indexes(self):
         with self.store.connection() as connection:
