@@ -119,7 +119,7 @@ class CatalogComboboxStructureTest(unittest.TestCase):
         self.assertIsNotNone(orders_script)
         self.assertRegex(orders_script.group(0), r"\bdefer\b")
         self.assertIn(
-            "catalog-combobox-20260824-product-hierarchy",
+            "static_asset_url('js/catalog-combobox.js')",
             orders_script.group(0),
         )
 

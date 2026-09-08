@@ -788,18 +788,41 @@ class OrdersSnapshotStore:
                 )
                 where_sql = (" WHERE " + " AND ".join(clauses)).replace("{effective_status}", filter_status)
             count_from = (from_sql if exact_number is None and status != "ALL" and not status.startswith("WB_") else "orders_snapshot")
-            total = int(connection.execute(
-                "SELECT COUNT(*) FROM " + count_from + where_sql,
-                parameters,
-            ).fetchone()[0])
+            materialized_search = bool(query and exact_number is None)
+            if materialized_search:
+                # Substring search cannot use a normal B-tree seek. Evaluate
+                # it once for both count and page, retaining only identifiers
+                # in a connection-local TEMP table, never order payloads.
+                connection.execute("CREATE TEMP TABLE orders_search_matches (order_id TEXT PRIMARY KEY)")
+                connection.execute("INSERT INTO orders_search_matches SELECT order_id FROM "
+                                   + count_from + where_sql + " LIMIT 1001", parameters)
+                total = int(connection.execute("SELECT COUNT(*) FROM temp.orders_search_matches").fetchone()[0])
+                # Broad terms should keep the existing index-ordered LIMIT
+                # path instead of sorting/materializing thousands of matches.
+                materialized_search = total <= 1000
+            if not materialized_search:
+                total = int(connection.execute(
+                    "SELECT COUNT(*) FROM " + count_from + where_sql,
+                    parameters,
+                ).fetchone()[0])
             effective_page_size = max(total, 1) if page_size == "all" else page_size
             page_count = max(1, int(math.ceil(float(total) / effective_page_size)))
             page = min(page, page_count)
+            page_parameters = [effective_page_size, (page - 1) * effective_page_size]
+            if materialized_search:
+                # Sort matching ids, then fetch payloads only for the chosen
+                # page, including broad searches matching the entire database.
+                page_where = (" WHERE order_id IN (SELECT order_id FROM orders_snapshot "
+                    "WHERE order_id IN (SELECT order_id FROM temp.orders_search_matches) "
+                    "ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?) "
+                    "ORDER BY created_sort DESC, order_id DESC")
+            else:
+                page_where = where_sql + " ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?"
+                page_parameters = parameters + page_parameters
             rows = connection.execute(
-                "SELECT payload_json, item_units, customer_id, " + effective_status + " AS effective_status FROM " + from_sql
-                + where_sql
-                + " ORDER BY created_sort DESC, order_id DESC LIMIT ? OFFSET ?",
-                parameters + [effective_page_size, (page - 1) * effective_page_size],
+                "SELECT payload_json, item_units, customer_id, " + effective_status
+                + " AS effective_status FROM " + from_sql + page_where,
+                page_parameters,
             ).fetchall()
             # Group in index order. SQLite 3.7 cannot reorder GROUP BY to
             # match (work_status, source), and materializes joined subqueries.
