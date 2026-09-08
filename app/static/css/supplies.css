@@ -272,18 +272,3 @@ details {
     padding-bottom: 80px !important;
   }
 }
-
-#add-item-dialog {
-  max-width: 560px;
-}
-#add-item-form {
-  display: grid;
-  gap: 12px;
-}
-#add-item-form p {
-  margin: 0;
-}
-#supply-product {
-  min-width: 0;
-  width: 100%;
-}
