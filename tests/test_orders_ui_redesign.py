@@ -145,9 +145,9 @@ class OrdersUiRedesignTest(unittest.TestCase):
 
     def test_navigation_script_keeps_route_selection_modes_and_history(self):
         for expected in (
-            "const selectedOrderId=",
+            "let selectedOrderId=",
             "window.location.pathname.match",
-            "window.location.assign(row.dataset.orderHref)",
+            "selectOrder(row.dataset.orderHref)",
             "window.addEventListener('popstate'",
             "new URL(window.location.href)",
             "localStorage.setItem(storageKey,safe)",

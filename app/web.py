@@ -1014,6 +1014,10 @@ def save_order_overrides(rows):
 def get_order(order_id):
     order = bitrix_orders_client().get_order(order_id)
     normalized = normalize_order(order)
+    return apply_local_order_overrides(normalized, order_id)
+
+
+def apply_local_order_overrides(normalized, order_id):
     override = load_order_overrides().get(str(order_id))
     if normalized and isinstance(override, dict) and "tracking" in override:
         normalized["tracking"] = str(override.get("tracking") or "")
@@ -1380,9 +1384,14 @@ def overview_page():
 def orders_page():
     if not can_view_orders():
         abort(403)
-    orders, list_state = current_orders_list_state(
+    if request.args.get("retry") == "1" and request.headers.get("X-Order-Detail") != "1":
+        get_orders(force=True)
+        return redirect(url_for("orders_page", **{
+            key: value for key, value in request.args.items() if key != "retry"
+        }), code=303)
+    orders, list_state = (order_card_list_state() if request.headers.get("X-Order-Detail") == "1" else current_orders_list_state(
         request.args, force=request.args.get("retry") == "1",
-    )
+    ))
     exact_search = exact_order_search_state(
         list_state.get("exact_number"), list_state["rows"]
     )
@@ -1477,7 +1486,9 @@ def orders_list_api():
         "page_count": list_state["page_count"],
         "total": list_state["total"],
         "total_pages": list_state["page_count"],
-        "items": list_state["rows"],
+        "items": [{key: value for key, value in row.items()
+                   if key not in {"products", "items", "wb_raw", "product_preview"}}
+                  for row in list_state["rows"]],
         "kpis": list_state["kpis"],
         "exact_search": ({
             "number": exact_search["number"],
@@ -1909,6 +1920,26 @@ def enrich_orders_list_rows(rows, database=None):
                     })
         except (OSError, sqlite3.Error, RuntimeError):
             app.logger.exception("Failed to enrich order list metadata in bulk")
+    preview_products, preview_keys, preview_mappings = [], [], {}
+    saved_by_order = {}
+    if order_ids and any(order.get("products") or order.get("items") for order in prepared) and database.exists():
+        with database.connect() as connection:
+            saved_rows = connection.execute(
+                "SELECT order_id, order_item_id, product_id FROM erp_order_product_mappings WHERE order_id IN ({})".format(placeholders), order_ids,
+            ).fetchall()
+        saved_by_order = {(str(row["order_id"]), "line:" + str(row["order_item_id"])): dict(row) for row in saved_rows}
+    for order in prepared:
+        products = order.get("products") or order.get("items") or []
+        if products:
+            order_id = str(order.get("id") or order.get("ID") or "")
+            original_key = order_product_mapping_key(products[0])
+            product = products[0]
+            preview_products.append(product)
+            preview_keys.append("line:preview:" + order_id)
+            saved = saved_by_order.get((order_id, original_key))
+            if saved:
+                preview_mappings[preview_keys[-1]] = saved
+    previews = build_order_product_mapping_context(preview_products, mappings=preview_mappings, order_counts={}, result_keys=preview_keys, catalog=SharedCatalog(database)) if preview_products else {}
     for order in prepared:
         order_id = str(order.get("id") or order.get("ID") or "")
         units = order.get("item_units")
@@ -1919,46 +1950,46 @@ def enrich_orders_list_rows(rows, database=None):
         order["sale_completed"] = bool(order["conducted_sale_id"])
         order.update({key: value for key, value in metadata.get(order_id, {}).items()
                       if key not in {"status", "status_name", "erp_status"}})
-        products = order.get("products") or order.get("items") or []
-        if products:
-            mappings = build_order_product_mapping_context(
-                products[:1], mappings=load_order_product_mappings(order_id), order_counts={},
-            )
-            mapping = mappings.get(order_product_mapping_key(products[0])) or {}
-            if mapping.get("state") == "mapped" and mapping.get("product"):
-                order["product_preview"] = mapping["product"]
+        mapping = previews.get("line:preview:" + order_id) or {}
+        if mapping.get("state") == "mapped" and mapping.get("product"):
+            order["product_preview"] = mapping["product"]
     return prepared
 
 
-def order_ui_status_overrides():
+def order_ui_status_overrides(order_ids=None):
+    if order_ids is not None and not order_ids:
+        return {}
     database = CatalogDatabase()
     if not database.exists():
         return {}
     with database.connect() as connection:
         return {str(row["external_order_id"]): row["erp_status"] for row in connection.execute(
-            "SELECT external_order_id, erp_status FROM erp_order_statuses"
+            "SELECT external_order_id, erp_status FROM erp_order_statuses" +
+            (" WHERE external_order_id IN ({})".format(",".join("?" for _ in order_ids)) if order_ids is not None else ""),
+            list(order_ids) if order_ids is not None else (),
         )}
 
 
 def current_orders_list_state(args, force=False, allowed_order_ids=None):
-    orders = get_orders(force=force)
-    overrides = order_ui_status_overrides()
     if app.testing and not app.config.get("ORDERS_SNAPSHOT_TESTING"):
+        orders = get_orders(force=force)
+        overrides = order_ui_status_overrides()
         state = prepare_orders_list(orders, args, allowed_order_ids=allowed_order_ids, status_overrides=overrides)
         state["physical_total"] = len(orders)
         state["rows"] = [present_order(row, overrides) for row in enrich_orders_list_rows(state["rows"])]
         return orders, state
-    loaded_at = ORDERS_CACHE.get("loaded_at") or 0
-    if not loaded_at:
-        cached_orders, cached_loaded_at = load_orders_cache()
-        if cached_orders and not orders:
-            orders = cached_orders
-        loaded_at = cached_loaded_at
+    if force:
+        get_orders(force=True)
     store = OrdersSnapshotStore()
-    store.ensure(orders, loaded_at)
-    schedule_order_item_unit_backfill(store)
-    state = store.query(args, allowed_order_ids=allowed_order_ids, status_overrides=overrides)
-    state["rows"] = [present_order(row, overrides) for row in enrich_orders_list_rows(state["rows"])]
+    database = CatalogDatabase()
+    state = store.query(args, allowed_order_ids=allowed_order_ids,
+                        catalog_path=database.path if database.exists() else None)
+    # query() has already applied source/ERP status precedence in SQL.
+    state["rows"] = enrich_orders_list_rows(state["rows"], database=database)
+    for row in state["rows"]:
+        key = row["ui_status"]
+        presented = present_order(row, projected_status=key)
+        row.update(presented)
     return state["rows"], state
 
 
@@ -2089,14 +2120,14 @@ def render_orders_page(
         selected_order = None
         selected_order_explicit = False
     if selected_order:
-        selected_order = present_order(selected_order, order_ui_status_overrides())
+        selected_order = present_order(selected_order, order_ui_status_overrides([str(selected_order.get("id") or selected_order.get("ID"))]))
     order_id = (
         (selected_order or {}).get("id")
         or (selected_order or {}).get("ID")
     )
     mappings = load_order_product_mappings(order_id)
     order_counts = build_catalog_product_order_counts(
-        orders, mappings=mappings
+        [selected_order] if selected_order else [], mappings=mappings
     )
     order_mappings = build_order_product_mapping_context(
         (selected_order or {}).get("products") or [],
@@ -2136,8 +2167,9 @@ def render_orders_page(
         else {"events": [], "total_display": "", "has_multiple_days": False}
     )
 
-    return render_template(
+    response = make_response(render_template(
         "orders.html",
+        order_detail_only=request.headers.get("X-Order-Detail") == "1",
         orders=list_state["rows"],
         selected_order=selected_order,
         selected_order_bitrix_url="" if is_wildberries else build_bitrix_order_url(
@@ -2154,7 +2186,8 @@ def render_orders_page(
             SALE_COMMISSION_OPTIONS,
             SALE_COMMISSION_LABELS,
         ),
-        order_location_data=get_tictactoy_location_catalog(),
+        order_location_data=(get_tictactoy_location_catalog()
+                             if selected_order and not is_wildberries and sale_state["can_create_sale"] else {}),
         order_tracking=get_order_tracking(selected_order or {}),
         order_sale_pricing=build_order_sale_pricing(
             (selected_order or {}).get("products") or []
@@ -2193,7 +2226,9 @@ def render_orders_page(
             key: value for key, value in request.args.items()
             if key != "selected_id"
         },
-    )
+    ))
+    response.vary.add("X-Order-Detail")
+    return response
 
 
 ORDER_VIEW_ROLES = {"employee", "admin"}
@@ -2439,86 +2474,32 @@ def build_catalog_product_order_counts(orders, mappings=None, catalog=None):
 
 
 def build_order_product_mapping_context(
-        products, mappings=None, catalog=None, order_counts=None):
+        products, mappings=None, catalog=None, order_counts=None, result_keys=None):
+    if not products:
+        return {}
     mappings = {} if mappings is None else mappings
     catalog = catalog or SharedCatalog()
     identities = [bitrix_order_product_identity(item) for item in products]
-    saved_rows = [
-        mappings.get(order_product_mapping_key(product))
-        for product in products
-    ]
+    mapping_keys = result_keys or [order_product_mapping_key(product) for product in products]
+    saved_rows = [mappings.get(key) for key in mapping_keys]
     product_ids = [
         row.get("product_id")
         for row in saved_rows
         if isinstance(row, dict) and row.get("product_id") not in (None, "")
     ]
-    automatic_ids = []
-    automatic_methods = []
-    catalog.database.initialize()
+    from app.services.order_product_candidates import batch_order_candidates
     with catalog.database.connect() as connection:
-        for product, identity, saved in zip(products, identities, saved_rows):
-            if isinstance(saved, dict) and saved.get("product_id"):
-                automatic_ids.append(None)
-                automatic_methods.append("")
-                continue
-            attempts = []
-            if identity["source"] == "wildberries":
-                rows, method = order_product_candidates(connection, product)
-                automatic_id = rows[0]["id"] if len(rows) == 1 else None
-                automatic_ids.append(automatic_id)
-                automatic_methods.append(method if automatic_id is not None else "")
-                if automatic_id is not None:
-                    product_ids.append(automatic_id)
-                continue
-            else:
-                clauses = []
-                parameters = []
-                product_id = identity["bitrix_product_id"]
-                xml_id = identity["bitrix_xml_id"]
-                if product_id:
-                    clauses.append(
-                        "(trim(COALESCE(bitrix_external_product_id, '')) = ? "
-                        "OR CAST(bitrix_catalog_product_id AS TEXT) = ?)"
-                    )
-                    parameters.extend((product_id, product_id))
-                if xml_id:
-                    clauses.append(
-                        "lower(trim(COALESCE(bitrix_xml_id, ''))) = lower(?)"
-                    )
-                    parameters.append(xml_id)
-                if clauses:
-                    attempts.append((clauses, parameters, "bitrix_product_id"))
-            if not attempts:
-                automatic_ids.append(None)
-                automatic_methods.append("")
-                continue
-            rows = []
-            automatic_method = ""
-            for clauses, parameters, method in attempts:
-                rows = connection.execute(
-                    "SELECT DISTINCT p.id FROM catalog_excel_products p "
-                    "LEFT JOIN catalog_products cp ON cp.id = p.bitrix_catalog_product_id WHERE "
-                    "p.deleted_at IS NULL AND (" + " OR ".join(clauses) + ") "
-                    "ORDER BY p.id LIMIT 2",
-                    parameters,
-                ).fetchall()
-                if rows:
-                    automatic_method = method
-                    break
-            automatic_id = rows[0]["id"] if len(rows) == 1 else None
-            automatic_ids.append(automatic_id)
-            automatic_methods.append(
-                automatic_method if automatic_id is not None else ""
-            )
-            if automatic_id is not None:
-                product_ids.append(automatic_id)
+        candidates = batch_order_candidates(connection, products, identities, saved_rows)
+    automatic_ids = [candidate[0] for candidate in candidates]
+    automatic_methods = [candidate[1] for candidate in candidates]
+    product_ids.extend(value for value in automatic_ids if value is not None)
     products_by_id = catalog.products_by_ids(
         product_ids, include_archived=True
     )
     result = {}
 
-    for product, identity, saved, automatic_id, automatic_method in zip(
-        products, identities, saved_rows, automatic_ids, automatic_methods
+    for product, identity, saved, automatic_id, automatic_method, mapping_key in zip(
+        products, identities, saved_rows, automatic_ids, automatic_methods, mapping_keys
     ):
         key = identity["bitrix_product_id"]
         context = {
@@ -2570,7 +2551,6 @@ def build_order_product_mapping_context(
                         else automatic_method
                     ),
                 })
-        mapping_key = order_product_mapping_key(product)
         result[mapping_key or "missing:{}".format(len(result))] = context
     return result
 
@@ -2807,23 +2787,28 @@ def build_order_sale_state(
     }
 
 
+def order_card_list_state():
+    if request.headers.get("X-Order-Detail") != "1":
+        return current_orders_list_state(request.args)
+    return [], {"rows": [], "total": 0, "page": 1, "page_count": 1,
+                "kpis": {}, "page_size": 50}
+
+
 @app.route("/order/<int:order_id>")
 def order_page(order_id):
     bitrix_order_url = build_bitrix_order_url(order_id)
     if not bitrix_order_url:
         abort(404)
 
-    orders, list_state = current_orders_list_state(request.args)
+    orders, list_state = order_card_list_state()
     selected_order = next((
         order for order in orders
         if str(order.get("id") or order.get("ID")) == str(order_id)
     ), None)
-    if selected_order is None and not app.testing:
-        selected_order = OrdersSnapshotStore().get(order_id)
-
     detail_error = ""
     try:
-        full_order = get_order(order_id)
+        full_order = (get_order(order_id) if app.testing and not app.config.get("ORDERS_SNAPSHOT_TESTING")
+                      else apply_local_order_overrides(OrdersSnapshotStore().get(order_id), order_id))
         if full_order:
             try:
                 registry_customer_id = customer_store().customer_for_operation(
@@ -2847,7 +2832,6 @@ def order_page(order_id):
     if selected_order is None:
         abort(404)
 
-    schedule_order_comment_sync(str(order_id), str(order_id))
     return render_orders_page(
         orders=orders,
         list_state=list_state,
@@ -2861,6 +2845,26 @@ def order_page(order_id):
     )
 
 
+@app.post("/order/<int:order_id>/refresh")
+def order_refresh(order_id):
+    """Explicit read-only Bitrix fetch, outside the ordinary card path."""
+    if not can_view_orders():
+        abort(403)
+    store = OrdersSnapshotStore()
+    if not store.get(order_id):
+        abort(404)
+    try:
+        order = get_order(order_id)
+        if not order:
+            raise BitrixReadOnlyError("Заказ не найден в Bitrix")
+        store.enrich_from_detail(order_id, order)
+    except BitrixReadOnlyError:
+        app.logger.warning("Explicit Bitrix order refresh failed order_id=%s", order_id)
+        return redirect(url_for("order_page", order_id=order_id,
+                                notice="error", message="Не удалось обновить заказ из Bitrix; сохранённые данные доступны."), code=303)
+    return redirect(url_for("order_page", order_id=order_id, **request.args.to_dict()), code=303)
+
+
 @app.get("/order/wildberries/<wb_order_id>")
 def wildberries_order_page(wb_order_id):
     if not can_view_orders():
@@ -2868,7 +2872,7 @@ def wildberries_order_page(wb_order_id):
     order = OrdersSnapshotStore().get("wb:" + str(wb_order_id))
     if not order or order.get("source") != "wildberries":
         abort(404)
-    orders, list_state = current_orders_list_state(request.args)
+    orders, list_state = order_card_list_state()
     return render_orders_page(
         orders=orders,
         list_state=list_state,
@@ -18296,6 +18300,11 @@ def api_navigation_preferences():
 
 @app.context_processor
 def inject_sidebar_navigation():
+    if request.endpoint == "orders_list_api" or (
+        request.endpoint in {"orders_page", "order_page", "wildberries_order_page"}
+        and request.headers.get("X-Order-Detail") == "1"
+    ):
+        return {"sms_permissions": sms_permissions()}  # Keep card permissions; the shell remains mounted.
     team = []
     if current_auth_user():
         try:
