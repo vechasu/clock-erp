@@ -189,6 +189,7 @@
                         <section class="section order-wb-history"><h3>История</h3>
                             <p><time class="date-value" data-date="{{ selected_order.get('created_at') }}"></time> · Заказ получен</p>
                             {% if selected_order.get('recovered_from_wb') %}<p><time class="date-value" data-date="{{ selected_order.get('recovered_at') }}"></time> · Заказ восстановлен из Wildberries</p>{% endif %}
+                            {% for event in selected_order.get('wb_status_history', []) %}<p><time class="date-value" data-date="{{ event.at }}"></time> · Статус WB: {{ event.before|join(' · ') }} → {{ event.after|join(' · ') }}</p>{% endfor %}
                             {% if sale_state.sale_completed %}<p>Продажа проведена · <a href="/sales?source=wildberries&sale_id={{ sale_state.sale_id }}">Открыть продажу</a></p>{% endif %}
                         </section>
                         {% else %}<details class="section order-technical"><summary>Техническая информация TicTacToy</summary><p>Bitrix: {{ selected_order.get('bitrix_status') or selected_order.get('source_status') or selected_order.get('status') }} · ERP: {{ selected_order.get('erp_status') or 'не сохранён' }}</p></details><section class="section order-information">
@@ -627,7 +628,7 @@
             const response=await fetch('/api/orders/wildberries/sync',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json','X-CSRF-Token':csrf}});
             const payload=await response.json().catch(()=>null);
             if(!response.ok||payload?.ok!==true)throw new Error(payload?.error?.message||`Ошибка синхронизации (${response.status})`);
-            const result=payload.result;window.VechasuNotify?.success(`WB: получено ${result.received}, добавлено ${result.added}, обновлено ${result.updated}, ошибок ${result.errors}`);
+            const result=payload.result;if(result.outcome==='partial'){window.VechasuNotify?.warning('WB обновлён частично: проверьте диагностику.');return;}window.VechasuNotify?.success(`WB: получено ${result.received}, добавлено ${result.added}, обновлено ${result.updated}, ошибок ${result.errors}`);
             window.setTimeout(()=>window.location.reload(),400);
         }catch(error){window.VechasuNotify?.error(error.message||'Не удалось синхронизировать Wildberries');}
         finally{wbSyncButton.disabled=false;wbSyncButton.removeAttribute('aria-busy');wbSyncButton.textContent='Обновить WB';}
