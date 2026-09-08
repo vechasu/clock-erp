@@ -1,0 +1,45 @@
+<link rel="stylesheet" href="{{ url_for('static',filename='css/writeoffs.css') }}">
+<div class="app">
+{% include "_sidebar.html" %}
+<main class="main" id="main-content" tabindex="-1">
+<header class="sales-page-header erp-workspace-header">
+  <div class="sales-page-heading erp-workspace-heading"><h1>Продажи</h1><p>Журнал складских списаний</p></div>
+  <div class="sales-page-actions erp-workspace-actions"><button type="button" id="openWriteoff" class="button sales-add-button button-primary erp-primary-action erp-workspace-primary">+ Добавить списание</button></div>
+</header>
+<nav class="sales-tabs-scroll" aria-label="Разделы продаж"><div class="sales-tabs erp-section-tabs">
+{% for tab in source_tabs %}<a class="sales-tab erp-section-tab{% if tab.active %} is-active{% endif %}" href="{{ tab.url }}" {% if tab.active %}aria-current="page"{% endif %}>{{ tab.label }}</a>{% endfor %}
+</div></nav>
+<p id="writeoffNotice" role="status" hidden></p>
+<form method="get" class="writeoff-filters" aria-label="Фильтры списаний">
+<input type="hidden" name="source" value="writeoff">
+<label>Поиск <input type="search" name="q" value="{{ request.args.get('q','') }}" placeholder="Товар, артикул, сотрудник"></label>
+<label>С <input type="date" name="date_from" value="{{ request.args.get('date_from','') }}"></label>
+<label>По <input type="date" name="date_to" value="{{ request.args.get('date_to','') }}"></label>
+<label>Причина <select name="reason"><option value="">Все причины</option>{% for reason in reasons %}<option {% if request.args.get('reason') == reason %}selected{% endif %}>{{ reason }}</option>{% endfor %}</select></label>
+<label>Статус <select name="status"><option value="">Все</option><option value="posted" {% if request.args.get('status') == 'posted' %}selected{% endif %}>Проведено</option><option value="cancelled" {% if request.args.get('status') == 'cancelled' %}selected{% endif %}>Отменено</option></select></label>
+<button class="button button-secondary">Применить</button>
+</form>
+<div class="sales-data-card"><div class="writeoff-table-wrap">
+<table class="sales-table writeoff-table"><thead><tr>{% for label in ['Дата','Товар','Артикул','Бренд','Категория','Количество','Причина','Сотрудник','Комментарий','Действия'] %}<th>{{ label }}</th>{% endfor %}</tr></thead>
+<tbody>{% for row in writeoffs %}<tr>
+<td>{{ render_erp_datetime(row.created_at) }}</td>
+<td>{% if row.image_url %}<img src="{{ row.image_url }}" alt="" width="40" height="40" loading="lazy" style="object-fit:contain">{% endif %}{{ row.product_name }}</td>
+<td>{{ row.article or '—' }}</td><td>{{ row.brand or '—' }}</td><td>{{ row.category or '—' }}</td><td>−{{ row.quantity }}</td><td>{{ row.reason }}</td><td>{{ row.created_by_name or row.created_by }}</td><td style="white-space:normal;min-width:160px">{{ row.comment }}</td>
+<td>{% if row.status == 'cancelled' %}<span>Отменено</span><small style="display:block">{{ row.cancelled_by_name }} · {{ render_erp_datetime(row.cancelled_at) }}</small>{% else %}<button type="button" class="button button-secondary" data-cancel-writeoff="{{ row.id }}">Отменить списание</button>{% endif %}</td>
+</tr>{% else %}<tr><td colspan="10">Списаний по выбранным условиям нет.</td></tr>{% endfor %}</tbody></table>
+</div>{{ render_erp_pagination(pagination, 'Журнал списаний') }}</div>
+</main></div>
+<div id="writeoffModal" class="modal erp-modal" aria-hidden="true" data-erp-modal-shell data-erp-modal-lock>
+<div class="modal-dialog erp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="writeoffTitle">
+<div class="modal-header"><h2 id="writeoffTitle">Добавить списание</h2><button type="button" class="modal-close" id="closeWriteoff" aria-label="Закрыть">×</button></div>
+<form id="writeoffForm" class="modal-body" data-shared-catalog-scope data-catalog-product-global="true" data-catalog-in-stock="true">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="field"><label for="writeoffProductTrigger">Товар *</label>{{ render_catalog_combobox('writeoffProduct','product_id',[],item_label='товар',shared_catalog_kind='product',input_id='writeoffProductId',clear_selection_on_search_clear=true) }}</div>
+<div id="writeoffProductSummary" hidden><img id="writeoffPhoto" alt="" width="70" height="70" style="object-fit:contain"><p id="writeoffProductDetails"></p></div>
+<div class="field"><label for="writeoffQuantity">Количество *</label><input id="writeoffQuantity" name="quantity" type="number" min="1" step="1" required value="1"></div>
+<div class="field"><label for="writeoffReason">Причина *</label><select id="writeoffReason" name="reason" required><option value="">Выберите причину</option>{% for reason in reasons %}<option>{{ reason }}</option>{% endfor %}</select></div>
+<div class="field"><label for="writeoffComment">Комментарий</label><textarea id="writeoffComment" name="comment" maxlength="2000"></textarea></div>
+<p id="writeoffError" role="alert"></p><button id="submitWriteoff" class="button button-primary" type="submit">Списать</button>
+</form></div></div>
+<script src="{{ url_for('static',filename='js/catalog-combobox.js') }}"></script>
+<script src="{{ url_for('static',filename='js/writeoffs.js') }}"></script>
