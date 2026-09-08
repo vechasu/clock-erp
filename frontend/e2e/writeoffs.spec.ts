@@ -35,7 +35,7 @@ test('write-off persists and cancels once', async ({ page }, testInfo) => {
   await expect(page.locator('#writeoffPhoto')).toHaveJSProperty('complete', true);
   expect(await page.locator('#writeoffPhoto').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   const fields = await Promise.all(['Brand', 'Category', 'Product'].map((kind) => page.locator(`#writeoff${kind}Trigger`).boundingBox()));
-  if (testInfo.project.name.startsWith('desktop')) {
+  if ((page.viewportSize()?.width ?? 1280) >= 768) {
     expect(fields[0]?.y).toBe(fields[1]?.y);
     expect(fields[1]?.y).toBe(fields[2]?.y);
   } else {
