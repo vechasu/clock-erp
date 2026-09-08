@@ -1,0 +1,33 @@
+.writeoff-filters {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 16px 0;
+}
+.writeoff-filters label {
+    display: grid;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 140px;
+    flex: 1 1 140px;
+}
+.writeoff-filters input, .writeoff-filters select { width: 100%; min-width: 0; }
+.writeoff-table-wrap { overflow: auto; max-height: 65vh; }
+.writeoff-table { min-width: 1520px; }
+.writeoff-table th { position: sticky; top: 0; z-index: 1; }
+.writeoff-table th:nth-child(1) { width: 125px; }
+.writeoff-table th:nth-child(2) { width: 280px; }
+.writeoff-table th:nth-child(6) { width: 90px; }
+.writeoff-table th:nth-child(9) { width: 220px; }
+.writeoff-table th:nth-child(10) { width: 220px; }
+.writeoff-table td:nth-child(2), .writeoff-table td:nth-child(9) { white-space: normal; overflow-wrap: anywhere; }
+.writeoff-table img { float: left; margin-right: 8px; }
+#writeoffForm { display: grid; gap: 14px; }
+#writeoffForm .field { display: grid; gap: 6px; }
+#writeoffForm input, #writeoffForm select, #writeoffForm textarea { width: 100%; }
+#writeoffError { margin: 0; }
+@media (max-width: 600px) {
+    .writeoff-filters label:first-of-type { flex-basis: 100%; }
+}
