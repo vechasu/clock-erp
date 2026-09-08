@@ -62,11 +62,23 @@ test('guided repair persists through refresh and history, free repair and pickup
   await submit.click();
   await expect(submit).toHaveText('Оформить возврат клиенту');
   await page.locator('[name="action"]').selectOption('complete');
-  await page.locator('[name="completion_result"]').selectOption('repaired');
   await submit.click();
-  await expect(page.locator('.repair-next-step')).toContainText('Ремонт завершён');
-  await page.reload();
-  await expect(page.locator('.repair-next-step')).toContainText('Ремонт завершён');
+  const modal = page.locator('#repairCompletion');
+  await expect(modal).toBeVisible();
+  await modal.getByRole('button', { name: 'Завершить ремонт' }).click();
+  await expect(modal).toBeVisible();
+  await modal.locator('[name="completion_result"]').selectOption('repaired');
+  await modal.locator('[name="final_cost"]').fill('2500');
+  await modal.locator('[name="comment"]').fill('Заменён механизм');
+  const activeBefore = await page.locator('.repair-tabs').innerText();
+  await modal.getByRole('button', { name: 'Завершить ремонт' }).click();
+  await expect(modal).not.toBeVisible();
+  await expect(page.locator('#repairDrawer')).toBeHidden();
+  await expect(page.locator('.repair-tabs')).not.toHaveText(activeBefore);
+  await page.goto('/app/repairs?view=archive');
+  await expect(page.locator('[data-repair-id="ux-0"] [data-column="status"]')).toHaveText(
+    'Отремонтировано',
+  );
   const data = (await (await request.get('/api/v1/repairs/ux-0')).json()).data;
   expect(data.status).toBe('completed');
   expect(data.location).toBe('delivered');
