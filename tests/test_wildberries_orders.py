@@ -246,6 +246,7 @@ class WildberriesRoutesTest(unittest.TestCase):
 
     def test_missing_token_does_not_break_tictactoy_orders(self):
         tictactoy = [{"id": "100", "number": "TT-100", "status": "A", "products": []}]
+        OrdersSnapshotStore(self.path).replace(tictactoy, 1000)
         with (
             mock.patch.dict("os.environ", {"ORDERS_DATABASE_PATH": str(self.path)}, clear=False),
             mock.patch.object(web, "get_orders", return_value=tictactoy),

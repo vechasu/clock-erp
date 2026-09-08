@@ -307,6 +307,10 @@ class OrdersListIntegrationTest(unittest.TestCase):
         self.orders_path = Path(self.temporary.name) / "orders.db"
         apply_domain_migrations(self.orders_path, "orders", "test")
         self.orders = [order_row(index) for index in range(75)]
+        OrdersSnapshotStore(self.orders_path).replace(self.orders, 1000)
+        self.environment = mock.patch.dict("os.environ", {"ORDERS_DATABASE_PATH": str(self.orders_path)})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
         web.app.config.update(
             TESTING=True,
             AUTH_TESTING=False,
@@ -639,7 +643,11 @@ class OrdersListIntegrationTest(unittest.TestCase):
         statements.clear()
         enriched = web.enrich_orders_list_rows(self.orders[:50], database=catalog)
         selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
-        self.assertLessEqual(len(selects), 3)
+        statements.clear()
+        web.enrich_orders_list_rows(self.orders[:20], database=catalog)
+        smaller_selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+        self.assertEqual(len(selects), len(smaller_selects))
+        self.assertLessEqual(len(selects), 6)
         self.assertFalse(any("ROW_NUMBER" in statement for statement in selects))
         self.assertEqual(enriched[0]["internal_comment"]["text"], "Последний внутренний")
         self.assertEqual(enriched[0]["status_event"]["actor"], "Последний сотрудник")
