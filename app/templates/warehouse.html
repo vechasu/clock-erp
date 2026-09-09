@@ -7818,11 +7818,20 @@
                 body:JSON.stringify({action:action,quantity:quantity,brand_id:document.getElementById("bitrixBrandSelect").value || null,category_id:document.getElementById("bitrixCategorySelect").value || null})
             });
             const payload = await response.json();
-            if (!response.ok) {
+            if (!response.ok || payload.ok === false) {
                 if (payload.fields?.preview) showBitrixPreview(Object.assign({}, bitrixSelectedProduct, payload.fields.preview));
                 throw new Error(payload.message || "Импорт не выполнен.");
             }
-            window.location.assign("/warehouse?notice=success&message=" + encodeURIComponent("Количество добавлено к остатку ERP"));
+            const saved = payload.data?.product;
+            if (!saved?.id || String(saved.id) !== String(payload.data.erp_product_id) || !(saved.article || saved.name)) {
+                throw new Error("Сервер не подтвердил сохранение товара. Обновите список и проверьте результат.");
+            }
+            const query = new URLSearchParams({
+                q: saved.article || saved.name,
+                notice: "success",
+                message: "Количество добавлено к остатку ERP",
+            });
+            window.location.assign("/warehouse?" + query.toString());
         } catch (error) {
             bitrixImportMessage(error.message);
         } finally {
