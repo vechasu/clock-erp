@@ -262,7 +262,7 @@ class UnifiedCatalogApiTest(unittest.TestCase):
         self.moysklad_class.assert_not_called()
 
 
-    def test_product_duplicate_returns_existing_card(self):
+    def test_manual_product_with_distinct_article_starts_without_stock(self):
         response = self.client.post(
             "/api/v1/products",
             json={
@@ -274,8 +274,11 @@ class UnifiedCatalogApiTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 410)
-        self.assertEqual(response.get_json()["code"], "MANUAL_PRODUCT_CREATION_DISABLED")
+        self.assertEqual(response.status_code, 201)
+        product = response.get_json()["data"]
+        self.assertEqual(product["article"], "ANOTHER")
+        self.assertEqual(product["stock"], 0)
+        self.moysklad_class.assert_not_called()
 
 
 

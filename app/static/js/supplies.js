@@ -97,6 +97,7 @@
       });
       renderItems();
       render();
+      if ($("add-item-dialog").open) updateAddition();
     }
   }
   function options(id, values) {
@@ -330,7 +331,7 @@
   function renderItems() {
     const posted = current?.status === "posted";
     $("add-item").hidden =
-      !current || !["draft", "posted"].includes(current.status);
+      current && !["draft", "posted"].includes(current.status);
     $("title").disabled = posted;
     $("comment").disabled = posted;
     $("draft-actions").hidden = posted;
@@ -574,6 +575,7 @@
   };
   $("supply-product-source").onchange = $("supply-product-search").oninput;
   function updateAddition() {
+    $("create-manual-supply-product").disabled = busy || Boolean(addition);
     $("supply-product-source").disabled = busy || Boolean(addition);
     $("supply-taxonomy").hidden =
       !pickerProduct?.bitrix_id || Boolean(pickerProduct?.existing);
@@ -624,37 +626,50 @@
       updateAddition();
     };
   }
-  $("add-item").onclick = () => {
-    // Persist an uncertain request across refresh. Retrying keeps its original payload and key.
-    if (
-      current.status === "draft" &&
-      (JSON.stringify(items) !== JSON.stringify(current.items) ||
-        $("title").value !== current.title ||
-        $("comment").value !== current.comment)
-    ) {
-      message("Сначала сохраните изменения черновика.", true);
-      return;
-    }
-    cancelSearch();
-    pickerProduct = null;
-    $("supply-product-search").value = "";
-    $("supply-product-results").replaceChildren();
-    const saved = sessionStorage.getItem("supply-add:" + current.id);
-    addition = saved ? JSON.parse(saved) : null;
-    $("add-item-message").hidden = !addition;
-    $("add-item-message").textContent = addition
-      ? "Повторите подтверждение предыдущей операции. Повторный приход исключён."
-      : "";
-    $("confirm-add-item").textContent = addition
-      ? "Проверить предыдущую операцию"
-      : "Добавить в поставку";
-    $("add-quantity").value = addition?.payload.quantity || 1;
-    updateAddition();
-    $("add-item-dialog").showModal();
-    if (!addition) {
-      searchProducts();
-      $("supply-product-search").focus();
-    }
+  $("add-item").onclick = () =>
+    action(async () => {
+      // Persist an uncertain request across refresh. Retrying keeps its original payload and key.
+      if (
+        (!current || current.status === "draft") &&
+        (!current ||
+          JSON.stringify(items) !== JSON.stringify(current.items) ||
+          $("title").value !== current.title ||
+          $("comment").value !== current.comment)
+      ) {
+        await save();
+      }
+      cancelSearch();
+      pickerProduct = null;
+      $("supply-product-search").value = "";
+      $("supply-product-results").replaceChildren();
+      const saved = sessionStorage.getItem("supply-add:" + current.id);
+      addition = saved ? JSON.parse(saved) : null;
+      $("add-item-message").hidden = !addition;
+      $("add-item-message").textContent = addition
+        ? "Повторите подтверждение предыдущей операции. Повторный приход исключён."
+        : "";
+      $("confirm-add-item").textContent = addition
+        ? "Проверить предыдущую операцию"
+        : "Добавить в поставку";
+      $("add-quantity").value = addition?.payload.quantity || 1;
+      updateAddition();
+      $("add-item-dialog").showModal();
+      if (!addition) {
+        searchProducts();
+      }
+    }, true).then(() => {
+      if ($("add-item-dialog").open && !addition)
+        $("supply-product-search").focus();
+    });
+  $("create-manual-supply-product").onclick = () => {
+    window.ERPManualProduct.open((product) => {
+      cancelSearch();
+      pickerProduct = { ...product, cardResolved: true };
+      $("supply-product-source").value = "erp";
+      $("supply-product-results").replaceChildren();
+      $("add-item-message").hidden = true;
+      updateAddition();
+    });
   };
   $("close-add-item").onclick = $("cancel-add-item").onclick = () => {
     if (!busy) $("add-item-dialog").close();

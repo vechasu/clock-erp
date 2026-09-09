@@ -237,8 +237,9 @@ class SalesReceiptsEnhancementsTest(unittest.TestCase):
         self.assertEqual(page.status_code,200)
         self.assertIn('Новая поставка',text)
         self.assertIn('Добавить товар в поставку',text)
-        self.assertIn('Сохраните черновик',text)
-        self.assertNotIn('Добавить из Bitrix',text)
+        self.assertIn('Добавьте товары и укажите количество до проведения поставки.',text)
+        self.assertIn('Добавить из Bitrix',text)
+        self.assertIn('Создать самостоятельно',text)
         self.assertNotIn('Цена закупки',text)
 
 

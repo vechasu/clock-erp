@@ -3,6 +3,8 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import picker from '../../app/static/js/product-picker.js?raw';
 import source from '../../app/static/js/supplies.js?raw';
 import template from '../../app/templates/supplies.html?raw';
+import manualSource from '../../app/static/js/manual-product.js?raw';
+import manualTemplate from '../../app/templates/_manual_product.html?raw';
 
 const product = {
   id: 42,
@@ -30,7 +32,15 @@ beforeEach(async () => {
   vi.restoreAllMocks();
   sessionStorage.clear();
   history.replaceState(null, '', '?tab=supplies');
-  document.body.innerHTML = '<meta name="csrf-token" content="test">' + template;
+  document.body.innerHTML =
+    '<meta name="csrf-token" content="test">' +
+    template +
+    manualTemplate.replace(
+      /{% for name, label.*?{% endfor %}/s,
+      ['name', 'brand', 'category', 'model', 'article', 'cell']
+        .map((name) => `<input name="${name}">`)
+        .join(''),
+    );
   document.querySelectorAll('dialog').forEach((dialog) => {
     dialog.showModal = () => dialog.setAttribute('open', '');
     dialog.close = () => {
@@ -55,7 +65,8 @@ beforeEach(async () => {
     let data: unknown = [];
     let status = 200;
     let message = '';
-    if (path.endsWith('/supplies')) data = [supply];
+    if (path.endsWith('/supplies')) data = options?.method === 'POST' ? supply : [supply];
+    else if (path.endsWith('/products')) data = product;
     else if (path.endsWith('/supplies/supply%3Atest')) data = supply;
     else if (path.includes('/catalog/options')) data = [product];
     else if (path.includes('/bitrix-products/search'))
@@ -99,6 +110,7 @@ beforeEach(async () => {
   });
   Object.defineProperty(window, 'fetch', { value: fetchMock, writable: true, configurable: true });
   window.eval(picker);
+  window.eval(manualSource);
   window.eval(source);
   await flush();
   document.querySelector<HTMLButtonElement>('[data-open]')!.click();
@@ -184,4 +196,52 @@ test.each(['0', '-1', 'abc'])('invalid quantity %s never imports or adds', async
   submit();
   await flush();
   expect(fetchMock.mock.calls.some(([path]) => /\/(import|items)$/.test(String(path)))).toBe(false);
+});
+
+test('new supply exposes adding before posting and saves draft automatically', async () => {
+  click('close-add-item');
+  click('close-supply');
+  click('new-supply');
+  await flush();
+  expect((el('add-item') as HTMLButtonElement).hidden).toBe(false);
+  input('title', 'New supply');
+  click('add-item');
+  await flush();
+  document.querySelector<HTMLButtonElement>('#supply-product-results button')!.click();
+  input('add-quantity', '5');
+  submit();
+  await flush();
+  expect(el('items').textContent).toContain('Watch');
+  expect(
+    fetchMock.mock.calls.some(
+      ([path, options]) => String(path).endsWith('/supplies') && options?.method === 'POST',
+    ),
+  ).toBe(true);
+  expect(fetchMock.mock.calls.some(([path]) => String(path).endsWith('/post'))).toBe(false);
+});
+
+test('manual card created inside new supply is selected without navigation or posting', async () => {
+  click('close-add-item');
+  click('close-supply');
+  click('new-supply');
+  await flush();
+  input('title', 'Manual supply');
+  click('add-item');
+  await flush();
+  click('create-manual-supply-product');
+  const form = el('manual-product-form') as HTMLFormElement;
+  (form.elements.namedItem('name') as HTMLInputElement).value = 'Watch';
+  form.dispatchEvent(new Event('submit', { cancelable: true }));
+  await flush();
+  expect(el('selected-product').textContent).toContain('Watch');
+  expect((el('confirm-add-item') as HTMLButtonElement).disabled).toBe(false);
+  expect(el('manual-product-dialog').hasAttribute('open')).toBe(false);
+  input('add-quantity', '4');
+  submit();
+  await flush();
+  expect(el('items').textContent).toContain('Watch');
+  const creation = fetchMock.mock.calls.find(([path]) => String(path).endsWith('/products'))!;
+  expect((creation[1].body as FormData).get('name')).toBe('Watch');
+  expect((creation[1].body as FormData).has('stock')).toBe(false);
+  expect(fetchMock.mock.calls.some(([path]) => String(path).endsWith('/post'))).toBe(false);
 });

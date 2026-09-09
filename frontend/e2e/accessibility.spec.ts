@@ -68,13 +68,14 @@ test('core pages expose one main landmark and one h1', async ({ page }) => {
   }
 });
 
-test('product add menu only opens Bitrix with the keyboard', async ({ page }) => {
+test('product add menu offers manual creation and opens Bitrix with the keyboard', async ({ page }) => {
   await page.goto('/app/products', { waitUntil: 'domcontentloaded' });
   const trigger = page.locator('#openWarehouseAddModal');
   await trigger.focus();
   await trigger.press('Enter');
   const menu = page.locator('#productsAddMenu');
-  await expect(menu.getByRole('menuitem')).toHaveCount(1);
+  await expect(menu.getByRole('menuitem')).toHaveCount(2);
+  await expect(menu.getByRole('menuitem', { name: 'Создать самостоятельно' })).toBeVisible();
   const bitrix = menu.getByRole('menuitem', { name: 'Добавить из Bitrix' });
   await bitrix.focus();
   await bitrix.press('Enter');
@@ -88,7 +89,7 @@ test('existing product editor traps focus, closes on Escape, and restores focus'
   await page.goto('/app/products', { waitUntil: 'domcontentloaded' });
   const trigger = page.locator('#openWarehouseAddModal');
   await trigger.focus();
-  // The shared editor is retained for existing products; the add menu only imports Bitrix.
+  // The shared editor is retained for existing products.
   await page.evaluate(() => {
     const editor = window as unknown as { openWarehouseAddModal: () => void };
     editor.openWarehouseAddModal();
