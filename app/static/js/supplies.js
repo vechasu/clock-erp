@@ -656,9 +656,11 @@
       $("add-item-dialog").showModal();
       if (!addition) {
         searchProducts();
-        $("supply-product-search").focus();
       }
-    }, true);
+    }, true).then(() => {
+      if ($("add-item-dialog").open && !addition)
+        $("supply-product-search").focus();
+    });
   $("create-manual-supply-product").onclick = () => {
     window.ERPManualProduct.open((product) => {
       cancelSearch();
