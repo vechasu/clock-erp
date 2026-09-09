@@ -459,57 +459,6 @@
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
 
-        .warehouse-collection-bulk-toolbar {
-            position: sticky;
-            left: 0;
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 8px;
-            min-width: 100%;
-            padding: 8px 12px;
-            border-bottom: 1px solid #e5e7eb;
-            background: #ffffff;
-        }
-
-        .warehouse-collection-bulk-toolbar[hidden] {
-            display: none;
-        }
-
-        .warehouse-collection-bulk-toolbar select {
-            width: min(260px, 32vw);
-            min-height: 36px;
-            padding: 7px 34px 7px 10px;
-            border-radius: 9px;
-            font-size: 13px;
-        }
-
-        .warehouse-collection-bulk-toolbar .search-tool-button {
-            min-width: 0;
-            min-height: 36px;
-            padding: 0 12px;
-        }
-
-        .warehouse-collection-mode-close {
-            width: 36px;
-            min-width: 36px;
-            height: 36px;
-            padding: 0;
-            border: 1px solid #e1e8f5;
-            background: #ffffff;
-            color: #64748b;
-            font-size: 20px;
-            line-height: 1;
-        }
-
-        [data-collection-mode-control] {
-            display: none;
-        }
-
-        .app.is-collection-mode [data-collection-mode-control] {
-            display: inline-block;
-        }
-
         .warehouse-more {
             position: relative;
         }
@@ -593,14 +542,6 @@
                 max-width: calc(100vw - 32px);
             }
 
-            .warehouse-collection-bulk-toolbar {
-                justify-content: flex-start;
-                flex-wrap: wrap;
-            }
-
-            .warehouse-collection-bulk-toolbar select {
-                width: 100%;
-            }
         }
 
         .warehouse-column-settings {
@@ -1348,13 +1289,11 @@
         }
         /* Конец компактной верхней части склада */
 
-
         /* Заголовок страницы удалён для экономии места */
         .main {
             padding-top: 10px;
         }
         /* Конец компактного верха страницы */
-
 
         .zero-stock-toggle-form {
             margin-left: auto;
@@ -1432,7 +1371,6 @@
                 display: none;
             }
         }
-
 
         .stock-column-title {
             display: inline-flex;
@@ -1524,7 +1462,6 @@
                 background: var(--theme-surface, #ffffff);
             }
         }
-
 
         .brand-combobox {
             position: relative;
@@ -1666,7 +1603,6 @@
             display: none;
         }
 
-
         .add-card .add-form {
             display: grid;
             grid-template-columns:
@@ -1774,7 +1710,6 @@
             }
         }
 
-
         .add-form button[type="submit"] {
             background: #2563eb;
             border: 1px solid #1d4ed8;
@@ -1785,7 +1720,6 @@
         .add-form button[type="submit"]:hover {
             background: #1d4ed8;
         }
-
 
         /* SaaS toolbar redesign v2 */
         .search-card {
@@ -1951,7 +1885,6 @@
             }
 
         }
-
 
         /* SaaS product drawer redesign */
         #editDrawer {
@@ -2128,11 +2061,6 @@
         #editDrawer .product-inline-actions [data-edit-actions] { display: none; }
         #editDrawer .product-inline-form.is-editing .product-detail-value { display: none; }
         #editDrawer .product-inline-form.is-editing .product-detail-input { display: block; }
-        #editDrawer .product-inline-form.is-editing .product-collections-editor {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
         #editDrawer .product-inline-form.is-editing [data-edit-start] { display: none; }
         #editDrawer .product-inline-form.is-editing [data-edit-actions] { display: inline-flex; }
 
@@ -2464,7 +2392,6 @@
             transform: translateY(0);
         }
 
-
         #editDrawer.open {
             right: 0;
         }
@@ -2499,7 +2426,6 @@
                 grid-column: auto;
             }
         }
-
 
         /* Карточка после боковой панели */
         #editDrawer {
@@ -2549,7 +2475,6 @@
             }
         }
 
-
         /* Полноширинная аналитика склада */
         .stats {
             grid-template-columns: minmax(0, 1fr);
@@ -2559,7 +2484,6 @@
         .stats .stat {
             width: 100%;
         }
-
 
         /* Выравнивание действий таблицы справа */
         .table-card th:last-child,
@@ -2580,7 +2504,6 @@
         .table-card .row-actions form {
             margin: 0;
         }
-
 
         /* Центрирование данных таблицы */
         .table-card th:nth-child(1),
@@ -2606,7 +2529,6 @@
             justify-content: center;
         }
 
-
         /* Центрирование колонки действий */
         .table-card th:last-child,
         .table-card td:last-child {
@@ -2616,7 +2538,6 @@
         .table-card .row-actions {
             justify-content: center;
         }
-
 
         /* filter-ui-like-products */
 
@@ -3030,7 +2951,6 @@
             color: #172033;
         }
 
-
         /* identical-filter-selects */
 
         #filterDrawer .brand-combobox-trigger,
@@ -3101,7 +3021,6 @@
         .brand-combobox-trigger::after {
             transform: translateY(-30%) rotate(225deg);
         }
-
 
         /* identical-filter-arrows-fix */
 
@@ -3292,8 +3211,6 @@
             height: 44px;
             min-height: 44px;
         }
-
-
 
         #warehouseAddCard .brand-combobox-dropdown {
             margin-top: 6px;
@@ -3522,7 +3439,6 @@
             }
 
         }
-
 
         /* warehouse-safe-sort */
 
@@ -4299,12 +4215,6 @@
                         <span class="erp-filter-chip-remove" aria-hidden="true">×</span>
                     </button>
                 {% endif %}
-                {% if selected_collection_id %}
-                    {% set selected_collection = collections|selectattr('id','equalto',selected_collection_id|int)|first %}
-                    <button class="erp-filter-chip" type="button" data-warehouse-filter="collection" onclick="clearWarehouseFilter('collection')" aria-label="Снять фильтр Подборка">
-                        <span class="erp-filter-chip-label">Подборка: {{ selected_collection.name if selected_collection else selected_collection_id }}</span><span class="erp-filter-chip-remove" aria-hidden="true">×</span>
-                    </button>
-                {% endif %}
                 {% if created_date_from or created_date_to %}
                     <button
                         class="erp-filter-chip"
@@ -4373,9 +4283,6 @@
 
                     {% if selected_cell %}
                         <input type="hidden" name="cell" value="{{ selected_cell }}">
-                    {% endif %}
-                    {% if selected_collection_id %}
-                        <input type="hidden" name="collection_id" value="{{ selected_collection_id }}">
                     {% endif %}
                     {% if selected_model %}
                         <input type="hidden" name="model" value="{{ selected_model }}">
@@ -4520,10 +4427,6 @@
                             aria-label="Дополнительные действия"
                             hidden
                         >
-                            <button id="warehouseCollectionModeTrigger" class="warehouse-more-action" type="button" role="menuitem">
-                                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.5v5.2L10.8 17l6.2-6.2-7.3-7.3H4.8a1.3 1.3 0 0 0-1.3 1Z"></path><circle cx="7" cy="7" r="1"></circle></svg>
-                                <span>Изменить подборки</span>
-                            </button>
                             <button id="warehouseColumnSettingsTrigger" class="warehouse-more-action" type="button" role="menuitem" aria-haspopup="true" aria-expanded="false" aria-controls="warehouseColumnSettingsPanel">
                                 <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5"></rect><path d="M8 4v12m4-12v12"></path></svg>
                                 <span>Настроить столбцы</span>
@@ -4745,12 +4648,6 @@
                         </div>
                     </section>
 
-                    <section class="warehouse-add-section">
-                        <h3 class="warehouse-add-section-title">Подборки</h3>
-                        <input type="hidden" name="collections_present" value="1">
-                        <div style="display:flex;flex-wrap:wrap;gap:8px">{% for collection in collections %}<label class="warehouse-status-badge"><input type="checkbox" name="collection_ids" value="{{ collection.id }}"> {{ collection.name }}</label>{% endfor %}</div>
-                    </section>
-
                     <section class="warehouse-add-section warehouse-add-stock-section">
                         <h3 class="warehouse-add-section-title">Склад</h3>
                         <div class="warehouse-add-grid warehouse-add-grid-stock">
@@ -4898,13 +4795,6 @@
                 data-metric-units="{{ product_metrics.units }}"
             >
             <div id="warehouseTableScrollTop" class="warehouse-table-scroll-top" aria-label="Горизонтальная прокрутка таблицы" tabindex="0" hidden><div class="warehouse-table-scroll-top-inner"></div></div>
-            <div id="productCollectionBulkBar" class="warehouse-collection-bulk-toolbar" hidden>
-                <strong id="productCollectionBulkCount">Выбрано: 0</strong>
-                <select id="productCollectionBulkTarget" aria-label="Подборка для массового действия"><option value="">Выберите подборку</option>{% for collection in collections %}<option value="{{ collection.id }}">{{ collection.name }}</option>{% endfor %}</select>
-                <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="add" disabled>Добавить</button>
-                <button class="search-tool-button erp-secondary-action" type="button" data-collection-bulk-action="remove" disabled>Удалить</button>
-                <button id="productCollectionModeClose" class="warehouse-collection-mode-close" type="button" aria-label="Закрыть режим изменения подборок" title="Закрыть">×</button>
-            </div>
             <div
                 id="warehouseTableScrollBody"
                 class="table-card erp-table-card erp-scroll-hint"
@@ -4921,7 +4811,6 @@
                             <col class="warehouse-col-article" data-column-key="article">
                             <col class="warehouse-col-brand" data-column-key="brand">
                             <col class="warehouse-col-category" data-column-key="category">
-                            <col data-column-key="collections">
                             <col class="warehouse-col-stock" data-column-key="stock">
                             <col class="warehouse-col-created" data-column-key="created">
                             <col class="warehouse-col-cell" data-column-key="cell">
@@ -4936,7 +4825,6 @@
                                     </div>
                                 </th>
                                 <th data-column-key="name">
-                                    <input id="selectVisibleProductsForCollections" type="checkbox" data-collection-mode-control aria-label="Выбрать товары на странице">
                                     <span
                                         class="warehouse-sort-label erp-sort-label{% if sort_by == 'name' %} is-active{% endif %}"
                                         data-sort-field="name"
@@ -5003,8 +4891,6 @@
                                         </span>
                                     </span>
                                 </th>
-
-                                <th data-column-key="collections">Подборки</th>
 
                                 <th data-column-key="stock">
                                     <span
@@ -5100,7 +4986,6 @@
 
                                     <td data-column-key="name">
                                         <div class="warehouse-product-name-cell">
-                                            <input type="checkbox" data-product-collection-select data-collection-mode-control value="{{ item.id }}" aria-label="Выбрать {{ item.name }}">
                                             <div class="name warehouse-ellipsis" title="{{ item.name|e }}">{{ item.name }}</div>
                                         </div>
                                     </td>
@@ -5114,8 +4999,6 @@
                                     <td data-column-key="brand"><span class="warehouse-ellipsis" title="{{ (item.brand or 'Без бренда')|e }}">{{ item.brand or "Без бренда" }}</span></td>
 
                                     <td data-column-key="category"><span class="warehouse-ellipsis" title="{{ (item.category or 'Без категории')|e }}">{{ item.category or "Без категории" }}</span></td>
-
-                                    <td data-column-key="collections">{% for collection in item.collections[:2] %}<span class="warehouse-status-badge">{{ collection.name }}</span>{% endfor %}{% if item.collections|length > 2 %}<span class="warehouse-status-badge">+{{ item.collections|length - 2 }}</span>{% endif %}{% if not item.collections %}—{% endif %}</td>
 
                                     <td data-column-key="stock" class="{% if item.stock <= 0 %}stock-zero{% else %}stock-good{% endif %}">
                                         {{ item.stock_display }}
@@ -5172,7 +5055,6 @@
                                                     data-brand-id="{{ item.brand_id or '' }}"
                                                     data-category="{{ item.category|e }}"
                                                     data-category-id="{{ item.category_id or '' }}"
-                                                    data-collection-ids='{{ item.collections|map(attribute="id")|list|tojson }}'
                                                     data-stock="{{ item.stock_display|e }}"
                                                     data-cell="{{ item.cell|e }}"
                                                     data-cell-source="{{ item.cell_source|e }}"
@@ -5415,14 +5297,6 @@
                 search_placeholder="Поиск категории..."
             ) }}
 
-            <div class="category-cell-form-title">Подборка</div>
-            <label class="filter-select-wrap">
-                <select name="collection_id" aria-label="Подборка">
-                    <option value="">Все подборки</option>
-                    {% for collection in collections %}<option value="{{ collection.id }}"{% if selected_collection_id == collection.id|string %} selected{% endif %}>{{ collection.name }}</option>{% endfor %}
-                </select>
-            </label>
-
             <div class="category-cell-form-title">Модель</div>
 
             {{ render_catalog_combobox(
@@ -5522,7 +5396,6 @@
             </div>
         </form>
     </aside>
-
 
     <aside
         id="editDrawer"
@@ -5654,14 +5527,6 @@
                 <div class="product-detail-label">Ячейка</div>
                 <div id="detailCell" class="product-detail-value">—</div>
                 <input id="editCell" class="product-detail-input" type="text" name="cell" aria-label="Складская ячейка товара">
-            </div>
-            <div class="product-detail-card">
-                <div class="product-detail-label">Подборки</div>
-                <div id="detailCollections" class="product-detail-value">—</div>
-                <input type="hidden" name="collections_present" value="1">
-                <div id="editCollections" class="product-detail-input product-collections-editor">
-                    {% for collection in collections %}<label class="warehouse-status-badge"><input type="checkbox" name="collection_ids" value="{{ collection.id }}"> {{ collection.name }}</label>{% endfor %}
-                </div>
             </div>
             </div>
 
@@ -6420,15 +6285,6 @@
                 categoryId: form.dataset.originalCategoryId || "",
                 categoryLabel: form.dataset.originalCategory || "",
             });
-            let originalCollectionIds = [];
-            try {
-                originalCollectionIds = JSON.parse(form.dataset.originalCollectionIds || "[]").map(Number);
-            } catch (error) {
-                originalCollectionIds = [];
-            }
-            form.querySelectorAll('#editCollections input[name="collection_ids"]').forEach(function(input) {
-                input.checked = originalCollectionIds.includes(Number(input.value));
-            });
             resetDetailPhotoChanges(true);
             document.getElementById("detailPhotoEditor").hidden = true;
             form.classList.remove("is-editing");
@@ -6586,14 +6442,6 @@
             renderProductStock(productStock);
             document.getElementById("detailBrand").textContent = productBrand;
             document.getElementById("detailCategory").textContent = productCategory;
-            let productCollectionIds = [];
-            try { productCollectionIds = JSON.parse(button.dataset.collectionIds || "[]"); } catch (error) { productCollectionIds = []; }
-            const selectedCollectionNames = [];
-            document.querySelectorAll('#editCollections input[name="collection_ids"]').forEach(function(input) {
-                input.checked = productCollectionIds.map(Number).includes(Number(input.value));
-                if (input.checked) selectedCollectionNames.push(input.parentElement.textContent.trim());
-            });
-            document.getElementById("detailCollections").textContent = selectedCollectionNames.join(", ") || "—";
             document.getElementById("detailCell").textContent = productCell
                 ? (productCellSourceLabel ? `${productCell} · ${productCellSourceLabel}` : productCell)
                 : "—";
@@ -6644,7 +6492,6 @@
             inlineProductForm.dataset.originalCategoryId =
                 button.dataset.categoryId || "";
             inlineProductForm.dataset.originalCategory = productCategory;
-            inlineProductForm.dataset.originalCollectionIds = JSON.stringify(productCollectionIds);
             inlineProductForm.dataset.detailUrl = button.dataset.detailUrl || "";
             inlineProductForm.dataset.photoAction = "keep";
             inlineProductForm.dataset.photoFileId = "";
@@ -6799,7 +6646,6 @@
                 detailPrice: product.price_display || "—",
                 detailBrand: product.brand || "Без бренда",
                 detailCategory: category,
-                detailCollections: (product.collections || []).map(item => item.name).join(", ") || "—",
                 detailCell: product.cell || "—",
             };
             Object.entries(displayValues).forEach(function(entry) {
@@ -6823,11 +6669,6 @@
             form.dataset.originalBrand = product.brand || "";
             form.dataset.originalCategoryId = product.category_id ?? "";
             form.dataset.originalCategory = category;
-            const collectionIds = (product.collection_ids || []).map(Number);
-            form.dataset.originalCollectionIds = JSON.stringify(collectionIds);
-            document.querySelectorAll('#editCollections input[name="collection_ids"]').forEach(function(input) {
-                input.checked = collectionIds.includes(Number(input.value));
-            });
             window.restoreSharedCatalogCascade(form, {
                 brandId: product.brand_id ?? "",
                 brandLabel: product.brand || "",
@@ -6845,7 +6686,6 @@
                     brandId: product.brand_id ?? "",
                     category: product.category || "",
                     categoryId: product.category_id ?? "",
-                    collectionIds: JSON.stringify(product.collection_ids || []),
                     stock: product.stock_display ?? product.stock ?? 0,
                     cell: product.cell || "",
                 });
@@ -7496,7 +7336,6 @@
                 "date_from",
                 "date_to",
                 "check_state",
-                "collection_id",
                 "view",
                 "page"
             ].forEach(name => url.searchParams.delete(name));
@@ -7515,7 +7354,6 @@
                 cell: ["cell"],
                 date: ["date_from", "date_to"],
                 check_state: ["check_state"],
-                collection: ["collection_id"],
             }[filterName] || [];
 
             parameterNames.forEach((name) => {
@@ -7698,147 +7536,6 @@
                 submitButton.textContent = "Сохраняем...";
             });
         }
-
-        function selectedProductCollectionIds() {
-            return Array.from(document.querySelectorAll(
-                '[data-product-collection-select]:checked'
-            )).map(input => Number(input.value));
-        }
-
-        let productCollectionModeActive = false;
-        let productCollectionMutationPending = false;
-
-        function clearProductCollectionSelection() {
-            document.querySelectorAll("[data-product-collection-select]").forEach(input => {
-                input.checked = false;
-            });
-            const selectAll = document.getElementById("selectVisibleProductsForCollections");
-            if (selectAll) {
-                selectAll.checked = false;
-                selectAll.indeterminate = false;
-            }
-        }
-
-        function setProductCollectionMode(enabled) {
-            productCollectionModeActive = Boolean(enabled);
-            document.querySelector("[data-erp-focus-mode]")?.classList.toggle(
-                "is-collection-mode",
-                productCollectionModeActive
-            );
-            if (!productCollectionModeActive) {
-                clearProductCollectionSelection();
-                const target = document.getElementById("productCollectionBulkTarget");
-                if (target) target.value = "";
-            }
-            updateProductCollectionBulkBar();
-        }
-
-        function updateProductCollectionBulkBar() {
-            const ids = selectedProductCollectionIds();
-            const bar = document.getElementById("productCollectionBulkBar");
-            const count = document.getElementById("productCollectionBulkCount");
-            const target = document.getElementById("productCollectionBulkTarget");
-            const canSubmit = productCollectionModeActive
-                && ids.length > 0
-                && Boolean(target?.value)
-                && !productCollectionMutationPending;
-            if (bar) bar.hidden = !productCollectionModeActive;
-            if (count) count.textContent = "Выбрано: " + ids.length;
-            document.querySelectorAll("[data-collection-bulk-action]").forEach(button => {
-                button.disabled = !canSubmit;
-            });
-            const selectAll = document.getElementById("selectVisibleProductsForCollections");
-            const visibleCount = document.querySelectorAll("[data-product-collection-select]").length;
-            if (selectAll) {
-                selectAll.checked = visibleCount > 0 && ids.length === visibleCount;
-                selectAll.indeterminate = ids.length > 0 && ids.length < visibleCount;
-            }
-        }
-
-        document.addEventListener("change", function(event) {
-            if (event.target.matches("[data-product-collection-select]")) {
-                updateProductCollectionBulkBar();
-            }
-            if (event.target.matches("#selectVisibleProductsForCollections")) {
-                document.querySelectorAll("[data-product-collection-select]").forEach(input => {
-                    input.checked = event.target.checked;
-                });
-                updateProductCollectionBulkBar();
-            }
-            if (event.target.matches("#productCollectionBulkTarget")) {
-                updateProductCollectionBulkBar();
-            }
-        });
-
-        document.addEventListener("click", function(event) {
-            if (event.target.closest("#warehouseCollectionModeTrigger")) {
-                setProductCollectionMode(true);
-            }
-            if (event.target.closest("#productCollectionModeClose")) {
-                setProductCollectionMode(false);
-            }
-        });
-
-        document.addEventListener("warehouse:results-updated", function() {
-            setProductCollectionMode(false);
-        });
-
-        window.addEventListener("pagehide", function() {
-            setProductCollectionMode(false);
-        });
-
-        document.addEventListener("click", async function(event) {
-            const button = event.target.closest("[data-collection-bulk-action]");
-            if (!button) return;
-            if (productCollectionMutationPending || button.disabled) return;
-            const productIds = selectedProductCollectionIds();
-            const collectionId = Number(
-                document.getElementById("productCollectionBulkTarget")?.value || 0
-            );
-            if (!productIds.length || !collectionId) {
-                window.alert("Выберите товары и подборку.");
-                return;
-            }
-            productCollectionMutationPending = true;
-            const action = button.dataset.collectionBulkAction;
-            const defaultLabels = {add: "Добавить", remove: "Удалить"};
-            button.textContent = action === "add" ? "Добавляем…" : "Удаляем…";
-            updateProductCollectionBulkBar();
-            try {
-                const response = await fetch("/api/v1/product-collections/bulk", {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRF-Token": {{ csrf_token()|tojson }},
-                    },
-                    body: JSON.stringify({
-                        action: action,
-                        collection_id: collectionId,
-                        product_ids: productIds,
-                    }),
-                });
-                const payload = await response.json();
-                if (!response.ok) throw new Error(payload.message || "Не удалось изменить подборку.");
-                setProductCollectionMode(false);
-                showWarehouseNotice(
-                    action === "add"
-                        ? "Товары добавлены в подборку"
-                        : "Товары удалены из подборки",
-                    "success"
-                );
-                await loadWarehouseResultsUrl(new URL(window.location.href), {
-                    history: "none",
-                    message: "Обновляем подборки…"
-                });
-            } catch (error) {
-                showWarehouseNotice(error.message, "error");
-            } finally {
-                productCollectionMutationPending = false;
-                button.textContent = defaultLabels[action];
-                updateProductCollectionBulkBar();
-            }
-        });
 
         (function initializeWarehouseMoreMenu() {
             const trigger = document.getElementById("warehouseMoreTrigger");
@@ -8197,28 +7894,22 @@
 
 </script>
 
-
     <script>
         const warehouseTableLegacyStorageKey = "vechasu.warehouse.table-view.v1";
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
-            order: ["photo", "name", "stock", "price", "article", "brand", "category", "collections", "created", "model", "cell", "platform_checks", "actions"],
-            widths: { photo: 64, name: 256, model: 120, price: 80, article: 96, brand: 95, category: 150, collections: 150, stock: 104, created: 106, cell: 75, platform_checks: 210, actions: 82 },
             hidden: ["model", "cell"]
         };
         const warehouseTableRequiredColumns = ["photo", "name", "actions"];
         const warehouseTableColumnLabels = {
             photo: "Фото", name: "Название", model: "Модель", price: "Цена", article: "Артикул",
-            brand: "Бренд", category: "Категория", collections: "Подборки", stock: "Остаток",
             created: "Добавлено", cell: "Ячейка", platform_checks: "Проверка отключения", actions: "Действия"
         };
         const warehouseTableMinimumWidths = {
             photo: 60, name: 196, model: 90, price: 72, article: 86, brand: 84,
-            category: 138, collections: 120, stock: 98, created: 96, cell: 68, platform_checks: 180, actions: 82
         };
         const warehouseTableMaximumWidths = {
             photo: 160, name: 520, model: 300, price: 180, article: 240, brand: 260,
-            category: 360, collections: 320, stock: 200, created: 220, cell: 180, platform_checks: 360, actions: 160
         };
         let warehouseTableSuppressSortUntil = 0;
 
@@ -8688,7 +8379,6 @@
 
         initializeWarehouseTableView();
     </script>
-
 
     <script>
         function validateWarehouseInitialStock(input) {
@@ -9222,7 +8912,6 @@
         }
     </script>
 
-
     <script>
         function confirmAndRememberWarehouseScroll() {
             const confirmed = confirm(
@@ -9271,7 +8960,6 @@
             });
         });
     </script>
-
 
     <script>
         function showWarehouseNotice(message, variant) {
@@ -9595,7 +9283,6 @@
     </script>
     {% endif %}
 
-
     <script>
         function hideWarehouseNotice() {
             const notice = document.getElementById("pageNotice");
@@ -9628,7 +9315,6 @@
             hideWarehouseNotice
         );
     </script>
-
 
     <script>
         window.warehouseToolbarPopovers = (

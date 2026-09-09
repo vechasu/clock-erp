@@ -18,6 +18,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.remove_product_collections_migration import (
+    REMOVE_COLLECTIONS_SQL, apply_remove_collections_migration,
+)
+
 from app.component_inventory_migration import COMPONENT_SQL, apply_component_inventory_migration
 from app.writeoff_migration import WRITEOFF_SQL, apply_writeoff_migration
 from app.bundle_migration import BUNDLE_SQL, apply_bundle_migration
@@ -327,6 +331,9 @@ MIGRATIONS = (
     {"id": WRITEOFF_MIGRATION_ID, "name": "Warehouse write-off documents",
      "checksum": hashlib.sha256("\n".join(WRITEOFF_SQL).encode("utf-8")).hexdigest(),
      "transactional": True, "recovery": "restore verified catalog database backup while service is stopped"},
+    {"id": "2026-09-09-remove-product-collections-v1", "name": "Remove retired product collections",
+     "checksum": hashlib.sha256("\n".join(REMOVE_COLLECTIONS_SQL).encode("utf-8")).hexdigest(),
+     "transactional": True, "recovery": "restore verified catalog database backup while service is stopped"},
 )
 
 REQUIRED_TABLES = {
@@ -335,8 +342,6 @@ REQUIRED_TABLES = {
     "erp_audit_events",
     "erp_brands",
     "erp_categories",
-    "erp_collections",
-    "product_collections",
     "erp_inventory_items",
     "erp_inventory_sessions",
     "erp_inventory_document_numbers",
@@ -737,6 +742,13 @@ def verify_complete_catalog_contract(connection, include_bundles=True):
         expected["tables"].update(extra["tables"])
         for kind in ("indexes", "triggers", "views"):
             expected[kind] = sorted(expected[kind] + extra[kind])
+    if include_bundles:
+        # The base manifest also validates immutable historical migration steps.
+        # The current contract excludes the retired collection tables.
+        for table in ("product_collections", "erp_collections"):
+            expected["tables"].pop(table, None)
+        expected["indexes"] = [row for row in expected["indexes"]
+                               if row[0] not in ("product_collections", "erp_collections")]
     actual = _json_structure(connection)
     if actual == expected:
         return True
@@ -1304,12 +1316,12 @@ def apply_migrations(database_path, app_commit="", ddl_observer=None):
                         raise
                     finally:
                         connection.close()
-                elif migration["id"] in (BUNDLE_MIGRATION_ID, COMPONENT_MIGRATION_ID, WRITEOFF_MIGRATION_ID):
+                elif migration["id"] in (BUNDLE_MIGRATION_ID, COMPONENT_MIGRATION_ID, WRITEOFF_MIGRATION_ID, "2026-09-09-remove-product-collections-v1"):
                     connection = sqlite3.connect(str(path))
                     try:
                         connection.execute("PRAGMA foreign_keys = ON")
                         connection.execute("BEGIN IMMEDIATE")
-                        ({BUNDLE_MIGRATION_ID: apply_bundle_migration, COMPONENT_MIGRATION_ID: apply_component_inventory_migration, WRITEOFF_MIGRATION_ID: apply_writeoff_migration}[migration["id"]])(connection, ddl_observer)
+                        ({"2026-09-09-remove-product-collections-v1": apply_remove_collections_migration, BUNDLE_MIGRATION_ID: apply_bundle_migration, COMPONENT_MIGRATION_ID: apply_component_inventory_migration, WRITEOFF_MIGRATION_ID: apply_writeoff_migration}[migration["id"]])(connection, ddl_observer)
                         connection.commit()
                     except Exception:
                         connection.rollback()
@@ -1559,6 +1571,9 @@ def validate_known_sql_compatibility(source_root):
     component_migration = source_root / "app" / "component_inventory_migration.py"
     if component_migration.exists():
         paths.append(component_migration)
+    remove_collections_migration = source_root / "app" / "remove_product_collections_migration.py"
+    if remove_collections_migration.exists():
+        paths.append(remove_collections_migration)
     writeoff_migration = source_root / "app" / "writeoff_migration.py"
     if writeoff_migration.exists():
         paths.append(writeoff_migration)
