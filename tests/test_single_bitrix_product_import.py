@@ -1,4 +1,6 @@
 import base64
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -353,6 +355,82 @@ class SingleBitrixProductImportTest(unittest.TestCase):
         saved = self.post_import(product).get_json()["data"]["product"]
         self.assertEqual(saved["stock"], 2)
 
+
+    def test_389_53_20_existing_card_is_visible_and_linked_to_draft(self):
+        from app.services.supplies import SupplyEngine
+        from app.services.excel_product_catalog import ExcelProductCatalog
+        product = source_product(
+            identity="199954", name="Fashion 389 53 (20 мм)",
+            article="fashion-389-53-20-mm", image=False,
+        )
+        first = self.post_import(product).get_json()["data"]["product"]
+        added = self.post_import(product, action="update", quantity=1)
+        self.assertEqual(added.status_code, 200)
+        saved = added.get_json()["data"]["product"]
+        self.assertEqual(saved["id"], first["id"])
+        catalog = ExcelProductCatalog(CatalogDatabase(self.database_path))
+        # The shorthand is an infix: the catalog deliberately searches prefixes.
+        self.assertEqual(catalog.list_products(query="389-53-20")["items"], [])
+        visible = catalog.list_products(query=saved["article"])["items"]
+        self.assertEqual([p["id"] for p in visible], [saved["id"]])
+        page = self.client.get("/warehouse", query_string={"q": saved["article"]})
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('data-product-id="{}"'.format(saved["id"]), page.get_data(as_text=True))
+        engine = SupplyEngine(CatalogDatabase(self.database_path))
+        supply = engine.create("389-53-20 regression")
+        with mock.patch.object(web, "_bitrix_single_client", return_value=FakeBitrixClient(product)):
+            resolved = self.client.post("/api/v1/bitrix-products/199954/import", json={"supply_id": supply["id"]})
+        self.assertEqual(resolved.status_code, 200)
+        self.assertEqual(resolved.get_json()["data"]["erp_product_id"], saved["id"])
+        path = "/api/v1/receipts/supplies/" + supply["id"]
+        for unused in range(2):
+            linked = self.client.post(path + "/items", json={"product_id": saved["id"], "quantity": 1}, headers={"Idempotency-Key": "389-53-20-regression"})
+            self.assertEqual(linked.status_code, 200)
+        reloaded = self.client.get(path).get_json()["data"]
+        self.assertEqual(reloaded["status"], "draft")
+        self.assertEqual([(i["product_id"], i["quantity"]) for i in reloaded["items"]], [(saved["id"], 1)])
+        with CatalogDatabase(self.database_path).connect() as connection:
+            rows = connection.execute("SELECT id, stock FROM catalog_excel_products WHERE bitrix_external_product_id='199954'").fetchall()
+            self.assertEqual([(r["id"], r["stock"]) for r in rows], [(saved["id"], 3)])
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM catalog_stock_movements WHERE receipt_id=?", (supply["id"],)).fetchone()[0], 0)
+
+    def test_add_ui_shows_saved_389_53_20_and_rejects_unconfirmed_success(self):
+        source = Path("app/templates/warehouse.html").read_text(encoding="utf-8")
+        handler = source.split("    async function submitBitrixImport(action) {", 1)[1].split('\n    document.addEventListener("click"', 1)[0]
+        script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const handler = JSON.parse(fs.readFileSync(0, 'utf8'));
+const elements = new Map();
+const document = {
+  getElementById(id) {
+    if (!elements.has(id)) elements.set(id, {value: id === 'bitrixImportQuantity' ? '1' : ''});
+    return elements.get(id);
+  },
+  querySelector() { return {value: 'csrf'}; },
+};
+let destination, errorMessage, responsePayload;
+const window = {location: {assign(url) { destination = url; }}};
+const fetch = async () => ({ok: true, json: async () => responsePayload});
+let bitrixSelectedProduct = {bitrix_id: 199954}, bitrixSubmitting = false;
+const bitrixImportMessage = message => { errorMessage = message; };
+const submit = eval('(async function(action) {' + handler + ')');
+(async () => {
+  responsePayload = {ok: true, data: {erp_product_id: 8345, product: {id: 8345, article: 'fashion-389-53-20-mm'}}};
+  await submit('update');
+  assert.equal(new URL(destination, 'https://erp.test').searchParams.get('q'), 'fashion-389-53-20-mm');
+  for (const payload of [{ok: false, message: 'DB failed'}, {ok: true, data: {}}, {ok: true, data: {erp_product_id: 8345, product: {id: 999, article: 'other'}}}]) {
+    destination = null;
+    responsePayload = payload;
+    await submit('update');
+    assert.equal(destination, null);
+    assert.ok(errorMessage);
+    assert.equal(bitrixSubmitting, false);
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+        result = subprocess.run(["node", "-e", script], input=json.dumps(handler), text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def supply_import(self, supply_id, product=None):
         product = product or source_product()
