@@ -1,23 +1,16 @@
 import { expect, test } from '@playwright/test';
 
 
-test('products toolbar keeps collections contextual and reuses columns and focus mode', async ({
+test('products toolbar reuses columns and focus mode', async ({
   page,
 }) => {
   await page.goto('/app/products');
 
   const more = page.locator('#warehouseMoreTrigger');
   const menu = page.locator('#warehouseMoreMenu');
-  const bulkBar = page.locator('#productCollectionBulkBar');
-  const rowCheckbox = page.locator('[data-product-collection-select]').first();
-
-  await expect(bulkBar).toBeHidden();
-  await expect(rowCheckbox).toBeHidden();
-
   await more.click();
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('menuitem')).toHaveCount(3);
-  await expect(menu).toContainText('Изменить подборки');
+  await expect(menu.getByRole('menuitem')).toHaveCount(2);
   await expect(menu).toContainText('Настроить столбцы');
   await expect(menu).toContainText('Развернуть таблицу');
 
@@ -26,23 +19,6 @@ test('products toolbar keeps collections contextual and reuses columns and focus
   await more.click();
   await page.locator('h1').click();
   await expect(menu).toBeHidden();
-
-  await more.click();
-  await page.locator('#warehouseCollectionModeTrigger').click();
-  await expect(bulkBar).toBeVisible();
-  await expect(rowCheckbox).toBeVisible();
-  await expect(bulkBar.getByRole('button', { name: 'Добавить' })).toBeDisabled();
-  await expect(bulkBar.getByRole('button', { name: 'Удалить' })).toBeDisabled();
-
-  await rowCheckbox.check();
-  await expect(page.locator('#productCollectionBulkCount')).toHaveText('Выбрано: 1');
-  await page.locator('#productCollectionBulkTarget').selectOption({ index: 1 });
-  await expect(bulkBar.getByRole('button', { name: 'Добавить' })).toBeEnabled();
-  await expect(bulkBar.getByRole('button', { name: 'Удалить' })).toBeEnabled();
-
-  await page.locator('#productCollectionModeClose').click();
-  await expect(bulkBar).toBeHidden();
-  await expect(rowCheckbox).not.toBeChecked();
 
   await more.click();
   await page.locator('#warehouseColumnSettingsTrigger').click();
@@ -75,59 +51,4 @@ test('products toolbar keeps collections contextual and reuses columns and focus
     ).toBeLessThanOrEqual(viewport.width);
     await page.keyboard.press('Escape');
   }
-});
-
-
-test('collection bulk success resets mode while an error preserves selection', async ({ page }) => {
-  let shouldFail = false;
-  await page.route('**/api/v1/product-collections/bulk', async (route) => {
-    const request = route.request();
-    expect(request.method()).toBe('POST');
-    const body = request.postDataJSON() as { action: string; product_ids: number[] };
-    expect(['add', 'remove']).toContain(body.action);
-    expect(body.product_ids).toHaveLength(1);
-    await route.fulfill({
-      status: shouldFail ? 500 : 200,
-      contentType: 'application/json',
-      body: JSON.stringify(
-        shouldFail ? { message: 'Тестовая ошибка подборки' } : { data: { updated: 1 } },
-      ),
-    });
-  });
-
-  await page.goto('/app/products');
-
-  const enterMode = async () => {
-    await page.locator('#warehouseMoreTrigger').click();
-    await page.locator('#warehouseCollectionModeTrigger').click();
-    await page.locator('[data-product-collection-select]').first().check();
-    await page.locator('#productCollectionBulkTarget').selectOption({ index: 1 });
-  };
-  const submitAndWaitForRefresh = async (action: 'add' | 'remove') => {
-    await Promise.all([
-      page.evaluate(() => new Promise<void>((resolve) => {
-        document.addEventListener('warehouse:results-updated', () => resolve(), {
-          once: true,
-        });
-      })),
-      page.locator(`[data-collection-bulk-action="${action}"]`).click(),
-    ]);
-  };
-
-  await enterMode();
-  await submitAndWaitForRefresh('add');
-  await expect(page.locator('#productCollectionBulkBar')).toBeHidden();
-  await expect(page.locator('[data-product-collection-select]').first()).not.toBeChecked();
-
-  await enterMode();
-  await submitAndWaitForRefresh('remove');
-  await expect(page.locator('#productCollectionBulkBar')).toBeHidden();
-
-  shouldFail = true;
-  await enterMode();
-  await page.locator('[data-collection-bulk-action="add"]').click();
-  await expect(page.locator('#pageNotice')).toContainText('Тестовая ошибка подборки');
-  await expect(page.locator('#productCollectionBulkBar')).toBeVisible();
-  await expect(page.locator('[data-product-collection-select]').first()).toBeChecked();
-  await expect(page.locator('#productCollectionBulkTarget')).not.toHaveValue('');
 });

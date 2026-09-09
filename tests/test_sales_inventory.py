@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
+from app.remove_product_collections_migration import apply_remove_collections_migration
 from app.catalog_migration_steps import apply_fresh_catalog_schema
 from app.services.excel_product_catalog import ExcelProductCatalog
 from app.services.receipt_inventory import ReceiptInventory
@@ -1040,6 +1041,7 @@ class SalesInventoryTest(unittest.TestCase):
         with sqlite3.connect(str(self.database_path)) as connection:
             connection.row_factory = sqlite3.Row
             apply_fresh_catalog_schema(connection)
+            apply_remove_collections_migration(connection)
         CatalogDatabase(
             self.database_path,
             cache_initialization=False,
