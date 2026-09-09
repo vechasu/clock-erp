@@ -21,7 +21,7 @@ class ErpTableUxPolishTest(unittest.TestCase):
 
         self.assertIn('id="warehouseMoreTrigger"', toolbar)
         self.assertIn('id="warehouseMoreMenu"', toolbar)
-        self.assertIn('id="warehouseCollectionModeTrigger"', toolbar)
+        self.assertNotIn('id="warehouseCollectionModeTrigger"', toolbar)
         self.assertIn('id="warehouseColumnSettingsTrigger"', toolbar)
         self.assertIn('id="warehouseColumnSettingsPanel"', toolbar)
         self.assertIn('data-focus-mode-label-suffix=" таблицу"', toolbar)
