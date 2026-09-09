@@ -1,5 +1,20 @@
 import { expect, test } from '@playwright/test';
 
+async function chooseCatalogValue(page, id: string, value: string) {
+  const combobox = page.locator(`#${id}`);
+  await combobox.locator('.brand-combobox-trigger').click();
+  await combobox.locator('.brand-combobox-search').fill(value);
+  const exactOption = combobox
+    .locator('.brand-combobox-option')
+    .filter({ has: page.getByText(value, { exact: true }) });
+  const createAction = combobox.locator('[data-catalog-create-action]');
+  await expect.poll(async () =>
+    (await exactOption.first().isVisible()) || (await createAction.isVisible()),
+  ).toBe(true);
+  if (await exactOption.first().isVisible()) await exactOption.first().click();
+  else await createAction.click();
+}
+
 test('manual and Bitrix products are available in a new supply before posting', async ({
   page,
   request,
@@ -12,9 +27,9 @@ test('manual and Bitrix products are available in a new supply before posting', 
   await page.getByRole('menuitem', { name: 'Создать самостоятельно' }).click();
   const manual = page.locator('#manual-product-dialog');
   await expect(manual).toBeVisible();
-  await manual.locator('[name=name]').fill('Smoke manual catalog');
-  await manual.locator('[name=brand]').fill('Casio');
-  await manual.locator('[name=category]').fill('Часы');
+  await chooseCatalogValue(page, 'manualProductBrandCombobox', 'Casio');
+  await chooseCatalogValue(page, 'manualProductCategoryCombobox', 'Часы');
+  await chooseCatalogValue(page, 'manualProductCombobox', 'Smoke manual catalog');
   await manual.locator('[name=article]').fill('SMOKE-MANUAL-CATALOG');
   await manual.locator('[name=product_image]').setInputFiles({
     name: 'watch.png',
@@ -27,7 +42,7 @@ test('manual and Bitrix products are available in a new supply before posting', 
   const created = page.waitForResponse(
     (r) => r.url().endsWith('/api/v1/products') && r.request().method() === 'POST',
   );
-  await manual.getByRole('button', { name: 'Создать товар', exact: true }).click();
+  await manual.getByRole('button', { name: 'Добавить товар', exact: true }).click();
   const cardResponse = await created;
   expect(cardResponse.status()).toBe(201);
   const card = (await cardResponse.json()).data;
@@ -73,12 +88,14 @@ test('manual and Bitrix products are available in a new supply before posting', 
 
   await page.locator('#add-item').click();
   await page.locator('#create-manual-supply-product').click();
-  await manual.locator('[name=name]').fill('Smoke manual inline');
+  await chooseCatalogValue(page, 'manualProductBrandCombobox', 'Casio');
+  await chooseCatalogValue(page, 'manualProductCategoryCombobox', 'Часы');
+  await chooseCatalogValue(page, 'manualProductCombobox', 'Smoke manual inline');
   await manual.locator('[name=article]').fill('SMOKE-MANUAL-INLINE');
   const inlineCreated = page.waitForResponse(
     (r) => r.url().endsWith('/api/v1/products') && r.request().method() === 'POST',
   );
-  await manual.getByRole('button', { name: 'Создать товар', exact: true }).click();
+  await manual.getByRole('button', { name: 'Добавить товар', exact: true }).click();
   const inlineResponse = await inlineCreated;
   expect(inlineResponse.status()).toBe(201);
   const inline = (await inlineResponse.json()).data;
