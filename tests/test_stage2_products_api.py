@@ -93,6 +93,18 @@ class Stage2ProductsApiTest(unittest.TestCase):
             )
         return remote_id
 
+    def test_products_open_after_collections_removal(self):
+        response = self.client.get("/warehouse")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertNotIn("Подборки", html)
+        self.assertNotIn("productCollection", html)
+        for path in ("/api/v1/collections", "/api/v1/collections/1",
+                     "/api/v1/collections/1/products", "/api/v1/collections/1/candidates",
+                     "/api/v1/site/collections/sale/products"):
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+        self.assertEqual(self.client.post("/api/v1/product-collections/bulk").status_code, 404)
+
     def test_list_search_filter_sort_and_pagination(self):
         response = self.client.get(
             "/api/products?q=Alpha%20S&brand=Alpha&sort_by=stock"

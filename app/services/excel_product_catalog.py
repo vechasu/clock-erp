@@ -337,37 +337,6 @@ def _restore_columns(connection, product_id, state, columns):
         )
 
 
-def _replace_product_collections(connection, product_id, collection_ids):
-    if collection_ids is None:
-        return
-    try:
-        requested = sorted({int(value) for value in collection_ids})
-    except (TypeError, ValueError):
-        raise ValueError("Некорректный список подборок.")
-    if any(value < 1 for value in requested):
-        raise ValueError("Некорректный список подборок.")
-    if requested:
-        placeholders = ",".join("?" for _ in requested)
-        found = {
-            int(row[0]) for row in connection.execute(
-                "SELECT id FROM erp_collections WHERE active=1 AND id IN (" +
-                placeholders + ")", requested,
-            ).fetchall()
-        }
-        if found != set(requested):
-            raise ValueError("Одна из подборок не найдена.")
-    connection.execute(
-        "DELETE FROM product_collections WHERE product_id=?", (int(product_id),)
-    )
-    now = utc_now()
-    for collection_id in requested:
-        connection.execute(
-            "INSERT INTO product_collections "
-            "(product_id,collection_id,source,created_at) VALUES(?,?,'manual',?)",
-            (int(product_id), collection_id, now),
-        )
-
-
 def _refresh_link_cardinality(connection, catalog_product_ids=None):
     if catalog_product_ids is None:
         rows = connection.execute(
@@ -824,7 +793,6 @@ class ExcelProductCatalog:
                       sort_dir="asc", page=1, per_page=50,
                       created_from="", created_to="", brand_id=None,
                       category_id=None, model_id=None, product_id=None,
-                      collection_id=None,
                       include_cell_item_names=True, include_facets=True,
                       include_inventory_locked=False, stock_state="all",
                       check_state="all"):
@@ -888,14 +856,6 @@ class ExcelProductCatalog:
         if product_id not in (None, ""):
             where.append("p.id = ?")
             parameters.append(int(product_id))
-        if collection_id not in (None, ""):
-            where.append(
-                "EXISTS (SELECT 1 FROM product_collections pc "
-                "JOIN erp_collections collection ON collection.id=pc.collection_id "
-                "WHERE pc.product_id=p.id AND pc.collection_id=? "
-                "AND collection.active=1)"
-            )
-            parameters.append(int(collection_id))
         if cell:
             if cell == "Без ячейки":
                 where.append("trim(COALESCE(p.cell, '')) = ''")
@@ -1482,7 +1442,7 @@ class ExcelProductCatalog:
             moysklad_product_id=None, actor_id="", actor_name="",
             actor_type="system", model="", local_image_path=None,
             local_image_sha256=None, local_image_source=None,
-            local_image_updated_at=None, collection_ids=None, local_component=False):
+            local_image_updated_at=None, local_component=False):
         name = text(name)
         if not name:
             raise ValueError("Название товара обязательно.")
@@ -1610,9 +1570,6 @@ class ExcelProductCatalog:
             product_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
             if local_component:
                 connection.execute("INSERT INTO erp_local_components(product_id) VALUES (?)", (product_id,))
-            _replace_product_collections(
-                connection, product_id, collection_ids or []
-            )
             _record_manual_stock_adjustment(
                 connection,
                 product_id,
@@ -1639,7 +1596,7 @@ class ExcelProductCatalog:
                        category=None, cell=None, stock=None, stock_reason="",
                        brand_id=None, category_id=None, price=UNSET,
                        actor_id="", actor_name="", actor_type="system",
-                       model=None, collection_ids=None):
+                       model=None):
         self.database.initialize()
         with self.database.transaction() as connection:
             product = connection.execute(
@@ -1809,9 +1766,6 @@ class ExcelProductCatalog:
                     stock_after,
                     stock_reason,
                 )
-            _replace_product_collections(
-                connection, product_id, collection_ids
-            )
             before = {
                 "name": product["excel_name_raw"],
                 "model": product["model"],

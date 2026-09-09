@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from app.catalog_db import CatalogDatabase
+from app.remove_product_collections_migration import apply_remove_collections_migration
 from app.catalog_migration_steps import apply_fresh_catalog_schema
 from app.services.audit_journal import AuditJournal
 from app.services.excel_product_catalog import (
@@ -256,6 +257,7 @@ class BrandManagementTest(unittest.TestCase):
 
         with self.database.transaction() as connection:
             apply_fresh_catalog_schema(connection)
+            apply_remove_collections_migration(connection)
         self.database.initialize()
 
         with self.database.connect() as connection:
