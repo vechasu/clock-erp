@@ -1289,11 +1289,13 @@
         }
         /* Конец компактной верхней части склада */
 
+
         /* Заголовок страницы удалён для экономии места */
         .main {
             padding-top: 10px;
         }
         /* Конец компактного верха страницы */
+
 
         .zero-stock-toggle-form {
             margin-left: auto;
@@ -1371,6 +1373,7 @@
                 display: none;
             }
         }
+
 
         .stock-column-title {
             display: inline-flex;
@@ -1462,6 +1465,7 @@
                 background: var(--theme-surface, #ffffff);
             }
         }
+
 
         .brand-combobox {
             position: relative;
@@ -1603,6 +1607,7 @@
             display: none;
         }
 
+
         .add-card .add-form {
             display: grid;
             grid-template-columns:
@@ -1710,6 +1715,7 @@
             }
         }
 
+
         .add-form button[type="submit"] {
             background: #2563eb;
             border: 1px solid #1d4ed8;
@@ -1720,6 +1726,7 @@
         .add-form button[type="submit"]:hover {
             background: #1d4ed8;
         }
+
 
         /* SaaS toolbar redesign v2 */
         .search-card {
@@ -1885,6 +1892,7 @@
             }
 
         }
+
 
         /* SaaS product drawer redesign */
         #editDrawer {
@@ -2392,6 +2400,7 @@
             transform: translateY(0);
         }
 
+
         #editDrawer.open {
             right: 0;
         }
@@ -2426,6 +2435,7 @@
                 grid-column: auto;
             }
         }
+
 
         /* Карточка после боковой панели */
         #editDrawer {
@@ -2475,6 +2485,7 @@
             }
         }
 
+
         /* Полноширинная аналитика склада */
         .stats {
             grid-template-columns: minmax(0, 1fr);
@@ -2484,6 +2495,7 @@
         .stats .stat {
             width: 100%;
         }
+
 
         /* Выравнивание действий таблицы справа */
         .table-card th:last-child,
@@ -2504,6 +2516,7 @@
         .table-card .row-actions form {
             margin: 0;
         }
+
 
         /* Центрирование данных таблицы */
         .table-card th:nth-child(1),
@@ -2529,6 +2542,7 @@
             justify-content: center;
         }
 
+
         /* Центрирование колонки действий */
         .table-card th:last-child,
         .table-card td:last-child {
@@ -2538,6 +2552,7 @@
         .table-card .row-actions {
             justify-content: center;
         }
+
 
         /* filter-ui-like-products */
 
@@ -2951,6 +2966,7 @@
             color: #172033;
         }
 
+
         /* identical-filter-selects */
 
         #filterDrawer .brand-combobox-trigger,
@@ -3021,6 +3037,7 @@
         .brand-combobox-trigger::after {
             transform: translateY(-30%) rotate(225deg);
         }
+
 
         /* identical-filter-arrows-fix */
 
@@ -3211,6 +3228,8 @@
             height: 44px;
             min-height: 44px;
         }
+
+
 
         #warehouseAddCard .brand-combobox-dropdown {
             margin-top: 6px;
@@ -3439,6 +3458,7 @@
             }
 
         }
+
 
         /* warehouse-safe-sort */
 
@@ -5396,6 +5416,7 @@
             </div>
         </form>
     </aside>
+
 
     <aside
         id="editDrawer"
@@ -7894,22 +7915,28 @@
 
 </script>
 
+
     <script>
         const warehouseTableLegacyStorageKey = "vechasu.warehouse.table-view.v1";
         const warehouseTableStorageKey = "vechasu.warehouse.table-view.v2";
         const warehouseTableDefaults = {
+            order: ["photo", "name", "stock", "price", "article", "brand", "category", "created", "model", "cell", "platform_checks", "actions"],
+            widths: { photo: 64, name: 256, model: 120, price: 80, article: 96, brand: 95, category: 150, stock: 104, created: 106, cell: 75, platform_checks: 210, actions: 82 },
             hidden: ["model", "cell"]
         };
         const warehouseTableRequiredColumns = ["photo", "name", "actions"];
         const warehouseTableColumnLabels = {
             photo: "Фото", name: "Название", model: "Модель", price: "Цена", article: "Артикул",
+            brand: "Бренд", category: "Категория", stock: "Остаток",
             created: "Добавлено", cell: "Ячейка", platform_checks: "Проверка отключения", actions: "Действия"
         };
         const warehouseTableMinimumWidths = {
             photo: 60, name: 196, model: 90, price: 72, article: 86, brand: 84,
+            category: 138, stock: 98, created: 96, cell: 68, platform_checks: 180, actions: 82
         };
         const warehouseTableMaximumWidths = {
             photo: 160, name: 520, model: 300, price: 180, article: 240, brand: 260,
+            category: 360, stock: 200, created: 220, cell: 180, platform_checks: 360, actions: 160
         };
         let warehouseTableSuppressSortUntil = 0;
 
@@ -8379,6 +8406,7 @@
 
         initializeWarehouseTableView();
     </script>
+
 
     <script>
         function validateWarehouseInitialStock(input) {
@@ -8912,6 +8940,7 @@
         }
     </script>
 
+
     <script>
         function confirmAndRememberWarehouseScroll() {
             const confirmed = confirm(
@@ -8960,6 +8989,7 @@
             });
         });
     </script>
+
 
     <script>
         function showWarehouseNotice(message, variant) {
@@ -9283,6 +9313,7 @@
     </script>
     {% endif %}
 
+
     <script>
         function hideWarehouseNotice() {
             const notice = document.getElementById("pageNotice");
@@ -9315,6 +9346,7 @@
             hideWarehouseNotice
         );
     </script>
+
 
     <script>
         window.warehouseToolbarPopovers = (
