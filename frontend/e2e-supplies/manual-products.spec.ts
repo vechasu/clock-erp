@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-async function chooseCatalogValue(page, id: string, value: string) {
+async function chooseCatalogValue(page: Page, id: string, value: string) {
   const combobox = page.locator(`#${id}`);
   await combobox.locator('.brand-combobox-trigger').click();
   await combobox.locator('.brand-combobox-search').fill(value);
