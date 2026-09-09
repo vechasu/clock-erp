@@ -5,7 +5,7 @@ from app.services.supplies import SupplyEngine
 from app.services.sales_inventory import SalesInventory
 
 web = fixture.web
-products = [dict(external_product_id=str(i), name=name, external_sku='SUP-'+str(i), brand='Casio', stock=47, images=[], properties=[]) for i,name in [(90101,'Casio A168'),(90102,'Casio F91W')]]
+products = [dict(external_product_id=str(i), name=name, external_sku='SUP-'+str(i), brand='Casio', stock=47, images=[], properties=[]) for i,name in [(90101,'Casio A168'),(90102,'Casio F91W'),(90103,'Casio smoke catalog'),(90104,'Casio smoke supply')]]
 class BitrixFixture:
     def search_products(self, query, limit=20):
         return products

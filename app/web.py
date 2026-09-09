@@ -6160,11 +6160,44 @@ def warehouse_update_cell():
 
 @app.route("/warehouse/add", methods=["POST"])
 def warehouse_add_product():
-    return api_error(
-        "MANUAL_PRODUCT_CREATION_DISABLED",
-        "Добавляйте новые товары через «Добавить из Bitrix».",
-        410,
-    )
+    from app.services.excel_product_catalog import parse_initial_stock
+
+    require_csrf_when_authenticated()
+    if auth_is_enabled() and (current_auth_user() or {}).get("role") in (
+        "viewer", "readonly", "read_only",
+    ):
+        abort(403)
+    catalog = ExcelProductCatalog()
+    store = ProductImageStore(catalog.database)
+    prepared = None
+    try:
+        payload = api_json_payload() if request.is_json else request.form.to_dict()
+        if parse_initial_stock(payload.get("stock", 0)) != 0:
+            raise ValueError("Остаток нового товара задаётся проведением поставки.")
+        image = read_product_image_upload(request.files.get("product_image"), allow_webp=True)
+        if image:
+            prepared = store.prepare_image(image["content"], image["filename"], image["mime_type"])
+        values = {key: payload[key] for key in (
+            "name", "model", "article", "brand", "category", "cell", "price",
+        ) if key in payload}
+        values.setdefault("name", "")
+        for key in ("brand_id", "category_id"):
+            values[key] = payload.get(key) or None
+        if prepared:
+            values.update(
+                local_image_path=prepared["path"], local_image_sha256=prepared["sha256"],
+                local_image_source="manual", local_image_updated_at=prepared["updated_at"],
+            )
+        product = catalog.create_product(**values, stock=0, **current_audit_actor())
+    except ProductImageUploadError as error:
+        store.discard_prepared(prepared)
+        return api_error(error.code, str(error), error.status)
+    except (TypeError, ValueError) as error:
+        store.discard_prepared(prepared)
+        return api_error("PRODUCT_VALIDATION_FAILED", str(error), 422)
+    WAREHOUSE_CACHE["items"] = []
+    WAREHOUSE_CACHE["loaded_at"] = 0
+    return api_success(serialize_api_product(product), 201)
 
 
 @app.route("/warehouse/edit", methods=["POST"])

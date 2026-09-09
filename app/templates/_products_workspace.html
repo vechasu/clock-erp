@@ -10,6 +10,7 @@
                 <button id="openWarehouseAddModal" class="products-workspace-button is-primary" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleProductsAddMenu(event)">Добавить товар ▾</button>
                 <div id="productsAddMenu" class="products-add-menu-list" role="menu" hidden>
                     <button id="openBitrixProductImport" type="button" role="menuitem" onclick="openBitrixImportModal()">Добавить из Bitrix</button>
+                    <button type="button" role="menuitem" onclick="document.getElementById('productsAddMenu').hidden = true; ERPManualProduct.open()">Создать самостоятельно</button>
                 </div>
             </div>
         {% else %}

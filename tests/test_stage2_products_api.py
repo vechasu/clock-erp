@@ -655,7 +655,7 @@ class Stage2ProductsApiTest(unittest.TestCase):
             json={"name": "Accepted"},
             headers={"X-CSRF-Token": "stage-2-csrf"},
         )
-        self.assertEqual(accepted.status_code, 410)
+        self.assertEqual(accepted.status_code, 201)
 
         anonymous = web.app.test_client().get("/api/products")
         self.assertEqual(anonymous.status_code, 401)

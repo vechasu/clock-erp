@@ -103,7 +103,7 @@
 </label>
 <button id="add-item" class="button" hidden>+ Добавить товар</button>
 <div id="draft-actions" class="actions">
-<p id="save-first-hint">Сохраните черновик, затем добавьте существующие товары ERP.</p>
+<p id="save-first-hint">Добавьте товары и укажите количество до проведения поставки.</p>
 <span>«Было» и «Станет» до проведения — предварительные значения</span>
 </div>
 <div class="table-scroll">
@@ -135,10 +135,11 @@
 </footer>
 </dialog>
 <dialog id="add-item-dialog" class="product-picker" aria-labelledby="add-item-heading">
-<header><div><h2 id="add-item-heading">Добавить товар в поставку</h2><p class="picker-subtitle">Выберите товар ERP или импортируйте карточку из Bitrix</p></div><button id="close-add-item" class="button" aria-label="Закрыть добавление">×</button></header>
+<header><div><h2 id="add-item-heading">Добавить товар в поставку</h2><p class="picker-subtitle">Выберите товар ERP, добавьте из Bitrix или создайте самостоятельно</p></div><button id="close-add-item" class="button" aria-label="Закрыть добавление">×</button></header>
 <form id="add-item-form" class="picker-form">
 <div class="picker-search">
-<label for="supply-product-source">Источник</label><select id="supply-product-source"><option value="erp">ERP</option><option value="bitrix">Bitrix</option></select>
+<label for="supply-product-source">Источник</label><select id="supply-product-source"><option value="erp">Выбрать существующий товар ERP</option><option value="bitrix">Добавить из Bitrix</option></select>
+<button id="create-manual-supply-product" class="button" type="button">Создать самостоятельно</button>
 <input id="supply-product-search" type="search" placeholder="Поиск товара по названию, артикулу или Bitrix ID" aria-label="Поиск товара по названию, артикулу или Bitrix ID" autocomplete="off">
 <div id="supply-search-status" class="picker-status" role="status" aria-live="polite"></div>
 </div>
@@ -168,5 +169,6 @@
 <div id="source-content">
 </div>
 </dialog>
+{% include "_manual_product.html" %}
 </body>
 </html>
