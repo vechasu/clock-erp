@@ -1,15 +1,22 @@
-<dialog id="manual-product-dialog" aria-labelledby="manual-product-heading" style="width:min(560px,calc(100vw - 32px));max-height:90vh;overflow:auto;border:1px solid #dce3eb;border-radius:16px;padding:24px">
-    <h2 id="manual-product-heading">Создать самостоятельно</h2>
-    <form id="manual-product-form" class="erp-form" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        {% for name, label in [('name', 'Название'), ('brand', 'Бренд'), ('category', 'Категория'), ('model', 'Модель'), ('article', 'Артикул / SKU'), ('cell', 'Ячейка')] %}
-        <label style="display:block;margin:12px 0">{{ label }}{% if name == 'name' %} *{% endif %}<input class="control" style="display:block;width:100%;box-sizing:border-box" name="{{ name }}" {% if name == 'name' %}required{% endif %}></label>
-        {% endfor %}
-        <label style="display:block;margin:12px 0">Цена<input class="control" name="price" type="number" min="0" step="0.01"></label>
-        <label style="display:block;margin:12px 0">Фото<input name="product_image" type="file" accept="image/jpeg,image/png,image/webp"></label>
-        <p>Карточка создаётся без Bitrix ID. Остаток изменится только после проведения поставки.</p>
-        <p id="manual-product-error" role="alert" hidden></p>
-        <div class="actions"><button class="button" id="cancel-manual-product" type="button">Отмена</button> <button class="button primary" type="submit">Создать товар</button></div>
-    </form>
-</dialog>
+{% from "_catalog_combobox.html" import render_catalog_combobox %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/manual-product.css') }}">
+<dialog id="manual-product-dialog" class="manual-product-dialog" aria-labelledby="manual-product-heading">
+<div class="manual-product-card">
+<header class="manual-product-header"><span class="manual-product-header-icon" aria-hidden="true">＋</span><div><h2 id="manual-product-heading">Добавление товара</h2><p>Заполните информацию о товаре</p></div><button id="cancel-manual-product" class="manual-product-close" type="button" aria-label="Закрыть">×</button></header>
+<form id="manual-product-form" enctype="multipart/form-data" data-shared-catalog-scope data-global-category-options="true">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input id="manualProductName" type="hidden" name="name">
+<section class="manual-product-section"><h3>Каталог</h3><div class="manual-product-grid manual-product-catalog-grid">
+<div class="manual-product-field"><label for="manualProductBrandComboboxTrigger">Бренд</label>{{ render_catalog_combobox("manualProductBrandCombobox", "brand", [], item_label="бренд", prefix_search=true, component_class="filter-combobox", clear_selection_on_search_clear=true, action_kind="brand", action_label="Добавить новый бренд", shared_catalog_kind="brand", id_input_name="brand_id") }}</div>
+<div class="manual-product-field"><label for="manualProductCategoryComboboxTrigger">Категория</label>{{ render_catalog_combobox("manualProductCategoryCombobox", "category", [], item_label="категорию", disabled=true, prefix_search=true, component_class="filter-combobox", clear_selection_on_search_clear=true, action_kind="category", action_label="Добавить новую категорию", shared_catalog_kind="category", id_input_name="category_id") }}</div>
+<div class="manual-product-field"><label for="manualProductComboboxTrigger">Товар</label>{{ render_catalog_combobox("manualProductCombobox", "product_id", [], item_label="товар", disabled=true, prefix_search=true, empty_label="Ничего не найдено", component_class="filter-combobox", clear_selection_on_search_clear=true, action_kind="product", action_label="Добавить новый товар", shared_catalog_kind="product") }}</div>
+</div></section>
+<section class="manual-product-section manual-product-photo-section"><h3>Фото товара</h3><label class="manual-product-image-field" for="manualProductImage"><img id="manualProductImagePreview" alt="Фото товара" hidden><span id="manualProductImagePlaceholder">Нет фото</span><span><strong id="manualProductImageStatus">Фотография не выбрана</strong><small>JPEG, PNG или WEBP, до 3 МБ</small></span><span class="manual-product-upload">Добавить фотографию</span><input id="manualProductImage" name="product_image" type="file" accept="image/jpeg,image/png,image/webp"></label></section>
+<section class="manual-product-section"><h3>Данные товара</h3><div class="manual-product-grid">
+<label class="manual-product-field"><span>Модель часов</span><input name="model" type="text" placeholder="Например, Celeste"></label>
+<label class="manual-product-field"><span>Артикул / SKU</span><input name="article" type="text" placeholder="Например, 126610LN"></label>
+<label class="manual-product-field"><span>Цена</span><input name="price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Не указана"></label>
+<label class="manual-product-field"><span>Ячейка</span><input name="cell" type="text" placeholder="Например, A-01"></label>
+</div></section>
+<p id="manual-product-error" class="manual-product-error" role="alert" hidden></p><footer class="manual-product-actions"><button class="button" data-manual-product-cancel type="button">Отмена</button><button class="button primary" type="submit">Добавить товар</button></footer>
+</form></div></dialog>
 <script defer src="{{ url_for('static', filename='js/manual-product.js') }}"></script>

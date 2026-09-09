@@ -35,12 +35,17 @@ beforeEach(async () => {
   document.body.innerHTML =
     '<meta name="csrf-token" content="test">' +
     template +
-    manualTemplate.replace(
-      /{% for name, label.*?{% endfor %}/s,
-      ['name', 'brand', 'category', 'model', 'article', 'cell']
-        .map((name) => `<input name="${name}">`)
-        .join(''),
-    );
+    manualTemplate;
+  el('manual-product-form').insertAdjacentHTML(
+    'afterbegin',
+    '<input name="brand_id"><input name="category_id">' +
+      '<div id="manualProductBrandCombobox"></div>' +
+      '<div id="manualProductCategoryCombobox"></div>' +
+      '<div id="manualProductCombobox" data-shared-catalog-kind="product">' +
+      '<button id="manualProductComboboxTrigger"></button>' +
+      '<input class="brand-combobox-search">' +
+      '<button data-catalog-create-action="product" data-catalog-create-name="Watch"></button></div>',
+  );
   document.querySelectorAll('dialog').forEach((dialog) => {
     dialog.showModal = () => dialog.setAttribute('open', '');
     dialog.close = () => {
@@ -109,6 +114,11 @@ beforeEach(async () => {
     };
   });
   Object.defineProperty(window, 'fetch', { value: fetchMock, writable: true, configurable: true });
+  Object.assign(window, {
+    clearSharedCatalogCombobox: vi.fn(),
+    setBrandComboboxValue: vi.fn(),
+    setBrandDropdownOpen: vi.fn(),
+  });
   window.eval(picker);
   window.eval(manualSource);
   window.eval(source);
@@ -230,7 +240,9 @@ test('manual card created inside new supply is selected without navigation or po
   await flush();
   click('create-manual-supply-product');
   const form = el('manual-product-form') as HTMLFormElement;
-  (form.elements.namedItem('name') as HTMLInputElement).value = 'Watch';
+  (form.elements.namedItem('brand_id') as HTMLInputElement).value = '1';
+  (form.elements.namedItem('category_id') as HTMLInputElement).value = '2';
+  form.querySelector<HTMLButtonElement>('[data-catalog-create-action="product"]')!.click();
   form.dispatchEvent(new Event('submit', { cancelable: true }));
   await flush();
   expect(el('selected-product').textContent).toContain('Watch');

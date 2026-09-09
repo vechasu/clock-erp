@@ -87,3 +87,13 @@ class ManualProductCreationTest(unittest.TestCase):
 
     def test_legacy_receipt_creation_remains_retired(self):
         self.assertEqual(self.client.post('/receipts/catalog/create').status_code, 410)
+
+    def test_products_and_supplies_share_restored_manual_form(self):
+        products = self.client.get('/warehouse').get_data(as_text=True)
+        supplies = self.client.get('/app/receipts').get_data(as_text=True)
+        for page in (products, supplies):
+            self.assertIn('id="manual-product-form"', page)
+            self.assertIn('id="manualProductBrandCombobox"', page)
+            self.assertIn('id="manualProductCategoryCombobox"', page)
+            self.assertIn('id="manualProductCombobox"', page)
+            self.assertIn('Добавить новый товар', page)
