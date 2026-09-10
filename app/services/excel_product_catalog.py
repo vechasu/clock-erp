@@ -909,12 +909,14 @@ class ExcelProductCatalog:
             " WHERE " + " AND ".join(brand_facet_where)
         )
         select_sql = (
-            "SELECT p.*, cp.barcode AS bitrix_barcode, "
+            "SELECT p.*, c.name AS category_name, cp.barcode AS bitrix_barcode, "
             "b.source_filename, b.applied_at, b.row_count AS batch_row_count "
             "FROM catalog_excel_products p JOIN catalog_excel_batches b "
             "ON b.id = p.current_batch_id "
             "LEFT JOIN catalog_products cp "
-            "ON cp.id = p.bitrix_catalog_product_id"
+            "ON cp.id = p.bitrix_catalog_product_id "
+            "LEFT JOIN erp_categories c "
+            "ON c.id = p.category_id"
         )
         with self.database.connect() as connection:
             if query or model:
