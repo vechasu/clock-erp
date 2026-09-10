@@ -4977,20 +4977,21 @@
                                 >
                                     <td data-column-key="photo">
                                         <div class="warehouse-product-photo-cell">
-                                            {% if item.local_image_url %}
+                                            {% set photo_url = item.local_image_url or item.thumbnail_url %}
+                                            {% if photo_url %}
                                                 <button
                                                     class="warehouse-product-thumb-button"
                                                     type="button"
                                                     aria-label="Открыть фото товара {{ item.name }}"
                                                     data-product-id="{{ item.id|e }}"
                                                     data-product-name="{{ item.name|e }}"
-                                                    data-thumbnail-url="{{ item.local_image_url|e }}"
+                                                    data-thumbnail-url="{{ photo_url|e }}"
                                                     data-detail-url="/warehouse/product/{{ item.id }}"
                                                     onclick="openWarehousePhotoPreview(event, this)"
                                                 >
                                                     <img
                                                         class="warehouse-product-thumb"
-                                                        src="{{ item.local_image_url }}"
+                                                        src="{{ photo_url }}"
                                                         alt=""
                                                         loading="lazy"
                                                         decoding="async"
