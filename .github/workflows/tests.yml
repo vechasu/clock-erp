@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     # The complete Python suite includes real headless-browser regressions and
     # now exceeds ten minutes on shared runners while completing locally.
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       CI: "true"
       FLASK_ENV: testing
